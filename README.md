@@ -87,7 +87,7 @@ cb-messenger-ai/
 
 ## 설치 (Windows 11)
 
-1. [Python 3.11 이상](https://www.python.org/downloads/) 설치 — 설치 화면에서 **"Add python.exe to PATH" 체크**
+1. [Python 3.10 이상](https://www.python.org/downloads/) 설치 — 설치 화면에서 **"Add python.exe to PATH" 체크**
 2. 이 폴더에서 `1_설치하기.bat` 더블클릭
 3. 아래 셋 중 하나로 AI 연결
 4. `3_샘플테스트.bat` 또는 `4_테스트화면열기.bat` 더블클릭

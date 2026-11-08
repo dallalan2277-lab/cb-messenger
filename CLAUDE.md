@@ -5,7 +5,7 @@ Claude Code 는 이 폴더(`cb-messenger-ai/`, 저장소 맨 위)에서 열 것.
 
 ## 여러 컴퓨터에서 작업 (GitHub)
 - 작업 시작 전 `git pull`, 끝나면 `git add .` → `git commit` → `git push`.
-- 컴퓨터마다 따로 해야 하는 것 (GitHub 로 안 옮겨짐): Python 3.11+ 설치, `1_설치하기.bat`(.venv), `.env` 값, ChatGPT 로그인, 네이버 메일 연결, `data/`(DB·쪽지 기록).
+- 컴퓨터마다 따로 해야 하는 것 (GitHub 로 안 옮겨짐): Python 3.10+ 설치 (3.10.6 에서 확인됨, 3.11 전용 문법 쓰지 말 것), `1_설치하기.bat`(.venv), `.env` 값, ChatGPT 로그인, 네이버 메일 연결, `data/`(DB·쪽지 기록).
 - 진행 상황·결정은 이 문서와 `HANDOFF.md` 에 적어 둘 것 (Claude Code 의 컴퓨터별 기억은 다른 PC 로 안 옮겨짐).
 
 ## 사용자
@@ -95,7 +95,7 @@ python main.py gui                          :: 설정·테스트 화면
 
 ## 남은 작업 (우선순위 순)
 1. **사용자 PC 에서 실제 확인·수정** (가장 먼저)
-   - `1_설치하기.bat` 설치 오류 여부 (pywebview, uiautomation, keyring, winsdk 등)
+   - ~~설치 오류 여부~~ → 2026-11-08 확인: Python 3.10.6 에서 requirements 설치 OK, Windows 라이브러리 import OK, 테스트 52 통과·1 건너뜀(유닉스용 가짜 claude), `--provider fake test` 정상
    - ChatGPT 구독 로그인: 첫 콜백의 `client_id`, ID 토큰 검증(OIDC discovery 주소 미확인, 대체 jwks 주소 사용 중), 토큰 갱신, `text.format json_schema` 허용 여부, `reasoning` 허용 여부
    - 쪽지: `messenger-check --raw` 로 보낸 사람·본문 파싱, 알림 창→보기 창 합치기
    - 메일: 로그인, 한글 제목·본문 디코딩, 첫 연결 시 오늘 메일만 오는지

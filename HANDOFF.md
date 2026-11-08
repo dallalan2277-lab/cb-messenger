@@ -8,7 +8,7 @@
 실시간으로 수집해 AI가 중요도별로 요약해 알려주고, 이후 분석 · 캘린더 자동 등록까지 확장하는 Windows 11 프로그램.
 
 - 사용자: 충북 교사 (비개발자). 설명은 한국어로, 쉬운 말로.
-- 실행 환경: Windows 11, Python 3.11+
+- 실행 환경: Windows 11, Python 3.10+ (2026-11-08 사용자 PC Python 3.10.6 에서 설치·테스트 통과 확인)
 - AI: **OpenAI(GPT)와 Anthropic(Claude) 둘 다 지원해야 함** (`app/llm/` 의 공통 인터페이스 유지)
 - 사용자는 **API 키 대신 구독(ChatGPT Plus / Claude Pro)으로 쓰기를 원함** → v0.2 에서 추가
 - v0.6: 사용자의 MailDesk 0.3.0(네이버 메일 + ChatGPT 중요도 분석 + 알림, PyInstaller exe)을 분석해 기능을 통합.
