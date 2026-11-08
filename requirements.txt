@@ -1,0 +1,18 @@
+# 필수
+python-dotenv>=1.0
+httpx>=0.27              # ChatGPT 구독 로그인/호출
+keyring>=24              # 네이버 메일 앱 비밀번호 → Windows 자격 증명 관리자
+PyJWT[crypto]>=2.8       # ChatGPT 로그인 ID 토큰 검증
+openai>=1.60             # GPT API 키 사용 시
+anthropic>=0.40          # Claude API 키 사용 시
+
+# Windows 전용 (실시간 감시·알림)
+uiautomation>=2.0.18 ; sys_platform == "win32"   # 소통메신저 창 글자 읽기
+winsdk>=1.0.0b10 ; sys_platform == "win32"
+win11toast>=0.35 ; sys_platform == "win32"
+pywebview>=5.0 ; sys_platform == "win32"        # 바탕화면 캘린더 창 (Windows 11 내장 WebView2 사용)
+pystray>=0.19 ; sys_platform == "win32"         # 캘린더 트레이 아이콘
+pillow>=10 ; sys_platform == "win32"
+
+# 개발/테스트
+pytest>=8

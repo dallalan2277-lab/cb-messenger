@@ -1,0 +1,271 @@
+"""바탕화면 캘린더의 데이터 API — 화면(HTML/JS)이 window.pywebview.api.* 로 부릅니다.
+
+창(위젯) 조작은 host(widget.py)가 넣어 주고, 이 파일은 데이터만 다룹니다 (Windows 없이도 테스트 가능).
+"""
+from __future__ import annotations
+
+import calendar as _cal
+import functools
+import json
+import re
+import threading
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+from ..storage import Storage
+
+HERE = Path(__file__).resolve().parent
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def load_holidays() -> dict[str, str]:
+    """{'2026-01-01': '신정', ...}"""
+    try:
+        raw = json.loads((HERE / "holidays_kr.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for y, days in raw.items():
+        if y.isdigit() and isinstance(days, dict):
+            for md, name in days.items():
+                out[f"{y}-{md}"] = name
+    return out
+
+
+DEFAULT_PREFS = {
+    "monitor": 0,            # 0 = 주 모니터, 1 = 두 번째 모니터
+    "fraction": 0.66,        # 모니터 작업 영역 대비 크기 (처음 한 번)
+    "anchor": "right",       # 처음 위치: right | left | center
+    "x": None, "y": None, "w": None, "h": None,   # 사용자가 옮기거나 크기 바꾸면 여기에 기억
+    "opacity": 0.92,
+    "week_start": 0,         # 0 = 일요일, 1 = 월요일
+    "show_suggested": True,
+    "theme": "dark",         # dark | light
+}
+
+
+def _locked(fn):
+    @functools.wraps(fn)
+    def wrap(self, *a, **k):
+        with self._lock:
+            return fn(self, *a, **k)
+    return wrap
+
+
+class CalendarAPI:
+    def __init__(self, storage: Storage, prefs_path: str | Path):
+        self._storage = storage
+        self._prefs_path = Path(prefs_path)
+        self._holidays = load_holidays()
+        self._host = None   # widget.Host (창 조작). 테스트 때는 None
+        self._runner = None   # runner.Runner (쪽지·메일 감시). 없으면 None
+        # pywebview 는 공개 속성을 화면에 노출하므로 내부 값은 모두 _ 로 시작 (노출 방지)
+        self._lock = threading.RLock()   # 화면 호출이 여러 스레드에서 와도 DB 를 한 번에 하나씩
+
+    # ---------- 설정 ----------
+    @_locked
+    def get_prefs(self) -> dict:
+        p = dict(DEFAULT_PREFS)
+        try:
+            p.update(json.loads(self._prefs_path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            pass
+        return p
+
+    @_locked
+    def set_prefs(self, changes: dict) -> dict:
+        p = self.get_prefs()
+        p.update({k: v for k, v in (changes or {}).items() if k in DEFAULT_PREFS})
+        self._prefs_path.parent.mkdir(parents=True, exist_ok=True)
+        self._prefs_path.write_text(json.dumps(p, ensure_ascii=False, indent=1), encoding="utf-8")
+        return p
+
+    # ---------- 조회 ----------
+    @_locked
+    def month(self, year: int, month: int) -> dict:
+        """달력 한 장(앞뒤 달 꼬리 포함 6주)의 날짜·일정·공휴일"""
+        year, month = int(year), int(month)
+        prefs = self.get_prefs()
+        first_wd = 6 if prefs["week_start"] == 0 else 0       # calendar 모듈: 0=월 … 6=일
+        weeks = _cal.Calendar(firstweekday=first_wd).monthdatescalendar(year, month)
+        while len(weeks) < 6:
+            last = weeks[-1][-1]
+            weeks.append([last + timedelta(days=i) for i in range(1, 8)])
+        start, end = weeks[0][0].isoformat(), weeks[-1][-1].isoformat()
+        events = self._storage.calendar_events(start, end)
+        if not prefs["show_suggested"]:
+            events = [e for e in events if e["status"] != "suggested"]
+        by_day: dict[str, list] = {}
+        for e in events:
+            by_day.setdefault(e["date"], []).append(_public(e))
+        days = [[{"date": d.isoformat(), "day": d.day, "in_month": d.month == month,
+                  "weekday": d.weekday(), "holiday": self._holidays.get(d.isoformat(), ""),
+                  "events": by_day.get(d.isoformat(), [])} for d in w] for w in weeks]
+        return {"year": year, "month": month, "today": date.today().isoformat(), "weeks": days,
+                "suggested_count": sum(1 for e in events if e["status"] == "suggested")}
+
+    @_locked
+    def upcoming(self, days: int = 14) -> list[dict]:
+        t = date.today()
+        return [_public(e) for e in self._storage.calendar_events(t.isoformat(), (t + timedelta(days=days)).isoformat())]
+
+    @_locked
+    def suggestions(self) -> list[dict]:
+        t = date.today() - timedelta(days=7)
+        return [_public(e) for e in self._storage.calendar_events(t.isoformat(), "9999-12-31")
+                if e["status"] == "suggested"]
+
+    @_locked
+    def message(self, message_id: int) -> dict | None:
+        m = self._storage.get_message(int(message_id))
+        if not m:
+            return None
+        return {"sender": m["sender"], "body": m["body"], "received_at": m["received_at"],
+                "summary": m.get("summary") or "", "importance": m.get("importance") or ""}
+
+    # ---------- 받은 소식 (쪽지·메일 통합 목록) ----------
+    @_locked
+    def feed(self, filt: str = "open", source: str = "", limit: int = 80) -> list[dict]:
+        """filt: open(처리 안 한 것) | school(학교 업무, 처리 안 한 것) | all(처리 완료 포함, 최근 30일)"""
+        since = (date.today() - timedelta(days=30)).isoformat()
+        rows = self._storage.feed(source=source if source in ("mail", "eztalk") else "",
+                                  only_open=filt != "all", school_only=filt == "school",
+                                  limit=int(limit), since=since)
+        for r in rows:
+            r["sender_short"] = re.sub(r"\s*<[^>]+>", "", r["sender"]).strip() or r["sender"]
+        return rows
+
+    @_locked
+    def item(self, message_id: int) -> dict | None:
+        """쪽지·메일 한 건: 원문 + 분석(요약·할 일·근거·학교 업무 판단)"""
+        m = self._storage.get_message(int(message_id))
+        if not m:
+            return None
+        keys = ("id", "sender", "subject", "body", "received_at", "source", "done", "summary", "importance", "category",
+                "reason", "evidence", "deadline", "school_relevance", "school_reason", "school_evidence", "verified")
+        out = {k: m.get(k) for k in keys}
+        out["action_items"] = json.loads(m.get("action_items") or "[]")
+        out["done"] = bool(out["done"])
+        out["events"] = [_public(e) for e in self._storage.calendar_events("0000-01-01", "9999-12-31", include_dismissed=False)
+                         if e.get("message_id") == int(message_id)]
+        return out
+
+    @_locked
+    def set_done(self, message_id: int, done: bool = True) -> dict:
+        return {"ok": self._storage.set_done(int(message_id), bool(done))}
+
+    def status(self) -> dict:
+        r = self._runner
+        st = dict(r.status) if r else {"messenger": "꺼짐", "mail": "꺼짐"}
+        st["open_count"] = len(self.feed("open", limit=500))
+        return st
+
+    def open_settings(self) -> dict:
+        """설정 창(모델·저장·메일·알림·학교 정보)을 따로 띄움"""
+        import subprocess
+        import sys
+        root = Path(__file__).resolve().parents[2]
+        exe = Path(sys.executable)
+        pyw = exe.with_name("pythonw.exe")
+        subprocess.Popen([str(pyw if pyw.exists() else exe), str(root / "main.py"), "gui"], cwd=str(root))
+        return {"ok": True}
+
+    def restart_watch(self) -> dict:
+        """설정을 바꾼 뒤 쪽지·메일 감시를 새 설정으로 다시 시작"""
+        if not self._runner:
+            return {"ok": False}
+        from ..config import get_settings
+        from ..runner import Runner
+        old = self._runner
+        old.stop()
+        self._runner = Runner(get_settings(reload=True), on_change=old.on_change).start()
+        return {"ok": True}
+
+    def check_mail_now(self) -> dict:
+        return {"ok": bool(self._runner and self._runner.check_mail_now())}
+
+    # ---------- 변경 ----------
+    @_locked
+    def add(self, data: dict) -> dict:
+        d = _clean(data)
+        eid = self._storage.add_calendar_event(**d, status="confirmed", origin="manual")
+        return {"ok": True, "id": eid}
+
+    @_locked
+    def update(self, event_id: int, data: dict) -> dict:
+        d = _clean(data, partial=True)
+        return {"ok": self._storage.update_calendar_event(int(event_id), **d)}
+
+    @_locked
+    def delete(self, event_id: int) -> dict:
+        return {"ok": self._storage.delete_calendar_event(int(event_id))}
+
+    @_locked
+    def confirm(self, event_id: int) -> dict:
+        return {"ok": self._storage.update_calendar_event(int(event_id), status="confirmed")}
+
+    @_locked
+    def dismiss(self, event_id: int) -> dict:
+        return {"ok": self._storage.update_calendar_event(int(event_id), status="dismissed")}
+
+    @_locked
+    def confirm_all(self) -> dict:
+        n = sum(1 for e in self.suggestions() if self._storage.update_calendar_event(e["id"], status="confirmed"))
+        return {"ok": True, "count": n}
+
+    # ---------- 창 조작 (host 가 있을 때만) ----------
+    def win(self, action: str, *args):
+        """화면에서 부르는 창 조작: move_by(dx,dy) / resize_by(dw,dh) / save_geometry / snap(preset) /
+        next_monitor / hide / quit"""
+        if not self._host:
+            return {"ok": False}
+        fn = getattr(self._host, action, None)
+        if not callable(fn) or action.startswith("_"):
+            return {"ok": False}
+        return {"ok": True, "result": fn(*args)}
+
+    @_locked
+    def export_ics(self) -> dict:
+        from ..extensions.ics_export import export_ics
+        from ..models import Event
+        t = date.today() - timedelta(days=30)
+        evs = [Event(title=e["title"], date=e["date"], start_time=e["start_time"], end_time=e["end_time"],
+                     location=e["location"], note=e["note"])
+               for e in self._storage.calendar_events(t.isoformat(), "9999-12-31") if e["status"] == "confirmed"]
+        path = self._prefs_path.parent / f"바탕화면캘린더_{datetime.now():%Y%m%d_%H%M}.ics"
+        export_ics(evs, path)
+        return {"ok": True, "path": str(path), "count": len(evs)}
+
+
+def _public(e: dict) -> dict:
+    keys = ("id", "title", "date", "start_time", "end_time", "location", "note", "status", "origin", "message_id")
+    out = {k: e.get(k) for k in keys}
+    out["sender"] = e.get("msg_sender") or ""
+    return out
+
+
+def _clean(data: dict, partial: bool = False) -> dict:
+    data = data or {}
+    out = {}
+    if "title" in data or not partial:
+        title = str(data.get("title", "")).strip()
+        if not title:
+            raise ValueError("제목을 입력하세요.")
+        out["title"] = title[:200]
+    if "date" in data or not partial:
+        d = str(data.get("date", "")).strip()
+        if not DATE_RE.match(d):
+            raise ValueError("날짜 형식이 올바르지 않습니다 (YYYY-MM-DD).")
+        datetime.strptime(d, "%Y-%m-%d")
+        out["date"] = d
+    for k in ("start_time", "end_time"):
+        if k in data or not partial:
+            t = str(data.get(k, "") or "").strip()
+            if t and not TIME_RE.match(t):
+                raise ValueError("시간 형식이 올바르지 않습니다 (HH:MM).")
+            out[k] = t
+    for k in ("location", "note"):
+        if k in data or not partial:
+            out[k] = str(data.get(k, "") or "").strip()[:2000]
+    return out
