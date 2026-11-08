@@ -29,12 +29,12 @@
 | Windows 토스트 알림 (긴급·중요만) | ✅ 완료 (win11toast) | `app/notifier.py` |
 | 일정 .ics 내보내기 | ✅ 완료 | `app/extensions/ics_export.py` |
 | 테스트 GUI (tkinter) | ✅ 완료 | `gui.py` |
-| 단위 테스트 6개 (API 키 불필요) | ✅ 통과 | `tests/test_core.py` |
+| 핵심 단위 테스트 (API 키 불필요) | ✅ 통과 | `tests/test_core.py` |
 | ChatGPT 구독 연결 (Sign in with ChatGPT, PKCE·루프백·토큰 자동 갱신·Responses 스트리밍) | ⚠ 공식 문서대로 구현, 가짜 서버 테스트 통과, **실제 계정 미검증** | `app/llm/chatgpt_auth.py`, `chatgpt_plan_provider.py` |
 | Claude 구독 연결 (`claude -p --output-format json`) | ⚠ 가짜 claude 로 테스트 통과, **실제 미검증** | `app/llm/claude_cli_provider.py` |
 | 용도별 모델 슬롯 (분석/브리핑/대체), 사고 수준, AI 생략 규칙, 모델별 토큰 사용량 기록 | ✅ 완료 | `config.py`, `llm/factory.py`, `pipeline.build_pipeline`, `storage.usage` |
 | 모델 설정 화면 (OpenClaw 설정 화면 참고) | ✅ 코드 완료, 화면 렌더링은 Windows 에서 확인 필요 | `gui.py SettingsDialog` |
-| 테스트 18개 (API 키 불필요) | ✅ 통과 | `tests/` |
+| 테스트 53개 (API 키·네트워크·Windows 불필요) | ✅ 통과 (v0.6 기준) | `tests/` |
 | **소통메신저 수집기 (eztalk.exe 창 읽기)** | ✅ Project Monday `messenger_watch.py` 에서 이식 (원본은 실제 메신저로 검증됨). 이 프로젝트 안에서는 **Windows 실행 미확인** | `collectors/eztalk_parse.py`, `eztalk_collector.py` |
 | 원문·요약 보관: 이 PC / 구글 드라이브 따로, txt·md, 드라이브용 개인정보 가리기, 실패 시 대기 폴더 | ✅ 완료 (테스트) | `extensions/archive.py` |
 | **바탕화면 캘린더** (월간 보기, 입력·수정·삭제, AI 제안→확정/무시, 원문 쪽지 보기, 공휴일, 이동·크기 조절·기억, 두 모니터, 트레이, 자동 실행) | ✅ 화면·데이터는 브라우저로 끝까지 확인. **Windows 위젯 창(widget.py)은 실행 미확인** | `app/desktop_calendar/` |

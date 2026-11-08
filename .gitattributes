@@ -1,0 +1,5 @@
+# 줄바꿈 규칙: 어느 컴퓨터에서 받아도 같게
+* text=auto
+# .bat 은 Windows 명령 프롬프트용 → 반드시 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
