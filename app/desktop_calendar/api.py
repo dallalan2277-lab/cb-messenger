@@ -12,6 +12,7 @@ import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from ..paths import ROOT, self_command
 from ..storage import Storage
 
 HERE = Path(__file__).resolve().parent
@@ -164,22 +165,24 @@ class CalendarAPI:
     def open_settings(self) -> dict:
         """설정 창(모델·저장·메일·알림·학교 정보)을 따로 띄움"""
         import subprocess
-        import sys
-        root = Path(__file__).resolve().parents[2]
-        exe = Path(sys.executable)
-        pyw = exe.with_name("pythonw.exe")
-        subprocess.Popen([str(pyw if pyw.exists() else exe), str(root / "main.py"), "gui"], cwd=str(root))
+        subprocess.Popen(self_command("gui"), cwd=str(ROOT))
         return {"ok": True}
 
     def restart_watch(self) -> dict:
         """설정을 바꾼 뒤 쪽지·메일 감시를 새 설정으로 다시 시작"""
-        if not self._runner:
-            return {"ok": False}
         from ..config import get_settings
         from ..runner import Runner
         old = self._runner
-        old.stop()
-        self._runner = Runner(get_settings(reload=True), on_change=old.on_change).start()
+        on_change = old.on_change if old else getattr(self, "_watch_on_change", None)
+        if not old and on_change is None:   # 감시 없이(--watch 없이) 켠 캘린더
+            return {"ok": False}
+        if old:
+            old.stop()
+        self._runner = None
+        try:   # 처음 시작이 실패했던 경우(예: 로그인 전)에도 여기서 다시 켜짐
+            self._runner = Runner(get_settings(reload=True), on_change=on_change).start()
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": str(e)}
         return {"ok": True}
 
     def check_mail_now(self) -> dict:

@@ -5,10 +5,11 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+from .paths import DATA_DIR, ENV_PATH, ensure_user_dir
 
 
 def _load_env() -> None:
+    ensure_user_dir()
     try:
         from dotenv import load_dotenv
         load_dotenv(ENV_PATH, override=True)
@@ -64,7 +65,7 @@ class Settings:
 
     # ---- 저장 위치 ----
     db_path: str = field(default_factory=lambda: _env(
-        "DB_PATH", str(Path(__file__).resolve().parent.parent / "data" / "messages.db")))
+        "DB_PATH", str(DATA_DIR / "messages.db")))
 
     # ---- 개인정보 가리기 ----
     redact_enabled: bool = field(default_factory=lambda: _env("REDACT_ENABLED", "true").lower() == "true")
@@ -77,7 +78,7 @@ class Settings:
     # ---- 원문·요약 보관 (이 PC / 구글 드라이브 따로) ----
     archive_local_enabled: bool = field(default_factory=lambda: _bool("ARCHIVE_LOCAL", True))
     archive_local_dir: str = field(default_factory=lambda: _env("ARCHIVE_LOCAL_DIR") or str(
-        Path(__file__).resolve().parent.parent / "data" / "쪽지기록"))
+        DATA_DIR / "쪽지기록"))
     archive_gdrive_enabled: bool = field(default_factory=lambda: _bool("ARCHIVE_GDRIVE", False))
     archive_gdrive_dir: str = _f("ARCHIVE_GDRIVE_DIR", "")            # 비우면 자동으로 찾음
     archive_format: str = _f("ARCHIVE_FORMAT", "txt")                 # txt | md

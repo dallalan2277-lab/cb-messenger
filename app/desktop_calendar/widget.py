@@ -349,6 +349,7 @@ def run(settings, with_watch: bool = False):
         host.setup()
         start_tray(host, on_quit)
         if with_watch:
+            api._watch_on_change = host.refresh   # 시작이 실패해도 [감시 다시 시작]으로 켤 수 있게
             try:
                 from ..runner import Runner
                 api._runner = Runner(settings, on_change=host.refresh).start()   # 쪽지 감시 + 메일 확인 + AI

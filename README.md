@@ -79,13 +79,24 @@ cb-messenger-ai/
 │     ├─ archive.py             ★ 원문·요약 월별 파일 보관 (이 PC / 구글 드라이브)
 │     └─ ics_export.py          일정 → .ics (구글·아웃룩·네이버 캘린더 가져오기)
 ├─ samples/sample_messages.json 테스트용 가상 메시지
-├─ tests/                       API 키·네트워크 없이 돌아가는 테스트 (53개)
+├─ tests/                       API 키·네트워크 없이 돌아가는 테스트 (66개)
 ├─ HANDOFF.md                   ★ 이어서 개발할 때 읽을 문서 (다음 할 일 목록)
 ├─ .env.example                 설정 예시
 └─ 1_설치하기.bat ~ 8_메일연결.bat   더블클릭 실행 파일
 ```
 
-## 설치 (Windows 11)
+## 설치 파일로 설치 (가장 쉬움)
+
+1. `CBMessengerAI_Setup_<버전>.exe` 더블클릭 → 다음 → 설치 (**관리자 권한 필요 없음**, Python 필요 없음)
+   - "Windows의 PC 보호" 파란 창이 뜨면 **추가 정보 → 실행** (코드 서명이 없어서 나오는 경고)
+2. 설치 마지막 화면에서 **ChatGPT 로그인** 체크 → 브라우저에서 로그인
+3. 시작 메뉴 **충북메신저 AI 캘린더** 실행. 시작 메뉴에 설정 · ChatGPT 로그인 · 샘플 테스트 · 쪽지 창 읽기 확인도 있습니다.
+
+- 설정·쪽지 기록·DB 는 `%LOCALAPPDATA%\cb-messenger-ai\` 에 저장되어, 다시 설치하거나 제거해도 남습니다.
+- 명령줄 기능은 설치 폴더의 `cbm.exe` 로 (`python main.py` 대신). 예: `cbm.exe mail-login`
+- 설치 파일 만들기(개발자용): `packaging\build.bat` (Inno Setup 6 필요)
+
+## 소스코드로 설치 (Windows 11, 개발·수정용)
 
 1. [Python 3.10 이상](https://www.python.org/downloads/) 설치 — 설치 화면에서 **"Add python.exe to PATH" 체크**
 2. 이 폴더에서 `1_설치하기.bat` 더블클릭

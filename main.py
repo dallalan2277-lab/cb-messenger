@@ -33,10 +33,10 @@ from app.collectors import JsonFileCollector, message_from_text
 from app.config import get_settings
 from app.extensions.ics_export import export_ics
 from app.llm.factory import PROVIDERS, PROVIDER_LABELS, parse_spec
+from app.paths import DATA_DIR, FROZEN, RESOURCE_DIR, ROOT, is_gui_exe, self_command
 from app.pipeline import build_pipeline
 from app.storage import Storage
 
-ROOT = Path(__file__).resolve().parent
 ICON = {"긴급": "🔴", "중요": "🟡", "참고": "⚪"}
 
 
@@ -147,7 +147,7 @@ def cmd_watch(args):
     import time as _t
     from app.runner import Runner
     s, storage, pipe = build(args.provider)
-    (ROOT / "data").mkdir(exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     seen = set()
 
     def on_change():
@@ -320,8 +320,8 @@ def cmd_calendar(args):
     s = get_settings()
     if args.provider:
         s.analyze_model = s.digest_model = args.provider
-    (ROOT / "data").mkdir(exist_ok=True)
-    log_file = ROOT / "data" / "calendar.log"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = DATA_DIR / "calendar.log"
     logging.getLogger().addHandler(logging.FileHandler(log_file, encoding="utf-8"))
     try:
         run(s, with_watch=args.watch)
@@ -348,12 +348,13 @@ def cmd_startup(args):
             link.unlink()
         print("자동 실행을 껐습니다.")
         return
-    pyw = ROOT / ".venv" / "Scripts" / "pythonw.exe"
-    exe = pyw if pyw.exists() else Path(sys.executable).with_name("pythonw.exe")
-    extra = " --watch" if not args.no_watch else ""
+    command = self_command("calendar", *([] if args.no_watch else ["--watch"]))
+    # Quote command arguments for Windows, then escape quotes for the VBS string.
+    command_line = " ".join(f'"{arg}"' for arg in command).replace('"', '""')
+    current_directory = str(ROOT).replace('"', '""')
     vbs = (f'Set sh = CreateObject("WScript.Shell")\r\n'
-           f'sh.CurrentDirectory = "{ROOT}"\r\n'
-           f'sh.Run """{exe}"" ""{ROOT / "main.py"}"" calendar{extra}", 0, False\r\n')
+           f'sh.CurrentDirectory = "{current_directory}"\r\n'
+           f'sh.Run "{command_line}", 0, False\r\n')
     link.write_text(vbs, encoding="utf-16")
     print(f"Windows 시작 시 자동 실행을 켰습니다: {link}")
     print("끄려면: python main.py startup --off")
@@ -385,7 +386,7 @@ def main(argv=None):
     a.set_defaults(func=cmd_analyze)
 
     t = sub.add_parser("test", help="샘플 파일로 테스트")
-    t.add_argument("--file", default=str(ROOT / "samples" / "sample_messages.json"))
+    t.add_argument("--file", default=str(RESOURCE_DIR / "samples" / "sample_messages.json"))
     t.set_defaults(func=cmd_test)
 
     d = sub.add_parser("digest", help="브리핑 만들기")
@@ -394,7 +395,7 @@ def main(argv=None):
 
     e = sub.add_parser("export-ics", help="일정을 .ics 로 내보내기")
     e.add_argument("--since")
-    e.add_argument("--out", default=str(ROOT / "data" / "events.ics"))
+    e.add_argument("--out", default=str(DATA_DIR / "events.ics"))
     e.set_defaults(func=cmd_export_ics)
 
     sub.add_parser("retry", help="분석 실패한 메시지 재분석").set_defaults(func=cmd_retry)
@@ -428,6 +429,9 @@ def main(argv=None):
     sub.add_parser("chatgpt-logout", help="ChatGPT 로그아웃").set_defaults(func=cmd_chatgpt_logout)
     sub.add_parser("chatgpt-models", help="구독으로 쓸 수 있는 모델").set_defaults(func=cmd_chatgpt_models)
 
+    # 설치판 CBMessengerAI.exe 를 더블클릭(인자 없음) → 캘린더 + 감시. cbm.exe(콘솔)는 도움말
+    if FROZEN and is_gui_exe() and not (sys.argv[1:] if argv is None else argv):
+        argv = ["calendar", "--watch"]
     args = p.parse_args(argv)
     args.func(args)
 

@@ -54,8 +54,10 @@ app/
   extensions/               archive.py(원문 보관), ics_export.py
 tests/                      pytest. 네트워크·API 키·Windows 없이 돌아감
 1_설치하기.bat … 8_메일연결.bat   사용자용 더블클릭 파일 (CRLF, UTF-8, chcp 65001)
+packaging/                  설치 파일 만들기: build.bat → cbm.spec(PyInstaller onedir, CBMessengerAI.exe 창 없음 + cbm.exe 콘솔) → installer.iss(Inno Setup, 관리자 권한 불필요, %LOCALAPPDATA%\Programs\CBMessengerAI)
+app/paths.py                실행 위치·자료 위치. 개발: 저장소 폴더 / 설치판: 사용자 자료는 %LOCALAPPDATA%\cb-messenger-ai\ (.env, data\). CBM_HOME 으로 바꿀 수 있음
 ```
-데이터: `data/messages.db`, `data/calendar_prefs.json`, `data/쪽지기록/`, `data/calendar.log`. ChatGPT 토큰: `%LOCALAPPDATA%\cb-messenger-ai\`.
+데이터: `data/messages.db`, `data/calendar_prefs.json`, `data/쪽지기록/`, `data/calendar.log` (설치판은 `%LOCALAPPDATA%\cb-messenger-ai\data\`). ChatGPT 토큰: `%LOCALAPPDATA%\cb-messenger-ai\`.
 
 ## 주요 결정 (바꾸기 전에 사용자와 상의)
 1. **쪽지 수집 = Project Monday 방식**: `eztalk.exe` 의 `TFrmAlarm`(알림 창)·`TFrmViewNote`(보기 창)을 EnumWindows 로 찾고 `uiautomation` 으로 글자만 읽음. 소통메신저는 Windows 알림 센터를 쓰지 않음. 파싱 규칙은 Monday 원본을 옮겨 왔고, 본문 줄 조각의 '보안' 단어를 보안 쪽지로 오판하던 버그는 고쳤음.
@@ -75,6 +77,8 @@ tests/                      pytest. 네트워크·API 키·Windows 없이 돌아
 - 새 수집기는 `Collector` 를 상속해 `Message(source=..., external_id=...)` 를 내면 나머지 흐름이 그대로 동작.
 - 분석 결과 형식을 바꾸면 `analyzer.SCHEMA`, `_normalize`, `models.Analysis`, `storage`(칸+마이그레이션), `calendar.html` 을 함께 수정.
 - DB 칸 추가는 `Storage._NEW_COLUMNS` 에 넣어 옛 DB 가 자동으로 업그레이드되게.
+- 사용자가 쓰는 파일(.env, data/ 아래 모든 것) 위치는 반드시 `app.paths`(ENV_PATH, DATA_DIR) 로. `Path(__file__)` 기준으로 쓰기 금지 (설치판에서는 프로그램 폴더에 쓰면 안 됨). 다시 띄울 때는 `self_command()`.
+- 함수 안에서만 import 하는 새 패키지·DLL 이 생기면 `packaging/cbm.spec` 의 collect 목록에 추가하고 설치판에서 확인.
 - 테스트는 네트워크·API 키·Windows 없이 돌아가야 함 (StubProvider, FakeProvider, FakeIMAP, httpx.MockTransport 사용). 실제 메시지·메일 내용을 테스트에 넣지 않음 (가상 예시만).
 - Windows 전용 코드(ctypes.windll, uiautomation, pywebview, winsdk)는 함수 안에서 import 해 리눅스에서도 import 오류가 나지 않게.
 - `.bat` 파일은 CRLF + UTF-8 + `chcp 65001`. zip 으로 묶을 때 한글 파일 이름은 UTF-8 플래그로.
@@ -112,7 +116,7 @@ python main.py gui                          :: 설정·테스트 화면
    - tkinter 설정 화면 모양
 2. **망분리 확인**: 학교 업무 PC 에서 외부 AI·네이버 IMAP 접속 가능한지. 안 되면 구조 재검토 필요.
 3. **정보보안 확인**: 학교/교육청 담당자에게 외부 AI 전송 가능 여부 (README 에 안내해 둠).
-4. **설치 파일(.exe)**: PyInstaller `--noconsole --onedir` + Inno Setup. 자동 실행은 현재 `startup` 명령(시작 프로그램 폴더 .vbs).
+4. **설치 파일(.exe)**: v0.6.1 에서 만듦 (`packaging\build.bat`). 2026-11-08 이 PC 에서 PyInstaller 빌드·cbm.exe 명령·캘린더/설정 창 실행 확인. 남은 것: 다른 PC 에서 설치·제거, 실제 ChatGPT 로그인을 설치판으로, 코드 서명 없음(SmartScreen 경고 → '추가 정보 → 실행').
 5. **캘린더 동기화 확장**: 확정 일정 → Google Calendar API 또는 Microsoft Graph. 등록 전 사용자 확인, 중복 방지 칸 추가.
 6. 다듬기: 오늘 브리핑 자동 알림(정해진 시각), 할 일 목록, 주간 통계, Lively Wallpaper 로 진짜 배경 표시(HTTP 어댑터), Claude 경로의 사고 수준.
 7. Project Monday 원본에도 '보안' 오판 버그 수정을 알려 주기 (사용자 선택).

@@ -105,3 +105,53 @@ def test_clamp_drops_offscreen_geometry():
     areas = [(0, 0, 1920, 1040)]
     assert clamp_to_areas((2500, 100, 1200, 800), areas) is None         # 두 번째 모니터를 뺀 경우
     assert clamp_to_areas((600, 100, 1200, 800), areas) == (600, 100, 1200, 800)
+
+
+class _FakeRunner:
+    started = 0
+
+    def __init__(self, settings, on_change=None):
+        self.on_change = on_change
+        self.stopped = False
+
+    def start(self):
+        _FakeRunner.started += 1
+        return self
+
+    def stop(self):
+        self.stopped = True
+
+
+def test_restart_watch_without_watch_mode(tmp_path, monkeypatch):
+    import app.runner
+    monkeypatch.setattr(app.runner, "Runner", _FakeRunner)
+    api = _api(tmp_path)
+    assert api.restart_watch() == {"ok": False}
+
+
+def test_restart_watch_recovers_after_failed_start(tmp_path, monkeypatch):
+    """처음 감시 시작이 실패(_runner 없음)해도 [감시 다시 시작]으로 켜져야 함 (예: 설치 직후 로그인 전)"""
+    import app.runner
+    monkeypatch.setattr(app.runner, "Runner", _FakeRunner)
+    api = _api(tmp_path)
+    marker = object()
+    api._watch_on_change = marker
+    assert api.restart_watch() == {"ok": True}
+    first = api._runner
+    assert isinstance(first, _FakeRunner) and first.on_change is marker
+    assert api.restart_watch() == {"ok": True}
+    assert first.stopped and api._runner is not first and api._runner.on_change is marker
+
+
+def test_restart_watch_reports_start_error(tmp_path, monkeypatch):
+    import app.runner
+
+    class Boom(_FakeRunner):
+        def start(self):
+            raise RuntimeError("로그인 필요")
+
+    monkeypatch.setattr(app.runner, "Runner", Boom)
+    api = _api(tmp_path)
+    api._watch_on_change = lambda: None
+    r = api.restart_watch()
+    assert r["ok"] is False and "로그인" in r["error"] and api._runner is None

@@ -11,15 +11,14 @@ import queue
 import threading
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Callable
 
 from .config import Settings
 from .notifier import notify
 from .notify_policy import NotifyPrefs, in_quiet
+from .paths import DATA_DIR
 
 log = logging.getLogger(__name__)
-ROOT = Path(__file__).resolve().parent.parent
 
 
 def make_messenger_collector(s: Settings, on_unreadable=None):
@@ -29,7 +28,7 @@ def make_messenger_collector(s: Settings, on_unreadable=None):
         return WindowsNotificationCollector(s.messenger_app_keywords)
     from .collectors.eztalk_collector import EztalkCollector
     return EztalkCollector(process=s.messenger_process, quiet_sec=s.messenger_quiet_sec,
-                           on_unreadable=on_unreadable, unknown_log=str(ROOT / "data" / "messenger_unknown.log"))
+                           on_unreadable=on_unreadable, unknown_log=str(DATA_DIR / "messenger_unknown.log"))
 
 
 def make_mail_collector(s: Settings, storage, on_error=None):

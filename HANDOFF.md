@@ -119,8 +119,10 @@
 - 설정 화면 GUI (API 키, 제공자, 필터, 가릴 이름) → `.env` 저장
 - 정해진 시각(예: 08:30, 15:30) 자동 브리핑 알림
 
-### 2-3. 설치 파일(.exe) 만들기
-- `PyInstaller --noconsole --onedir` 로 빌드 → Inno Setup 으로 설치 파일
+### 2-3. 설치 파일(.exe) 만들기 — v0.6.1 에서 1차 완료
+- `packaging\build.bat`: PyInstaller(`cbm.spec`, onedir, CBMessengerAI.exe 창 없음 + cbm.exe 콘솔) → Inno Setup(`installer.iss`, 사용자 권한 설치)
+- 설치판의 사용자 자료는 `app/paths.py` 가 `%LOCALAPPDATA%\cb-messenger-ai\` 로 보냄 (첫 실행 때 .env.example 복사)
+- 남은 것: 코드 서명(SmartScreen 경고), 자동 업데이트, 다른 PC 설치 확인
 - API 키는 `.env` 대신 Windows 자격 증명 관리자(`keyring`)에 저장 권장
 
 ### 2-4. 캘린더 자동 등록 (확장)

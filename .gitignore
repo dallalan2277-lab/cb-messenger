@@ -6,3 +6,7 @@ __pycache__/
 .pytest_cache/
 dist/
 build/
+packaging/dist/
+packaging/build/
+packaging/Output/
+packaging/app.ico
