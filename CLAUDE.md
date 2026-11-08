@@ -80,6 +80,15 @@ tests/                      pytest. 네트워크·API 키·Windows 없이 돌아
 - `.bat` 파일은 CRLF + UTF-8 + `chcp 65001`. zip 으로 묶을 때 한글 파일 이름은 UTF-8 플래그로.
 - 공휴일(`holidays_kr.json`)은 기억으로 넣지 말고 월력요항 등 출처를 확인해서 추가.
 
+## Codex(GPT) 위임 기준 (이 프로젝트)
+공통 규칙(Claude 총괄, 범위 분명한 구현·테스트·버그 조사는 `codex:codex-rescue` 위임, 결과 직접 검토 후 통합, 큰 변경 후 `/codex:review`)은
+사용자 설정 `~/.claude/CLAUDE.md` 에 있음. 그 파일은 GitHub 로 안 옮겨지므로, 다른 PC 에서는 아래만으로도 판단할 수 있게 적어 둠.
+- **gpt-6.1-sol** (견고성 중요): `llm/chatgpt_auth.py`·`chatgpt_plan_provider.py`(로그인·토큰), `collectors/naver_mail.py`·`mail_content.py`(IMAP·디코딩), `redact.py`(개인정보 가림), `secrets_store.py`, `analyzer.py` 의 근거 확인·글 속 지시 무시 부분.
+- **gpt-6.1-terra** (기본): `desktop_calendar/calendar.html`·`api.py` 화면 기능, 통계·할 일 목록, `ics_export.py`, 테스트 추가. 결과의 엣지 케이스(빈 값, 날짜 경계, 한글 경로·파일 이름) 따로 확인.
+- **위임하지 않음 (Claude 가 직접 + 사용자 PC 확인)**: `eztalk_collector.py`·`eztalk_parse.py`(실제 메신저 창 구조는 사용자 PC 에서만 확인 가능), `desktop_calendar/widget.py`(Win32 창 동작), tkinter 화면 모양, 설계 규칙·분석 스키마 변경 결정.
+- **Codex 에 넘기지 않을 것**: 실제 쪽지·메일 원문, `.env`, `data/`(DB·쪽지기록), `messenger-check --raw` 출력, 토큰·비밀번호. 넘기면 OpenAI 서버로 전송됨 → 재현이 필요하면 가상 예시로 바꿔서.
+- 위임 지시에는 이 문서의 "지켜야 할 규칙"(읽기 전용 수집, 테스트는 네트워크·키 없이, Python 3.10 호환, Windows 전용 import 는 함수 안) 을 함께 적을 것.
+
 ## 자주 쓰는 명령
 ```bat
 python -m pytest -q                         :: 전체 테스트
