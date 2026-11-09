@@ -89,9 +89,12 @@ app/paths.py                실행 위치·자료 위치. 개발: 저장소 폴�
 ## Codex(GPT) 위임 기준 (이 프로젝트)
 공통 규칙(Claude 총괄, 범위 분명한 구현·테스트·버그 조사는 `codex:codex-rescue` 위임, 결과 직접 검토 후 통합, 큰 변경 후 `/codex:review`)은
 사용자 설정 `~/.claude/CLAUDE.md` 에 있음. 그 파일은 GitHub 로 안 옮겨지므로, 다른 PC 에서는 아래만으로도 판단할 수 있게 적어 둠.
-- **gpt-6.1-sol** (견고성 중요): `llm/chatgpt_auth.py`·`chatgpt_plan_provider.py`(로그인·토큰), `collectors/naver_mail.py`·`mail_content.py`(IMAP·디코딩), `redact.py`(개인정보 가림), `secrets_store.py`, `analyzer.py` 의 근거 확인·글 속 지시 무시 부분.
-- **gpt-6.1-terra** (기본): `desktop_calendar/calendar.html`·`api.py` 화면 기능, 통계·할 일 목록, `ics_export.py`, 테스트 추가. 결과의 엣지 케이스(빈 값, 날짜 경계, 한글 경로·파일 이름) 따로 확인.
-- 학교 PC 계정은 Codex 에서 `gpt-6.1-*` 를 못 씀 (2026-11-09) → 그 PC 에서는 sol 대신 `gpt-6-astra`, terra 대신 `gpt-5.6-terra`.
+새 PC 에서는 `docs/다른PC_설정.md` 를 보고 전역 CLAUDE.md 와 Codex 기본값(`~/.codex/config.toml`: 모델·ultra)을 맞출 것. 그 PC 의 config 에 ultra 가 없으면 Codex 가 low 로 돎 → 사용자에게 알릴 것.
+- **gpt-5.6-sol — 상시 검증 (기본)**: 코드 리뷰, 테스트 작성·실행, 회귀 버그 탐지, 사양이 분명한 일반 구현 (캘린더 화면 `calendar.html`·`api.py`, `ics_export.py`, 테스트 추가 등). `--model gpt-5.6-sol`.
+- **gpt-6.1-sol — 어려운 문제만 재검증**: 5.6 Sol 로 안 풀리는 오류, 복잡한 원인 분석, 중요 변경 검토. 이 프로젝트에서 중요 변경 = 로그인·토큰(`llm/chatgpt_auth.py`·`chatgpt_plan_provider.py`), IMAP·디코딩(`collectors/naver_mail.py`·`mail_content.py`), `redact.py`, `secrets_store.py`, `analyzer.py` 의 근거 확인·글 속 지시 무시, `storage.py` 마이그레이션. `--model gpt-6.1-sol`. `/codex:review` 는 모델을 못 골라 config 기본값(6.1 Sol)으로 돌므로 중요 변경 검토에 씀.
+- terra·luna 는 쓰지 않음 (사용자가 직접 지정할 때만).
+- 사고 수준: `--effort` 를 붙이지 않음. Codex 설정(`~/.codex/config.toml`) 기본값이 `ultra` 이고, 플러그인은 `--effort` 로 xhigh 까지만 받아서 붙이면 오히려 낮아짐.
+- 학교 PC 계정은 Codex 에서 `gpt-6.1-*` 를 못 씀 (2026-11-09) → 그 PC 에서는 6.1 Sol 대신 `gpt-6-astra`(ultra 지원). 5.6 Sol 은 그대로.
 - **위임하지 않음 (Claude 가 직접 + 사용자 PC 확인)**: `eztalk_collector.py`·`eztalk_parse.py`(실제 메신저 창 구조는 사용자 PC 에서만 확인 가능), `desktop_calendar/widget.py`(Win32 창 동작), tkinter 화면 모양, 설계 규칙·분석 스키마 변경 결정.
 - **Codex 에 넘기지 않을 것**: 실제 쪽지·메일 원문, `.env`, `data/`(DB·쪽지기록), `messenger-check --raw` 출력, 토큰·비밀번호. 넘기면 OpenAI 서버로 전송됨 → 재현이 필요하면 가상 예시로 바꿔서.
 - 위임 지시에는 이 문서의 "지켜야 할 규칙"(읽기 전용 수집, 테스트는 네트워크·키 없이, Python 3.10 호환, Windows 전용 import 는 함수 안) 을 함께 적을 것.
