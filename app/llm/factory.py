@@ -55,13 +55,29 @@ def _build(settings: Settings, name: str, model: str) -> LLMProvider:
 
 
 class FallbackProvider(LLMProvider):
-    """주 모델이 실패(한도 초과·로그인 만료·네트워크 등)하면 대체 모델로 다시 시도."""
+    """주 모델이 실패(한도 초과·로그인 만료·네트워크 등)하면 대체 모델로 다시 시도.
 
-    def __init__(self, primary: LLMProvider, fallback: LLMProvider):
+    대체 모델을 처음에 준비하지 못했으면(예: Claude Code 미설치) fallback=None 과 build_fallback 을 받아,
+    주 모델이 실패할 때마다 다시 준비해 봄 → 나중에 설치해도 프로그램을 다시 켤 필요 없음.
+    준비하지 못한 이유는 fallback_error 에 남겨 화면에 경고로 보여 줌."""
+
+    def __init__(self, primary: LLMProvider, fallback: LLMProvider | None,
+                 build_fallback=None, fallback_error: str = ""):
         super().__init__(primary.model)
         self.primary, self.fallback = primary, fallback
+        self._build_fallback = build_fallback
+        self.fallback_error = "" if fallback else fallback_error
         self.name = primary.name
         self.used = primary
+
+    def _ensure_fallback(self) -> LLMProvider | None:
+        if self.fallback is None and self._build_fallback is not None:
+            try:
+                self.fallback = self._build_fallback()
+                self.fallback_error = ""
+            except LLMError as e:
+                self.fallback_error = str(e)
+        return self.fallback
 
     def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
         return self._call("complete", system, user, max_tokens)
@@ -74,9 +90,13 @@ class FallbackProvider(LLMProvider):
             out = getattr(self.primary, method)(*args, **kw)
             self.used = self.primary
         except Exception as e:  # noqa: BLE001
-            log.warning("주 모델(%s) 실패 → 대체 모델(%s) 사용: %s", self.primary.label, self.fallback.label, e)
-            out = getattr(self.fallback, method)(*args, **kw)
-            self.used = self.fallback
+            fb = self._ensure_fallback()
+            if fb is None:
+                log.warning("주 모델(%s) 실패, 대체 모델을 쓸 수 없음: %s", self.primary.label, self.fallback_error)
+                raise LLMError(f"{e} (대체 모델도 쓸 수 없음: {self.fallback_error})") from e
+            log.warning("주 모델(%s) 실패 → 대체 모델(%s) 사용: %s", self.primary.label, fb.label, e)
+            out = getattr(fb, method)(*args, **kw)
+            self.used = fb
         # 실제로 응답한 모델 기준으로 기록
         self.name, self.model, self.last_usage = self.used.name, self.used.model, self.used.last_usage
         return out
@@ -85,12 +105,16 @@ class FallbackProvider(LLMProvider):
 def create_provider(settings: Settings, spec: str | None = None, *, with_fallback: bool = True) -> LLMProvider:
     """spec 예: 'chatgpt_plan:gpt-5.6-luna'. 비우면 분석 모델 슬롯 사용."""
     name, model = parse_spec(spec or settings.analyze_model)
-    fb = None
+    fb, fb_error, build_fb = None, "", None
     if with_fallback and settings.fallback_model and parse_spec(settings.fallback_model) != (name, model):
+        def build_fb() -> LLMProvider:
+            p = _build(settings, *parse_spec(settings.fallback_model))
+            p.reasoning = settings.reasoning
+            return p
         try:
-            fb = _build(settings, *parse_spec(settings.fallback_model))
-            fb.reasoning = settings.reasoning
+            fb = build_fb()
         except LLMError as e:
+            fb_error = str(e)
             log.warning("대체 모델을 준비하지 못했습니다 (%s): %s", settings.fallback_model, e)
     try:
         primary = _build(settings, name, model)
@@ -100,4 +124,6 @@ def create_provider(settings: Settings, spec: str | None = None, *, with_fallbac
         log.warning("주 모델을 준비하지 못해 대체 모델만 사용합니다: %s", e)  # 예: ChatGPT 로그인 만료
         return fb
     primary.reasoning = settings.reasoning
-    return FallbackProvider(primary, fb) if fb else primary
+    if build_fb is None:
+        return primary
+    return FallbackProvider(primary, fb, build_fallback=build_fb, fallback_error=fb_error)

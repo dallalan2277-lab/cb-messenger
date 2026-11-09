@@ -86,3 +86,62 @@ def test_save_env_keeps_other_lines(tmp_path):
     assert "# 주석" in txt and "REDACT_NAMES=김민수" in txt
     assert "AI_ANALYZE=chatgpt_plan:x" in txt and "AI_ANALYZE=old" not in txt
     assert "AI_FALLBACK=claude_cli" in txt
+
+
+# ---------- 대체 모델을 처음에 준비하지 못했을 때 (예: Claude Code 미설치) ----------
+def test_missing_fallback_is_reported_and_retried(tmp_path, monkeypatch):
+    import app.llm.factory as factory
+    real_build = factory._build
+    ready = {"ok": False}
+
+    def build(settings, name, model):
+        if name == "claude_cli" and not ready["ok"]:
+            raise LLMError("Claude Code 가 설치돼 있지 않습니다")
+        if name == "claude_cli":
+            return Ok("opus")
+        if name == "boom":
+            return Boom("m1")
+        return real_build(settings, name, model)
+
+    monkeypatch.setattr(factory, "_build", build)
+    s = _settings(tmp_path, fallback_model="claude_cli:opus")
+    p = create_provider(s, "boom")
+    assert isinstance(p, FallbackProvider) and "설치" in p.fallback_error
+
+    # 주 모델 실패 + 대체 모델 없음 → 두 이유를 모두 알려 줌
+    try:
+        p.complete_json("s", "u")
+        raise AssertionError("실패해야 함")
+    except LLMError as e:
+        assert "usage_limit" in str(e) and "대체 모델도 쓸 수 없음" in str(e)
+
+    # 나중에 설치되면 다시 켜지 않아도 대체 모델로 넘어감
+    ready["ok"] = True
+    assert p.complete_json("s", "u")["importance"] == "중요"
+    assert p.fallback_error == "" and (p.name, p.model) == ("ok", "opus")
+
+
+def test_runner_shows_fallback_warning(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from app.runner import Runner
+    prov = FallbackProvider(Ok("m"), None, build_fallback=lambda: (_ for _ in ()).throw(LLMError("미설치")),
+                            fallback_error="미설치")
+    pipe = SimpleNamespace(analyzer=SimpleNamespace(provider=prov), storage=None, archiver=None)
+    s = _settings(tmp_path, fallback_model="claude_cli:opus")
+    r = Runner(s, pipeline=pipe)
+    assert "claude_cli:opus" in r.status["ai_fallback_error"] and "미설치" in r.status["ai_fallback_error"]
+    prov.fallback, prov.fallback_error = Ok("opus"), ""
+    r._refresh_fallback_status()
+    assert r.status["ai_fallback_error"] == ""
+
+
+def test_find_claude_checks_official_install_folder(tmp_path, monkeypatch):
+    import app.llm.claude_cli_provider as cc
+    monkeypatch.setattr(cc.shutil, "which", lambda name: None)
+    monkeypatch.setattr(cc.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.delenv("APPDATA", raising=False)
+    assert cc.find_claude() is None
+    exe = tmp_path / ".local" / "bin" / "claude.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"")
+    assert cc.find_claude() == str(exe)

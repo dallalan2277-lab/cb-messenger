@@ -59,8 +59,21 @@ class Runner:
         self.prefs = NotifyPrefs.from_settings(settings)
         self.status = {"messenger": "꺼짐", "messenger_error": "", "mail": "꺼짐", "mail_error": "",
                        "mail_last_check": "", "ai_queue": 0, "ai_last_error": "", "processed": 0,
-                       "ai_model": settings.analyze_model}
+                       "ai_model": settings.analyze_model, "ai_fallback_error": ""}
         self._warned: set[str] = set()
+        self._refresh_fallback_status()
+
+    def _refresh_fallback_status(self):
+        """대체 모델(예: Claude)을 쓸 수 없으면 화면에 경고. 나중에 준비되면 저절로 사라짐."""
+        p = getattr(getattr(self.pipe, "analyzer", None), "provider", None)
+        err = getattr(p, "fallback_error", "") or ""
+        if err and time.time() - getattr(self, "_fb_retry_at", 0) > 60:   # 1분마다 다시 준비해 봄 (설치 직후 반영)
+            self._fb_retry_at = time.time()
+            ensure = getattr(p, "_ensure_fallback", None)
+            if ensure:
+                ensure()
+                err = p.fallback_error
+        self.status["ai_fallback_error"] = f"대체 모델({self.s.fallback_model})을 쓸 수 없음: {err}"[:300] if err else ""
 
     # ---------- 알림 (오류·보안 쪽지) — 알림 규칙의 켜기/방해금지를 따름 ----------
     def _system_notice(self, title: str, body: str, once_key: str | None = None):
@@ -147,6 +160,7 @@ class Runner:
             except queue.Empty:
                 m = None
             self.status["ai_queue"] = self.q.qsize()
+            self._refresh_fallback_status()
             if m is not None:
                 try:
                     a = self.pipe.handle(m)
@@ -154,7 +168,9 @@ class Runner:
                     if a is None and m.id:
                         row = self.pipe.storage.get_message(m.id) or {}
                         if not row.get("summary"):
-                            self.status["ai_last_error"] = "AI 분석 실패 (나중에 다시 시도)"
+                            why = getattr(self.pipe, "last_ai_error", "")
+                            self.status["ai_last_error"] = (f"AI 분석 실패 (나중에 다시 시도): {why}" if why
+                                                            else "AI 분석 실패 (나중에 다시 시도)")[:300]
                     elif a is not None:
                         self.status["ai_last_error"] = ""
                     self.on_change()

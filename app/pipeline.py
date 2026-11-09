@@ -23,6 +23,7 @@ class Pipeline:
         self.s = settings
         self.storage = storage
         self.analyzer = analyzer
+        self.last_ai_error = ""
         self.notify_prefs = None if notify_levels == () else NotifyPrefs.from_settings(settings)
         self.notified: list[tuple] = []   # 최근 알림 (확인용)
         self.archiver = archiver   # extensions.archive.Archiver (없으면 보관 안 함)
@@ -71,6 +72,7 @@ class Pipeline:
             a = self.analyzer.analyze(m, text_for_ai=self.text_for_ai(m))
         except Exception as e:  # 네트워크 오류 등 → 나중에 재분석 가능 (unanalyzed_messages)
             log.error("AI 분석 실패 (message_id=%s): %s", m.id, e)
+            self.last_ai_error = str(e)
             return None
         self.storage.add_analysis(a)
         if self._archive_on(m):

@@ -16,7 +16,25 @@ import shutil
 import subprocess
 import tempfile
 
+from pathlib import Path
+
 from .base import LLMProvider, LLMError
+
+
+def find_claude() -> str | None:
+    """claude 명령 위치. PATH 에 없으면 공식 설치 위치도 찾아봄
+    (설치 직후엔 이미 켜져 있던 프로그램의 PATH 에 새 폴더가 아직 안 들어 있음)."""
+    exe = shutil.which("claude")
+    if exe:
+        return exe
+    home = Path.home()
+    appdata = os.environ.get("APPDATA", "")
+    for p in (home / ".local" / "bin" / "claude.exe",          # 공식 설치 (install.ps1)
+              home / ".local" / "bin" / "claude",
+              Path(appdata) / "npm" / "claude.cmd" if appdata else None):  # npm 설치
+        if p is not None and p.is_file():
+            return str(p)
+    return None
 
 
 class ClaudeCLIProvider(LLMProvider):
@@ -26,9 +44,9 @@ class ClaudeCLIProvider(LLMProvider):
         super().__init__(model or "(claude code 기본)")
         self._model_arg = model
         self.timeout = timeout_sec
-        self.exe = shutil.which("claude")
+        self.exe = find_claude()
         if not self.exe:
-            raise LLMError("Claude Code(claude 명령)를 찾을 수 없습니다. README 의 'Claude 구독으로 쓰기'를 참고해 설치하세요.")
+            raise LLMError("Claude Code 가 설치돼 있지 않습니다 (README 'Claude 구독으로 쓰기' 참고).")
         self._workdir = tempfile.mkdtemp(prefix="cbmsg-claude-")  # 빈 폴더에서 실행 (다른 파일 접근 방지)
 
     def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
@@ -41,7 +59,9 @@ class ClaudeCLIProvider(LLMProvider):
         env.pop("ANTHROPIC_API_KEY", None)
         try:
             p = subprocess.run(cmd, input=user, capture_output=True, text=True, encoding="utf-8",
-                               timeout=self.timeout, cwd=self._workdir, env=env)
+                               timeout=self.timeout, cwd=self._workdir, env=env,
+                               # 창 없는 캘린더에서 부를 때 검은 창이 번쩍이지 않게
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except subprocess.TimeoutExpired as e:
             raise LLMError("Claude Code 응답 시간이 초과되었습니다.") from e
         if p.returncode != 0 and not p.stdout.strip():
@@ -56,5 +76,8 @@ class ClaudeCLIProvider(LLMProvider):
                            + int(u.get("cache_creation_input_tokens", 0) or 0),
                            "output_tokens": int(u.get("output_tokens", 0) or 0)}
         if out.get("is_error"):
-            raise LLMError(f"Claude Code 오류: {str(out.get('result', ''))[:300]}")
+            msg = str(out.get("result", ""))
+            if "not logged in" in msg.lower() or "/login" in msg:
+                raise LLMError("Claude Code 에 로그인돼 있지 않습니다. 명령 프롬프트에서 claude 를 한 번 실행해 로그인하세요.")
+            raise LLMError(f"Claude Code 오류: {msg[:300]}")
         return str(out.get("result", ""))

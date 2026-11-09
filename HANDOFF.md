@@ -140,6 +140,11 @@
 - 할 일 완료 체크 (todos 테이블)
 - 여러 메시지를 모아 한 번에 분석해 API 비용 절감 (batch)
 
+### 2-6. 대체 모델(Claude) 점검 — 2026-11-09
+- 학교 PC: GPT 한도 도달 시 Claude 로 안 넘어갔음. 원인: `claude` 명령 없음(데스크톱 앱 안의 claude.exe 는 로그인 안 됨·버전별 경로라 쓰지 않음). 대체 모델 준비 실패가 로그 경고로만 남고 화면엔 안 보였음.
+- 수정: FallbackProvider 가 대체 모델을 나중에 다시 준비(설치 후 재시작 불필요), 캘린더 상태줄에 `ai_fallback_error` 경고, 분석 실패 이유 표시, `find_claude()` 가 `~/.local/bin/claude.exe`·npm 위치도 찾음, claude 실행 시 창 숨김(CREATE_NO_WINDOW), '로그인 안 됨' 안내 문구.
+- 남은 것: 사용자가 Claude Code 설치(`irm https://claude.ai/install.ps1 | iex`)·로그인 후 실제로 넘어가는지 확인.
+
 ## 3. 지켜야 할 설계 규칙
 
 0. **모델 선택은 항상 `create_provider(settings, spec)` / `build_pipeline(settings)` 경유**. spec 형식 `제공자[:모델]`.

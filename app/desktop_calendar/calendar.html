@@ -519,7 +519,7 @@ async function renderFeed() {
       <div class="sum">${esc(r.summary)}${r.action_items && r.action_items.length ? " · 할 일: " + esc(r.action_items[0]) : ""}</div></div>`).join("")
     : `<div class="empty">${feedF === "all" ? "최근 30일 동안 받은 소식이 없습니다." : "처리할 소식이 없습니다. 👍"}</div>`;
   $("feedList").querySelectorAll(".fi").forEach((el) => el.addEventListener("click", () => openItem(Number(el.dataset.mid))));
-  const warn = [st.messenger_error, st.mail_error, st.ai_last_error].filter(Boolean);
+  const warn = [st.messenger_error, st.mail_error, st.ai_last_error, st.ai_fallback_error].filter(Boolean);
   $("statusBar").innerHTML = `💬 쪽지: ${esc(st.messenger || "꺼짐")}<br>✉ 메일: ${esc(st.mail || "꺼짐")}${st.mail_last_check ? ` · 마지막 ${esc(st.mail_last_check)}` : ""}
     ${st.mail && st.mail !== "꺼짐" ? ' <a href="#" id="mailNow" style="color:var(--accent)">지금 확인</a>' : ""}
     ${warn.length ? `<div class="warn">⚠ ${warn.map(esc).join("<br>⚠ ")}</div>` : ""}`;
