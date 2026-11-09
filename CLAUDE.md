@@ -89,7 +89,9 @@ app/paths.py                실행 위치·자료 위치. 개발: 저장소 폴�
 ## Codex(GPT) 위임 기준 (이 프로젝트)
 공통 규칙(Claude 총괄, 범위 분명한 구현·테스트·버그 조사는 `codex:codex-rescue` 위임, 결과 직접 검토 후 통합, 큰 변경 후 `/codex:review`)은
 사용자 설정 `~/.claude/CLAUDE.md` 에 있음. 그 파일은 GitHub 로 안 옮겨지므로, 다른 PC 에서는 아래만으로도 판단할 수 있게 적어 둠.
-새 PC 에서는 `docs/다른PC_설정.md` 를 보고 전역 CLAUDE.md 와 Codex 기본값(`~/.codex/config.toml`: 모델·ultra)을 맞출 것. 그 PC 의 config 에 ultra 가 없으면 Codex 가 low 로 돎 → 사용자에게 알릴 것.
+전역 규칙의 원본은 저장소의 `pc-settings/claude-global.md`. `pc-settings/sync.ps1`(= `9_PC설정맞추기.bat`)이 그것을 `~/.claude/CLAUDE.md` 의 표시 구역에 넣고, `~/.codex/config.toml` 맨 위를 `gpt-6.1-sol`(못 쓰는 계정은 `gpt-6-astra`) + `ultra` 로 맞춤. 자세한 것은 `docs/다른PC_설정.md`.
+- 규칙을 바꿀 때는 `pc-settings/claude-global.md` 를 고치고 sync 를 실행한 뒤 커밋 (`~/.claude/CLAUDE.md` 를 직접 고치면 다음 동기화 때 덮어써짐).
+- 새 PC 에서 config 에 ultra 가 없으면 Codex 가 low 로 돎 → `9_PC설정맞추기.bat` 실행을 안내할 것.
 - **gpt-5.6-sol — 상시 검증 (기본)**: 코드 리뷰, 테스트 작성·실행, 회귀 버그 탐지, 사양이 분명한 일반 구현 (캘린더 화면 `calendar.html`·`api.py`, `ics_export.py`, 테스트 추가 등). `--model gpt-5.6-sol`.
 - **gpt-6.1-sol — 어려운 문제만 재검증**: 5.6 Sol 로 안 풀리는 오류, 복잡한 원인 분석, 중요 변경 검토. 이 프로젝트에서 중요 변경 = 로그인·토큰(`llm/chatgpt_auth.py`·`chatgpt_plan_provider.py`), IMAP·디코딩(`collectors/naver_mail.py`·`mail_content.py`), `redact.py`, `secrets_store.py`, `analyzer.py` 의 근거 확인·글 속 지시 무시, `storage.py` 마이그레이션. `--model gpt-6.1-sol`. `/codex:review` 는 모델을 못 골라 config 기본값(6.1 Sol)으로 돌므로 중요 변경 검토에 씀.
 - terra·luna 는 쓰지 않음 (사용자가 직접 지정할 때만).

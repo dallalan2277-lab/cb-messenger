@@ -3,3 +3,4 @@
 # .bat 은 Windows 명령 프롬프트용 → 반드시 CRLF
 *.bat text eol=crlf
 *.cmd text eol=crlf
+*.ps1 text eol=crlf
