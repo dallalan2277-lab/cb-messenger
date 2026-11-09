@@ -61,6 +61,21 @@ Filename: "{app}\{#MyCliExe}"; Parameters: "startup"; Flags: runhidden; Tasks: a
 Filename: "{cmd}"; Parameters: "/c """"{app}\{#MyCliExe}"" chatgpt-login & pause"""; Description: "지금 ChatGPT 로그인하기 (처음 한 번)"; Flags: postinstall waituntilterminated skipifsilent
 ; ↑ 로그인이 끝난 뒤에 캘린더가 켜지도록 nowait 를 쓰지 않음 (먼저 켜지면 감시가 로그인 오류로 시작 못 함)
 Filename: "{app}\{#MyAppExe}"; Description: "충북메신저 AI 캘린더 실행"; Flags: postinstall nowait skipifsilent
+; 캘린더의 [업데이트] 로 조용히(/SILENT) 설치한 경우: 끝나면 원래 모드 그대로 캘린더를 다시 켬
+;   /RELAUNCHMODE=nowatch → 캘린더만, 없으면 → 캘린더 + 쪽지·메일 감시
+Filename: "{app}\{#MyAppExe}"; Parameters: "calendar --watch"; Flags: nowait; Check: RelaunchWatch
+Filename: "{app}\{#MyAppExe}"; Parameters: "calendar"; Flags: nowait; Check: RelaunchNoWatch
+
+[Code]
+function RelaunchWatch(): Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:RELAUNCHMODE|watch}') <> 'nowatch');
+end;
+
+function RelaunchNoWatch(): Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:RELAUNCHMODE|watch}') = 'nowatch');
+end;
 
 [UninstallRun]
 Filename: "{app}\{#MyCliExe}"; Parameters: "startup --off"; Flags: runhidden; RunOnceId: "StartupOff"

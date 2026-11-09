@@ -67,6 +67,11 @@
   body:not(.light) .btn.primary { color: #0b1a33; }
   .btn.ghost { background: transparent; border-color: transparent; color: var(--dim); }
   .btn.ghost:hover { color: var(--text); border-color: var(--line); }
+  #menuBtn { position: relative; }
+  #menuBtn.update-available::after {
+    content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--sugg); box-shadow: 0 0 0 1px var(--bg);
+  }
   .spacer { flex: 1; }
   .badge {
     display: none; align-items: center; gap: 6px; color: var(--sugg); border: 1px dashed var(--sugg);
@@ -179,6 +184,7 @@
   .orig { background: var(--panel); border-radius: 8px; padding: 10px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; color: var(--dim); max-height: 160px; overflow: auto; margin-bottom: 10px; }
   .orig b { color: var(--text); }
   .actions { display: flex; gap: 8px; margin-top: 6px; }
+  .actions.update-actions { flex-wrap: wrap; }
   .actions .btn.danger { color: var(--danger); }
   .actions .btn.okc { color: var(--ok); border-color: var(--ok); }
   .err { color: var(--danger); font-size: 12px; min-height: 16px; }
@@ -278,6 +284,7 @@
     <button class="mi" id="openSettings">설정 열기 (메일 연결 · 알림 · 학교 정보 · 모델)</button>
     <button class="mi" id="restartWatch">바꾼 설정으로 감시 다시 시작</button>
     <div class="sec">기타</div>
+    <button class="mi" id="updateBtn">업데이트 확인 (현재 v…)</button>
     <button class="mi" id="exportIcs">확정 일정 .ics 내보내기</button>
     <button class="mi" id="hideBtn">캘린더 숨기기 (트레이 아이콘에서 다시 열기)</button>
   </div>
@@ -316,6 +323,7 @@ let api = null;
 let prefs = {};
 let cur = { y: 0, m: 0 };
 let editing = null;
+let updateInfo = null;
 
 function MockAPI() {
   const t = new Date(); const pad = (n) => String(n).padStart(2, "0");
@@ -365,6 +373,8 @@ function MockAPI() {
     dismiss: async (i) => { evs.find((e) => e.id === i).status = "dismissed"; return { ok: true }; },
     confirm_all: async () => { let n = 0; evs.forEach((e) => { if (e.status === "suggested") { e.status = "confirmed"; n++; } }); return { ok: true, count: n }; },
     export_ics: async () => ({ ok: true, path: "(미리보기)", count: evs.length }),
+    update_check: async () => ({ current: "0.7.0", available: true, latest: "0.7.1", notes: "- 업데이트 기능 추가\n- 버그 수정", html_url: "", error: "", disabled: false }),
+    update_install: async () => ({ ok: false, error: "미리보기에서는 설치하지 않습니다." }),
     win: async () => ({ ok: false }),
     feed: async (f, src) => feedItems.filter((x) => (f === "all" || !x.done) && (f !== "school" || x.school_relevance === "학교 업무") && (!src || x.source === src)),
     item: async (i) => { const x = feedItems.find((y) => y.id === i); return { ...x, body: x.source === "mail" ? `[제목] ${x.subject}\n\n선생님들께,\n${x.summary}\n자세한 내용은 첨부 양식을 확인해 주세요.` : x.summary, reason: "제출 기한이 이번 주이고 담임 업무와 관련됨", evidence: x.action_items[0] ? "금요일까지 제출 바랍니다" : "", school_reason: "학년 업무 관련 요청", school_evidence: "", verified: true, events: [] }; },
@@ -389,6 +399,63 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const fmtDate = (s) => { const [y, m, d] = s.split("-").map(Number); const w = "일월화수목금토"[new Date(y, m - 1, d).getDay()]; return `${m}/${d}(${w})`; };
 
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("on"), 2200); }
+
+const versionText = (version) => `v${String(version || "?").replace(/^v/i, "")}`;
+function applyUpdateStatus(result) {
+  const r = result || {};
+  updateInfo = r.available ? r : null;
+  $("menuBtn").classList.toggle("update-available", !!r.available);
+  $("updateBtn").textContent = r.available
+    ? `⬆ 새 버전 ${versionText(r.latest)} 설치하기`
+    : `업데이트 확인 (현재 ${versionText(r.current)})`;
+}
+async function checkForUpdateSilently() {
+  if (!api || typeof api.update_check !== "function") {
+    $("updateBtn").style.display = "none";
+    return;
+  }
+  try { applyUpdateStatus(await api.update_check(false)); } catch (ex) { /* 자동 확인은 조용히 넘김 */ }
+}
+function openUpdateDialog(info) {
+  const version = versionText(info.latest);
+  const notes = info.notes || "업데이트 내용이 없습니다.";
+  $("dialog2").innerHTML = `<h2>새 버전 ${esc(version)} 설치</h2>
+    <div class="orig">${esc(notes)}</div>
+    <div class="quote">설치하는 동안 캘린더가 잠시 꺼졌다가 다시 켜집니다. 일정·설정은 그대로 남습니다.</div>
+    <div class="err" id="updateErr"></div>
+    <div class="actions update-actions"><button class="btn primary" id="updateInstall">설치</button>
+      <button class="btn" id="updateLater">나중에</button>${info.html_url ? '<button class="btn" id="updateRelease">배포 페이지 보기</button>' : ""}</div>`;
+  $("updateInstall").onclick = async () => {
+    const button = $("updateInstall"); const error = $("updateErr");
+    button.disabled = true; button.textContent = "받는 중…"; error.textContent = "";
+    let result;
+    try { result = await api.update_install(); } catch (ex) { result = { ok: false, error: String(ex.message || ex) }; }
+    if (result && result.ok) {
+      $("scrim2").classList.remove("on");
+      toast("설치를 시작합니다…");
+      return;
+    }
+    error.textContent = (result && result.error) || "설치를 시작하지 못했습니다.";
+    button.disabled = false; button.textContent = "설치";
+  };
+  $("updateLater").onclick = () => $("scrim2").classList.remove("on");
+  if (info.html_url) $("updateRelease").onclick = () => window.open(info.html_url);
+  $("scrim2").classList.add("on");
+}
+async function checkOrOpenUpdate() {
+  if (!api || typeof api.update_check !== "function") return;
+  if (updateInfo && updateInfo.available) { openUpdateDialog(updateInfo); return; }
+  let result;
+  try { result = await api.update_check(true); } catch (ex) { toast(String(ex.message || ex)); return; }
+  applyUpdateStatus(result);
+  if (result.error) { toast(result.error); return; }
+  if (result.available) {
+    toast(`새 버전 ${versionText(result.latest)} 이 있습니다`);
+    openUpdateDialog(result);
+  } else {
+    toast(`최신 버전입니다 (${versionText(result.latest || result.current)})`);
+  }
+}
 
 let renderSeq = 0;
 async function render() {
@@ -652,6 +719,8 @@ function bindUI() {
   $("weekStart").onclick = () => setPref({ week_start: prefs.week_start === 1 ? 0 : 1 });
   $("toggleSugg").onclick = () => setPref({ show_suggested: !prefs.show_suggested });
   $("theme").onclick = () => setPref({ theme: prefs.theme === "light" ? "dark" : "light" });
+  if (typeof api.update_check === "function") $("updateBtn").onclick = checkOrOpenUpdate;
+  else $("updateBtn").style.display = "none";
   $("exportIcs").onclick = async () => { const r = await api.export_ics(); toast(`${r.count}건을 저장했습니다: ${r.path}`); };
   $("hideBtn").onclick = () => api.win("hide");
   $("openSettings").onclick = async () => { await api.open_settings(); toast("설정 창을 열었습니다. 저장한 뒤 '감시 다시 시작'을 누르세요."); };
@@ -708,6 +777,8 @@ async function boot(realApi) {
   const t = new Date(); cur = { y: t.getFullYear(), m: t.getMonth() + 1 };
   bindUI();
   await render();
+  setTimeout(checkForUpdateSilently, 5000);
+  setInterval(checkForUpdateSilently, 6 * 60 * 60 * 1000);
   setInterval(render, 60 * 1000);   // 1분마다 새 일정(메신저에서 온 제안) 반영 · 날짜 바뀜 반영
 }
 window.calendarRefresh = () => render();   // 위젯이 새 일정을 넣은 뒤 바로 다시 그리게 부름

@@ -273,6 +273,15 @@ class Host:
             self.w32.to_bottom(self.hwnd)
         return True
 
+    def quit(self):
+        """프로그램 끝내기 (업데이트 설치 직전에 api 가 부름). 트레이 아이콘도 함께 정리."""
+        fn = getattr(self, "_on_quit", None)
+        if fn:
+            fn(getattr(self, "_tray", None))
+        elif self.window:
+            self.window.destroy()
+        return True
+
     def refresh(self):
         if self.window:
             try:
@@ -345,9 +354,11 @@ def run(settings, with_watch: bool = False):
         finally:
             window.destroy()
 
+    host._on_quit = on_quit
+
     def started():
         host.setup()
-        start_tray(host, on_quit)
+        host._tray = start_tray(host, on_quit)
         if with_watch:
             api._watch_on_change = host.refresh   # 시작이 실패해도 [감시 다시 시작]으로 켤 수 있게
             try:

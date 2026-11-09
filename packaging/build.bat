@@ -3,7 +3,7 @@ chcp 65001 > nul
 rem 설치 파일 만들기: packaging\Output\CBMessengerAI_Setup_<버전>.exe
 rem 필요: 1_설치하기.bat 로 만든 .venv, Inno Setup 6 (winget install JRSoftware.InnoSetup)
 cd /d %~dp0
-if not exist ..\.venv (echo 먼저 1_설치하기.bat 을 실행하세요. & pause & exit /b 1)
+if not exist ..\.venv (echo 먼저 1_설치하기.bat 을 실행하세요. & (if not defined CBM_NOPAUSE pause) & exit /b 1)
 set PY=..\.venv\Scripts\python.exe
 
 echo [1/4] 빌드 도구 확인...
@@ -25,16 +25,16 @@ if exist "%LOCALAPPDATA%\Programs\Inno Setup 7\ISCC.exe" set ISCC="%LOCALAPPDATA
 if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" set ISCC="%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
 if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set ISCC="%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
 if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set ISCC="%ProgramFiles%\Inno Setup 6\ISCC.exe"
-if not defined ISCC (echo Inno Setup 6 이 없습니다: winget install JRSoftware.InnoSetup & echo 묶은 프로그램은 dist\CBMessengerAI 에 있습니다. & pause & exit /b 1)
+if not defined ISCC (echo Inno Setup 6 이 없습니다: winget install JRSoftware.InnoSetup & echo 묶은 프로그램은 dist\CBMessengerAI 에 있습니다. & (if not defined CBM_NOPAUSE pause) & exit /b 1)
 %ISCC% /Q /DMyAppVersion=%VER% installer.iss || goto :fail
 
 echo.
 echo ===== 완료: packaging\Output\CBMessengerAI_Setup_%VER%.exe =====
-pause
+if not defined CBM_NOPAUSE pause
 exit /b 0
 
 :fail
 echo.
 echo ===== 빌드 실패. 위 오류를 확인하세요. =====
-pause
+if not defined CBM_NOPAUSE pause
 exit /b 1

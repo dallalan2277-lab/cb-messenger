@@ -96,6 +96,12 @@ cb-messenger-ai/
 - 명령줄 기능은 설치 폴더의 `cbm.exe` 로 (`python main.py` 대신). 예: `cbm.exe mail-login`
 - 설치 파일 만들기(개발자용): `packaging\build.bat` (Inno Setup 6 필요)
 
+### 업데이트 (v0.7.0~)
+- 캘린더가 켜질 때와 6시간마다 GitHub 의 [Releases](https://github.com/dallalan2277-lab/cb-messenger/releases) 에 새 버전이 있는지 확인합니다. 새 버전이 있으면 ⚙ 버튼에 점이 생기고, ⚙ 메뉴의 **새 버전 설치하기** → [설치] 를 누르면 받아서 설치한 뒤 캘린더가 다시 켜집니다 (일정·설정은 그대로).
+- 받은 설치 파일은 SHA-256 확인값과 맞을 때만 설치합니다 (손상·변조 방지). 끄려면 `.env` 에 `UPDATE_CHECK=0`.
+- 명령줄: `cbm.exe update-check`
+- **새 버전 배포(개발자용)**: `app\__init__.py` 의 `__version__` 을 올려 커밋·푸시 → `packaging\release.bat` 더블클릭 (설치 파일 + `.sha256` 을 만들고, GitHub CLI(`gh`)가 있으면 바로 배포, 없으면 배포 페이지를 열어 줌). 저장소는 공개여야 합니다.
+
 ## 소스코드로 설치 (Windows 11, 개발·수정용)
 
 1. [Python 3.10 이상](https://www.python.org/downloads/) 설치 — 설치 화면에서 **"Add python.exe to PATH" 체크**

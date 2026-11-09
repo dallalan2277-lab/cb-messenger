@@ -12,6 +12,7 @@ import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from .. import __version__
 from ..paths import ROOT, self_command
 from ..storage import Storage
 
@@ -55,6 +56,8 @@ def _locked(fn):
 
 
 class CalendarAPI:
+    _UPDATE_TTL = 5 * 60 * 60   # 화면은 6시간마다 확인 → 캐시는 그보다 짧게 (매번 실제로 확인되도록)
+
     def __init__(self, storage: Storage, prefs_path: str | Path):
         self._storage = storage
         self._prefs_path = Path(prefs_path)
@@ -63,6 +66,10 @@ class CalendarAPI:
         self._runner = None   # runner.Runner (쪽지·메일 감시). 없으면 None
         # pywebview 는 공개 속성을 화면에 노출하므로 내부 값은 모두 _ 로 시작 (노출 방지)
         self._lock = threading.RLock()   # 화면 호출이 여러 스레드에서 와도 DB 를 한 번에 하나씩
+        self._update_cache = None        # (확인 시각, 화면 응답, UpdateInfo | None)
+        self._update_info = None         # 설치할 최신 UpdateInfo
+        self._update_install_lock = threading.Lock()
+        self._update_installing = False
 
     # ---------- 설정 ----------
     @_locked
@@ -187,6 +194,99 @@ class CalendarAPI:
 
     def check_mail_now(self) -> dict:
         return {"ok": bool(self._runner and self._runner.check_mail_now())}
+
+    # ---------- 앱 업데이트 ----------
+    def _updater(self):
+        """업데이터는 설치판에서만 필요하므로 필요할 때 불러온다."""
+        from .. import updater
+        return updater
+
+    def update_check(self, force: bool = False) -> dict:
+        """최신 설치판 정보를 확인한다. 네트워크 호출은 DB 잠금 밖에서 한다."""
+        import time
+        from ..config import get_settings
+
+        settings = get_settings(reload=True)
+        result = {
+            "current": __version__,
+            "available": False,
+            "latest": __version__,
+            "notes": "",
+            "html_url": "",
+            "error": "",
+            "disabled": False,
+        }
+        if not settings.update_check and not force:
+            result["disabled"] = True
+            self._update_info = None
+            return result
+
+        cache = self._update_cache
+        if cache and not force and time.time() - cache[0] < self._UPDATE_TTL:
+            self._update_info = cache[2]
+            return dict(cache[1])
+
+        info = None
+        updater = self._updater()
+        try:
+            info = updater.check_latest(settings.update_repo, __version__)
+            if info is not None:
+                result.update({
+                    "available": True,
+                    "latest": str(info.version),
+                    "notes": str(info.notes or ""),
+                    "html_url": str(info.html_url or ""),
+                })
+        except updater.UpdateError as e:
+            result["error"] = str(e)
+
+        self._update_info = info
+        self._update_cache = (time.time(), dict(result), info)
+        return result
+
+    def update_install(self) -> dict:
+        """최신 설치 파일을 받고 설치를 시작한 뒤 캘린더를 안전하게 종료한다."""
+        with self._update_install_lock:
+            if self._update_installing:
+                return {"ok": False, "error": "이미 업데이트 중입니다."}
+            self._update_installing = True
+
+        started = False
+        try:
+            info = self._update_info
+            if info is None:
+                self.update_check(force=True)
+                info = self._update_info
+            if info is None:
+                return {"ok": False, "error": "새 버전이 없습니다."}
+
+            from .. import paths
+            if not paths.FROZEN:
+                return {"ok": False, "error": "개발 모드(파이썬으로 실행)에서는 자동 설치하지 않습니다. 설치판에서 사용하세요."}
+
+            updater = self._updater()
+            try:
+                installer = updater.download(info)
+                # 감시 없이(캘린더만) 켠 경우 업데이트 뒤에도 같은 모드로 다시 켜지게
+                watching = self._runner is not None or getattr(self, "_watch_on_change", None) is not None
+                updater.launch_installer(installer, watch=watching)
+            except updater.UpdateError as e:
+                return {"ok": False, "error": str(e)}
+
+            def quit_host():
+                host = self._host
+                if host and hasattr(host, "quit"):
+                    host.quit()
+
+            timer = threading.Timer(1.5, quit_host)
+            timer.daemon = True
+            timer.start()
+            started = True
+            return {"ok": True, "version": info.version}
+        finally:
+            if not started:
+                with self._update_install_lock:
+                    self._update_installing = False
 
     # ---------- AI 모델 (메뉴에서 바로 고르기) ----------
     _MODELS_TTL = 600   # 모델 목록은 10분 동안 다시 묻지 않음

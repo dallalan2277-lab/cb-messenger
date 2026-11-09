@@ -30,6 +30,8 @@ AI 는 **GPT 와 Claude 둘 다** 쓸 수 있어야 함 (구독 또는 API 키).
 | 원문·요약 보관 (이 PC / 구글 드라이브 동기화 폴더 따로, txt·md) | 완료 |
 | 바탕화면 캘린더 (월간·입력·AI 제안 확정/무시·받은 소식 탭·공휴일·크기 조절·두 모니터·트레이) | 화면은 브라우저로 확인 · **Windows 위젯 창 미확인** |
 | 설정 화면 (tkinter: 모델·저장·메일·알림·학교 정보 탭) | 코드 완료 · **화면 미확인** |
+| 캘린더 ⚙ 메뉴에서 AI 모델 바로 고르기 (v0.7.0) | 완료 · 미리보기로 확인 |
+| 자동 업데이트 (GitHub Releases, SHA-256 확인, `packaging\release.bat` 로 배포) (v0.7.0) | 코드 완료 · **실제 업데이트 한 바퀴 미확인** |
 
 **가장 큰 빈칸: 사용자 PC(Windows)에서 아직 한 번도 실행해 보지 않았음.** 다음 작업은 대부분 실제 환경 확인과 수정.
 
@@ -89,6 +91,7 @@ app/paths.py                실행 위치·자료 위치. 개발: 저장소 폴�
 사용자 설정 `~/.claude/CLAUDE.md` 에 있음. 그 파일은 GitHub 로 안 옮겨지므로, 다른 PC 에서는 아래만으로도 판단할 수 있게 적어 둠.
 - **gpt-6.1-sol** (견고성 중요): `llm/chatgpt_auth.py`·`chatgpt_plan_provider.py`(로그인·토큰), `collectors/naver_mail.py`·`mail_content.py`(IMAP·디코딩), `redact.py`(개인정보 가림), `secrets_store.py`, `analyzer.py` 의 근거 확인·글 속 지시 무시 부분.
 - **gpt-6.1-terra** (기본): `desktop_calendar/calendar.html`·`api.py` 화면 기능, 통계·할 일 목록, `ics_export.py`, 테스트 추가. 결과의 엣지 케이스(빈 값, 날짜 경계, 한글 경로·파일 이름) 따로 확인.
+- 학교 PC 계정은 Codex 에서 `gpt-6.1-*` 를 못 씀 (2026-11-09) → 그 PC 에서는 sol 대신 `gpt-6-astra`, terra 대신 `gpt-5.6-terra`.
 - **위임하지 않음 (Claude 가 직접 + 사용자 PC 확인)**: `eztalk_collector.py`·`eztalk_parse.py`(실제 메신저 창 구조는 사용자 PC 에서만 확인 가능), `desktop_calendar/widget.py`(Win32 창 동작), tkinter 화면 모양, 설계 규칙·분석 스키마 변경 결정.
 - **Codex 에 넘기지 않을 것**: 실제 쪽지·메일 원문, `.env`, `data/`(DB·쪽지기록), `messenger-check --raw` 출력, 토큰·비밀번호. 넘기면 OpenAI 서버로 전송됨 → 재현이 필요하면 가상 예시로 바꿔서.
 - 위임 지시에는 이 문서의 "지켜야 할 규칙"(읽기 전용 수집, 테스트는 네트워크·키 없이, Python 3.10 호환, Windows 전용 import 는 함수 안) 을 함께 적을 것.

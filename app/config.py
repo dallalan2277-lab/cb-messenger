@@ -123,6 +123,10 @@ class Settings:
     # ---- 사용자 정보 (중요도 판단에 참고) ----
     user_role: str = _f("USER_ROLE", "초등학교 교사")
 
+    # ---- 업데이트 ----
+    update_repo: str = _f("UPDATE_REPO", "dallalan2277-lab/cb-messenger")
+    update_check: bool = field(default_factory=lambda: _bool("UPDATE_CHECK", True))
+
 
 def get_settings(reload: bool = False) -> Settings:
     if reload:

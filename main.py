@@ -288,6 +288,23 @@ def _slot_text(spec: str) -> str:
     return f"{PROVIDER_LABELS.get(p, p)} · {m or '자동/기본 모델'}"
 
 
+def cmd_update_check(args):
+    from app import __version__
+    from app import updater
+    s = get_settings()
+    print(f"현재 버전: v{__version__}  (확인할 곳: github.com/{s.update_repo})")
+    try:
+        info = updater.check_latest(s.update_repo, __version__)
+    except updater.UpdateError as e:
+        print(f"확인 실패: {e}")
+        return
+    if not info:
+        print("최신 버전입니다.")
+        return
+    print(f"새 버전 v{info.version} 이 있습니다: {info.html_url}")
+    print("캘린더 ⚙ 메뉴의 '새 버전 설치하기'로 설치할 수 있습니다.")
+
+
 def cmd_models(args):
     s = get_settings()
     print("현재 모델 설정 (.env 또는 테스트 화면 [모델 설정]에서 변경)")
@@ -428,6 +445,7 @@ def main(argv=None):
     sub.add_parser("chatgpt-login", help="ChatGPT 구독으로 로그인").set_defaults(func=cmd_chatgpt_login)
     sub.add_parser("chatgpt-logout", help="ChatGPT 로그아웃").set_defaults(func=cmd_chatgpt_logout)
     sub.add_parser("chatgpt-models", help="구독으로 쓸 수 있는 모델").set_defaults(func=cmd_chatgpt_models)
+    sub.add_parser("update-check", help="GitHub 에 새 버전이 있는지 확인").set_defaults(func=cmd_update_check)
 
     # 설치판 CBMessengerAI.exe 를 더블클릭(인자 없음) → 캘린더 + 감시. cbm.exe(콘솔)는 도움말
     if FROZEN and is_gui_exe() and not (sys.argv[1:] if argv is None else argv):
