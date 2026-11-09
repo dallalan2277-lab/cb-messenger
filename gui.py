@@ -62,7 +62,7 @@ class ModelSlot(ttk.Frame):
         cb = ttk.Combobox(right, textvariable=self.p_var, values=choices, width=15, state="readonly")
         cb.pack(side="left", padx=2)
         cb.bind("<<ComboboxSelected>>", lambda e: self._refresh_models())
-        self.m_box = ttk.Combobox(right, textvariable=self.m_var, width=22)
+        self.m_box = ttk.Combobox(right, textvariable=self.m_var, width=22, postcommand=self._auto_load)
         self.m_box.pack(side="left", padx=2)
         self.list_btn = ttk.Button(right, text="목록 불러오기", command=self._load_chatgpt_models)
         self._refresh_models(keep=True)
@@ -80,11 +80,29 @@ class ModelSlot(ttk.Frame):
         else:
             self.list_btn.pack_forget()
 
-    def _load_chatgpt_models(self):
-        try:
+    _chatgpt_cache: list | None = None   # 모든 칸이 같이 쓰는 ChatGPT 모델 목록 (창을 여는 동안 한 번만 물어봄)
+
+    def _fetch_chatgpt(self) -> list:
+        if ModelSlot._chatgpt_cache is None:
             from app.llm.chatgpt_auth import ChatGPTSession
             from app.llm.chatgpt_plan_provider import list_models
-            models = list_models(ChatGPTSession())
+            ModelSlot._chatgpt_cache = list_models(ChatGPTSession())
+        return ModelSlot._chatgpt_cache
+
+    def _auto_load(self):
+        """모델 칸을 펼칠 때 ChatGPT 구독이면 실제 목록을 자동으로 채움 (실패하면 조용히 기존 목록)."""
+        if self._provider() != "chatgpt_plan":
+            return
+        try:
+            models = self._fetch_chatgpt()
+        except Exception:  # noqa: BLE001  (로그인 전 등 — 버튼으로 이유를 볼 수 있음)
+            return
+        self.m_box.configure(values=[AUTO] + [m["slug"] for m in models])
+
+    def _load_chatgpt_models(self):
+        ModelSlot._chatgpt_cache = None
+        try:
+            models = self._fetch_chatgpt()
         except Exception as e:  # noqa: BLE001
             messagebox.showerror("모델 목록", f"불러오지 못했습니다. 먼저 ChatGPT 로그인을 하세요.\n\n{e}")
             return

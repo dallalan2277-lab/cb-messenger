@@ -188,7 +188,14 @@
     border-radius: 12px; padding: 8px; display: none; z-index: 9; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
   }
   body:not(.light) .menu { background: rgb(28, 32, 40); }
+  .menu { max-height: calc(100vh - 64px); overflow-y: auto; }
   .menu.on { display: block; }
+  .menu .mlist { display: none; max-height: 240px; overflow-y: auto; margin: 2px 0 4px 8px; border-left: 2px solid var(--line); }
+  .menu .mlist.on { display: block; }
+  .menu .mlist button.mi { padding: 6px 8px; }
+  .menu .mlist button.mi.sel { color: var(--accent, #4c8dff); font-weight: 600; }
+  .menu .mlist button.mi small { color: var(--faint); font-weight: 400; margin-left: 4px; }
+  .menu .mlist .note { color: var(--faint); font-size: 12px; padding: 6px 8px; }
   .menu .sec { color: var(--faint); font-size: 11px; padding: 8px 8px 4px; }
   .menu button.mi { display: block; width: 100%; text-align: left; border: 0; background: transparent; color: var(--text); font: inherit; padding: 7px 8px; border-radius: 6px; cursor: pointer; }
   .menu button.mi:hover { background: var(--panel); }
@@ -266,6 +273,8 @@
     <button class="mi" id="toggleSugg"></button>
     <button class="mi" id="theme"></button>
     <div class="sec">메일 · 알림 · AI</div>
+    <button class="mi" id="modelBtn">AI 모델: … ▾</button>
+    <div class="mlist" id="modelList"></div>
     <button class="mi" id="openSettings">설정 열기 (메일 연결 · 알림 · 학교 정보 · 모델)</button>
     <button class="mi" id="restartWatch">바꾼 설정으로 감시 다시 시작</button>
     <div class="sec">기타</div>
@@ -364,7 +373,12 @@ function MockAPI() {
     check_mail_now: async () => ({ ok: true }),
     open_settings: async () => ({ ok: true }),
     restart_watch: async () => ({ ok: true }),
+    models: async () => ({ current: mockModel ? `chatgpt_plan:${mockModel}` : "chatgpt_plan", provider: "chatgpt_plan", model: mockModel, error: "",
+      options: [{ slug: "gpt-6.1-sol", display_name: "GPT-6.1 Sol" }, { slug: "gpt-6.1-terra", display_name: "GPT-6.1 Terra" },
+                { slug: "gpt-6-astra", display_name: "GPT-6 Astra" }, { slug: "gpt-5.6-luna", display_name: "GPT-5.6 Luna" }] }),
+    set_model: async (s) => { mockModel = s || ""; return { ok: true, spec: s ? `chatgpt_plan:${s}` : "chatgpt_plan", restarted: true }; },
   };
+  let mockModel = "";
   return self;
 }
 
@@ -585,6 +599,41 @@ function menuLabels() {
 }
 async function setPref(c) { prefs = await api.set_prefs(c); menuLabels(); render(); }
 
+/* AI 모델: 메뉴에서 누르면 목록이 펼쳐지고, 고르면 바로 저장·적용 */
+let modelInfo = null;
+function modelLabel(info) {
+  if (!info) return "AI 모델: … ▾";
+  if (info.provider !== "chatgpt_plan") return `AI 모델: ${info.current || "없음"} ▾`;
+  return `AI 모델: ${info.model || "자동"} ▾`;
+}
+async function loadModels(refresh) {
+  if (!api.models) { $("modelBtn").style.display = "none"; return; }
+  try { modelInfo = await api.models(!!refresh); } catch (ex) { modelInfo = { error: String(ex.message || ex), options: [] }; }
+  $("modelBtn").textContent = modelLabel(modelInfo);
+  drawModelList();
+}
+function drawModelList() {
+  const box = $("modelList"); const info = modelInfo || { options: [] };
+  const curSlug = info.provider === "chatgpt_plan" ? (info.model || "") : null;
+  const item = (slug, name) => `<button class="mi${slug === curSlug ? " sel" : ""}" data-slug="${esc(slug)}">${slug === curSlug ? "✓ " : ""}${esc(slug || "자동 (계정 기본 모델)")}${name && name !== slug ? `<small>${esc(name)}</small>` : ""}</button>`;
+  let h = item("", "");
+  h += (info.options || []).map((m) => item(m.slug, m.display_name)).join("");
+  if (info.error) h += `<div class="note">${esc(info.error)}</div>`;
+  else if (!(info.options || []).length) h += `<div class="note">불러오는 중…</div>`;
+  h += `<button class="mi" data-refresh="1"><small>↻ 목록 새로 불러오기</small></button>`;
+  box.innerHTML = h;
+  box.querySelectorAll("[data-slug]").forEach((b) => b.onclick = async (ev) => {
+    ev.stopPropagation();
+    const r = await api.set_model(b.dataset.slug);
+    if (!r.ok) { toast(r.error || "바꾸지 못했습니다."); return; }
+    toast(`AI 모델을 '${b.dataset.slug || "자동"}'(으)로 바꿨습니다.` + (r.restarted ? "" : " (감시는 꺼져 있음)"));
+    $("modelList").classList.remove("on");
+    loadModels(false);
+  });
+  const rf = box.querySelector("[data-refresh]");
+  if (rf) rf.onclick = (ev) => { ev.stopPropagation(); box.innerHTML = `<div class="note">불러오는 중…</div>`; loadModels(true); };
+}
+
 function bindUI() {
   $("prev").onclick = () => { cur.m--; if (cur.m < 1) { cur.m = 12; cur.y--; } render(); };
   $("next").onclick = () => { cur.m++; if (cur.m > 12) { cur.m = 1; cur.y++; } render(); };
@@ -593,7 +642,8 @@ function bindUI() {
   $("sideBtn").onclick = () => { $("side").classList.toggle("hidden"); render(); };
   $("suggBadge").onclick = () => { $("side").classList.remove("hidden"); render(); };
   $("confirmAll").onclick = async () => { const r = await api.confirm_all(); toast(`${r.count}건 확정했습니다.`); render(); };
-  $("menuBtn").onclick = (ev) => { ev.stopPropagation(); $("menu").classList.toggle("on"); };
+  $("menuBtn").onclick = (ev) => { ev.stopPropagation(); $("menu").classList.toggle("on"); if ($("menu").classList.contains("on")) loadModels(false); };
+  $("modelBtn").onclick = (ev) => { ev.stopPropagation(); const l = $("modelList"); l.classList.toggle("on"); if (l.classList.contains("on")) drawModelList(); };
   document.addEventListener("click", (ev) => { if (!ev.target.closest("#menu")) $("menu").classList.remove("on"); });
   document.querySelectorAll("[data-snap]").forEach((b) => b.onclick = () => api.win("snap", b.dataset.snap));
   $("nextMon").onclick = () => api.win("next_monitor");

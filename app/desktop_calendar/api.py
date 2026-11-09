@@ -188,6 +188,46 @@ class CalendarAPI:
     def check_mail_now(self) -> dict:
         return {"ok": bool(self._runner and self._runner.check_mail_now())}
 
+    # ---------- AI 모델 (메뉴에서 바로 고르기) ----------
+    _MODELS_TTL = 600   # 모델 목록은 10분 동안 다시 묻지 않음
+
+    def models(self, refresh: bool = False) -> dict:
+        """현재 분석 모델 + ChatGPT 구독으로 쓸 수 있는 모델 목록.
+        {current: 'chatgpt_plan:slug', provider, model, options: [{slug, display_name}], error}"""
+        import time
+        from ..config import get_settings
+        from ..llm.factory import parse_spec
+        s = get_settings(reload=True)
+        provider, model = parse_spec(s.analyze_model)
+        out = {"current": s.analyze_model, "provider": provider, "model": model, "options": [], "error": ""}
+        cache = getattr(self, "_models_cache", None)
+        if cache and not refresh and time.time() - cache[0] < self._MODELS_TTL:
+            out["options"] = cache[1]
+            return out
+        try:
+            from ..llm.chatgpt_auth import ChatGPTSession
+            from ..llm.chatgpt_plan_provider import list_models
+            sess = ChatGPTSession()
+            if not sess.is_logged_in():
+                out["error"] = "ChatGPT 로그인이 필요합니다 (2_ChatGPT로그인)."
+                return out
+            out["options"] = list_models(sess)
+            self._models_cache = (time.time(), out["options"])
+        except Exception as e:  # noqa: BLE001
+            out["error"] = f"모델 목록을 불러오지 못했습니다: {e}"
+        return out
+
+    def set_model(self, slug: str = "") -> dict:
+        """분석 모델을 ChatGPT 구독의 slug 로 바꿈 (빈 값 = 자동). .env 저장 후 감시를 새 설정으로 다시 시작."""
+        from ..config import save_env
+        slug = str(slug or "").strip()
+        if slug and not re.fullmatch(r"[A-Za-z0-9._\-]{1,80}", slug):
+            return {"ok": False, "error": "모델 이름이 올바르지 않습니다."}
+        spec = f"chatgpt_plan:{slug}" if slug else "chatgpt_plan"
+        save_env({"AI_ANALYZE": spec})
+        r = self.restart_watch()
+        return {"ok": True, "spec": spec, "restarted": bool(r.get("ok"))}
+
     # ---------- 변경 ----------
     @_locked
     def add(self, data: dict) -> dict:
