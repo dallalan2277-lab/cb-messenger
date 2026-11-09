@@ -122,7 +122,7 @@ python main.py gui                          :: 설정·테스트 화면
 4. **설치 파일(.exe)**: v0.6.1 에서 만듦 (`packaging\build.bat`). 2026-11-08 이 PC 에서 PyInstaller 빌드·cbm.exe 명령·캘린더/설정 창 실행 확인. 남은 것: 다른 PC 에서 설치·제거, 실제 ChatGPT 로그인을 설치판으로, 코드 서명 없음(SmartScreen 경고 → '추가 정보 → 실행').
 5. **캘린더 동기화 확장**: 확정 일정 → Google Calendar API 또는 Microsoft Graph. 등록 전 사용자 확인, 중복 방지 칸 추가.
 0. **다음 작업 (2026-11-09 사용자 요청, 다음 날 하기로)**
-   - 설정 창·캘린더에 **Claude 로그인 버튼** (ChatGPT 로그인 버튼처럼). Claude 구독은 공식 `claude` CLI 로그인만 허용 → 버튼은 `claude` 를 새 콘솔 창으로 띄워 사용자가 직접 로그인하게 하고, `claude -p` 시험 호출로 상태(설치 안 됨/로그인 안 됨/정상) 표시. 미설치면 설치 안내(설치는 `irm https://claude.ai/install.ps1 | iex`, PATH 에 `%USERPROFILE%\.localin` 추가 필요했음). 토큰 파일 직접 읽기 금지.
+   - 설정 창·캘린더에 **Claude 로그인 버튼** (ChatGPT 로그인 버튼처럼). Claude 구독은 공식 `claude` CLI 로그인만 허용 → 버튼은 `claude` 를 새 콘솔 창으로 띄워 사용자가 직접 로그인하게 하고, `claude -p` 시험 호출로 상태(설치 안 됨/로그인 안 됨/정상) 표시. 미설치면 설치 안내(설치는 `irm https://claude.ai/install.ps1 | iex`, PATH 에 `%USERPROFILE%.localbin` 추가 필요했음). 토큰 파일 직접 읽기 금지.
    - **설정 창(tkinter) 디자인 개선**: 투박함 → 캘린더(calendar.html)와 색·글꼴·모서리 맞추기. tkinter 유지(ttk 테마) vs 설정 화면도 pywebview HTML 로 옮기기 중 결정 필요.
    - **밝은 테마에서 배경 투명도가 안 먹음** (calendar.html, 어두운 테마는 됨) 버그.
 6. 다듬기: 오늘 브리핑 자동 알림(정해진 시각), 할 일 목록, 주간 통계, Lively Wallpaper 로 진짜 배경 표시(HTTP 어댑터), Claude 경로의 사고 수준.
