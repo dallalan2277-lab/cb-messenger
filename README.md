@@ -1,5 +1,8 @@
 # 충북소통메신저 AI 비서 (v0.6 – 캘린더 + 쪽지 + 네이버 메일)
 
+> **처음 쓰는 분은 → [사용 안내 (설치부터 Claude 대체 연결까지)](docs/사용안내.txt)**
+> 설치 파일은 [Releases](https://github.com/dallalan2277-lab/cb-messenger/releases/latest) 에서 `CBMessengerAI_Setup_<버전>.exe` 를 받으세요.
+
 충북소통메신저로 받은 메시지를 **중요도(긴급/중요/참고)**로 분류하고, AI가 **요약 · 할 일 · 마감 · 일정**을 뽑아 주는 Windows 11용 프로그램의 핵심 소스코드입니다.
 **GPT와 Claude 둘 다** 지원하며, **API 키 없이 ChatGPT·Claude 구독으로도** 쓸 수 있습니다.
 
