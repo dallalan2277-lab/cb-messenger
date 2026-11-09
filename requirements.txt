@@ -1,5 +1,6 @@
 # 필수
 python-dotenv>=1.0
+truststore>=0.10        # 학교망 보안 장비 인증서(Windows 인증서 목록) 인식 — 업데이트 확인용
 httpx>=0.27              # ChatGPT 구독 로그인/호출
 keyring>=24              # 네이버 메일 앱 비밀번호 → Windows 자격 증명 관리자
 PyJWT[crypto]>=2.8       # ChatGPT 로그인 ID 토큰 검증

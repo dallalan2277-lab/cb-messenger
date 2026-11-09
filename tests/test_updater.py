@@ -14,7 +14,8 @@ from app import updater
 REPO = "example-owner/example-repo"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 NAME = "CBMessengerAI_Setup_0.7.1.exe"
-ASSET_URL = f"https://github.com/{REPO}/releases/download/v0.7.1/{NAME}"
+ASSET_URL = f"https://api.github.com/repos/{REPO}/releases/assets/101"
+CHECKSUM_URL = f"https://api.github.com/repos/{REPO}/releases/assets/102"
 CONTENTS = b"synthetic installer contents for updater tests"
 SHA256 = hashlib.sha256(CONTENTS).hexdigest()
 
@@ -22,7 +23,7 @@ SHA256 = hashlib.sha256(CONTENTS).hexdigest()
 def _asset(**changes):
     asset = {
         "name": NAME,
-        "browser_download_url": ASSET_URL,
+        "url": ASSET_URL,
         "size": len(CONTENTS),
         "digest": f"sha256:{SHA256}",
     }
@@ -138,14 +139,14 @@ def test_latest_newer_with_digest():
 
 @pytest.mark.parametrize("digest", [None, "sha512:invalid", "sha256:invalid"])
 def test_latest_with_sha256_companion_and_redirect(digest):
-    checksum_url = ASSET_URL + ".sha256"
+    checksum_url = CHECKSUM_URL
     redirected_url = "https://release-assets.githubusercontent.com/example/checksum"
     visited = []
     payload = _release(
         body=None,
         assets=[
             _asset(digest=digest),
-            {"name": NAME + ".sha256", "browser_download_url": checksum_url},
+            {"name": NAME + ".sha256", "url": checksum_url},
         ],
     )
 
@@ -230,11 +231,11 @@ def test_latest_missing_checksum_refused():
 
 @pytest.mark.parametrize("checksum", ["", "not-a-checksum", "a" * 63, "g" * 64])
 def test_latest_invalid_companion_checksum_refused(checksum):
-    checksum_url = ASSET_URL + ".sha256"
+    checksum_url = CHECKSUM_URL
     payload = _release(
         assets=[
             _asset(digest=None),
-            {"name": NAME + ".sha256", "browser_download_url": checksum_url},
+            {"name": NAME + ".sha256", "url": checksum_url},
         ]
     )
 
@@ -266,13 +267,14 @@ def test_latest_bad_repo_rejected_without_request(repo):
     "url",
     [
         "https://example.com/installer.exe",
-        f"http://github.com/{REPO}/releases/download/v0.7.1/{NAME}",
-        f"https://github.com/another-owner/example-repo/releases/download/v0.7.1/{NAME}",
-        f"https://github.com/{REPO}/releases/download-other/{NAME}",
+        f"http://api.github.com/repos/{REPO}/releases/assets/101",
+        f"https://api.github.com/repos/another-owner/example-repo/releases/assets/101",
+        f"https://api.github.com/repos/{REPO}/releases/assets/101/extra",
+        f"https://github.com/{REPO}/releases/download/v0.7.1/{NAME}",
     ],
 )
 def test_latest_wrong_url_prefix_refused(url):
-    payload = _release(assets=[_asset(browser_download_url=url)])
+    payload = _release(assets=[_asset(url=url)])
     with httpx.Client(
         transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
     ) as client:
@@ -439,6 +441,13 @@ def test_launch_installer_valid_path(tmp_path, windows_launcher):
     )
 
 
+def test_verify_uses_os_trust_store():
+    import ssl
+    ctx = updater._verify()
+    assert isinstance(ctx, ssl.SSLContext)   # truststore 설치 시 운영체제 인증서 목록 사용 (확인을 끄지 않음)
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
+
+
 def test_launch_installer_calendar_only_mode(tmp_path, windows_launcher):
     path = tmp_path / NAME
     path.write_bytes(CONTENTS)
@@ -511,3 +520,18 @@ def test_launch_installer_refuses_non_windows(tmp_path, monkeypatch, windows_lau
     with pytest.raises(updater.UpdateError):
         updater.launch_installer(path)
     windows_launcher.assert_not_called()
+
+
+def test_download_uses_api_asset_url_with_binary_accept(tmp_path):
+    seen = []
+
+    def handle(request):
+        seen.append((str(request.url), request.headers.get("Accept")))
+        return httpx.Response(200, content=CONTENTS)
+
+    info = updater.UpdateInfo(version="0.7.1", tag="v0.7.1", name=NAME, url=ASSET_URL,
+                              size=len(CONTENTS), sha256=SHA256, notes="", html_url="")
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        path = updater.download(info, dest_dir=tmp_path, http=client)
+    assert path.read_bytes() == CONTENTS
+    assert seen == [(ASSET_URL, "application/octet-stream")]

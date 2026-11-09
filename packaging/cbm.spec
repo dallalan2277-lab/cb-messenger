@@ -29,6 +29,7 @@ for pkg in ("webview", "uiautomation", "clr_loader", "pythonnet", "pystray", "wi
 hiddenimports += collect_submodules("winrt")
 # 함수 안에서 import 되는 모듈 (분석에서 빠지지 않게)
 hiddenimports += collect_submodules("app") + ["gui", "keyring.backends.Windows", "comtypes.stream"]
+hiddenimports += collect_submodules("truststore")   # updater 가 함수 안에서 import
 
 a = Analysis(
     [os.path.join(ROOT, "main.py")],

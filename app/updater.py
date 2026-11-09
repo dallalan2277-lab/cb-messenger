@@ -64,6 +64,24 @@ def is_newer(remote: str, current: str) -> bool:
     )
 
 
+def _verify():
+    """인증서 확인 방식. Windows(운영체제) 인증서 목록을 씀.
+
+    학교망처럼 보안 장비(예: Somansa)가 HTTPS 를 중간에서 검사하는 곳은 그 장비의 인증서가
+    Windows 에만 등록돼 있어, 파이썬 기본(certifi) 목록으로는 GitHub 연결이 거부됨.
+    truststore 가 없으면 기본 확인(True)으로 — 어느 쪽이든 확인을 끄지는 않음."""
+    try:
+        import ssl
+        import truststore
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _new_client() -> httpx.Client:
+    return httpx.Client(verify=_verify())
+
+
 def _request(
     client: httpx.Client,
     url: str,
@@ -71,8 +89,9 @@ def _request(
     *,
     follow_redirects: bool = False,
     stream: bool = False,
+    accept: str = _HEADERS["Accept"],
 ) -> httpx.Response:
-    request = client.build_request("GET", url, headers=_HEADERS, timeout=timeout)
+    request = client.build_request("GET", url, headers={**_HEADERS, "Accept": accept}, timeout=timeout)
     # 전달받은 클라이언트의 기본 인증도 업데이트 요청에는 사용하지 않는다.
     request.headers.pop("Authorization", None)
     request.headers.pop("Proxy-Authorization", None)
@@ -81,10 +100,15 @@ def _request(
     )
 
 
+_BINARY = "application/octet-stream"
+
+
 def _asset_url(asset: dict, repo: str) -> str:
-    url = asset.get("browser_download_url")
-    if not isinstance(url, str) or not url.startswith(
-        f"https://github.com/{repo}/releases/download/"
+    # 브라우저용 주소(github.com/.../releases/download/...)는 학교망 보안 장비가 막음(504) →
+    # API 자산 주소로 받음 (Accept: application/octet-stream → GitHub 이 실제 파일 주소로 넘겨줌)
+    url = asset.get("url")
+    if not isinstance(url, str) or not re.fullmatch(
+        rf"https://api\.github\.com/repos/{re.escape(repo)}/releases/assets/[0-9]+", url
     ):
         raise UpdateError("업데이트 파일의 주소가 올바르지 않습니다.")
     return url
@@ -99,7 +123,7 @@ def check_latest(
     if not isinstance(repo, str) or _REPO.fullmatch(repo) is None:
         raise UpdateError("업데이트 저장소 설정이 올바르지 않습니다.")
     try:
-        with httpx.Client() if http is None else nullcontext(http) as client:
+        with _new_client() if http is None else nullcontext(http) as client:
             response = _request(
                 client, f"https://api.github.com/repos/{repo}/releases/latest", timeout
             )
@@ -151,7 +175,8 @@ def check_latest(
                 if companion is None:
                     raise UpdateError("파일 확인 정보가 없어 업데이트할 수 없습니다.")
                 checksum_response = _request(
-                    client, _asset_url(companion, repo), timeout, follow_redirects=True
+                    client, _asset_url(companion, repo), timeout, follow_redirects=True,
+                    accept=_BINARY,
                 )
                 checksum_response.raise_for_status()
                 tokens = checksum_response.text.split()
@@ -203,9 +228,9 @@ def download(
         directory.mkdir(parents=True, exist_ok=True)
         hasher = hashlib.sha256()
         done = 0
-        with httpx.Client() if http is None else nullcontext(http) as client:
+        with _new_client() if http is None else nullcontext(http) as client:
             with closing(_request(
-                client, info.url, 30, follow_redirects=True, stream=True
+                client, info.url, 30, follow_redirects=True, stream=True, accept=_BINARY,
             )) as response:
                 response.raise_for_status()
                 with partial.open("wb") as output:

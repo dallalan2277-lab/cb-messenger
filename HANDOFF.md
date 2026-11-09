@@ -124,6 +124,7 @@
 - 설치판의 사용자 자료는 `app/paths.py` 가 `%LOCALAPPDATA%\cb-messenger-ai\` 로 보냄 (첫 실행 때 .env.example 복사)
 - 남은 것: 코드 서명(SmartScreen 경고), 다른 PC 설치 확인
 - **자동 업데이트 (v0.7.0)**: `app/updater.py` (GitHub Releases latest → `CBMessengerAI_Setup_*.exe` 자산, SHA-256 = 자산 `digest` 또는 `.sha256` 자산, 없으면 거부) → `CalendarAPI.update_check/update_install` → ⚙ 메뉴. 설치는 `/SILENT /CLOSEAPPLICATIONS` 로 띄우고 앱은 `Host.quit()` 로 종료, 설치가 끝나면 `installer.iss` 의 `Check: WizardSilent` 줄이 캘린더를 다시 켬. 배포: `packaging\release.bat`. 저장소는 2026-11-09 공개로 전환함.
+  - 학교망(Somansa 보안 장비)이 GitHub HTTPS 를 중간 검사 → certifi 로는 연결 거부. updater 는 `truststore`(Windows 인증서 목록) 사용 (v0.7.1). ChatGPT·OpenAI 주소는 검사 대상이 아니었음 (2026-11-09 확인)
   - 미확인: 실제 Release 로 설치판 → 새 버전 업데이트 한 바퀴 (Windows 에서 확인 필요)
 - API 키는 `.env` 대신 Windows 자격 증명 관리자(`keyring`)에 저장 권장
 
