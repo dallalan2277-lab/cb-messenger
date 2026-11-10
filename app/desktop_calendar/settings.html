@@ -1350,13 +1350,21 @@ async function saveSettings() {
   setError("footerError", "");
   button.disabled = true;
   try {
-    const result = await callApi("save", collectData());
+    const data = collectData();
+    const sentSnapshot = JSON.stringify(data);   // 저장을 기다리는 동안 고친 값은 '저장 안 됨'으로 남게, 보낸 값만 기준으로 삼음
+    const result = await callApi("save", data);
     if (!result || result.ok === false) {
       setError("footerError", result && result.error ? result.error : "설정값을 저장하지 못했습니다.");
       return;
     }
-    savedSnapshot = currentSnapshot();
+    savedSnapshot = sentSnapshot;
     updateDirtyState();
+    if (result.restart_error) {
+      // 저장은 됐지만 새 설정으로 감시를 켜지 못함 → 쪽지·메일 수집이 멈춰 있으므로 이유를 보여 줌
+      setError("footerError", "저장은 했지만 쪽지·메일 감시를 다시 시작하지 못했습니다: " + result.restart_error);
+      toast("저장했습니다. 감시는 다시 시작하지 못했습니다.");
+      return;
+    }
     toast("저장했습니다. " + (result.restarted
       ? "쪽지·메일 감시에 바로 적용했습니다."
       : "캘린더를 다시 켜면 적용됩니다."));

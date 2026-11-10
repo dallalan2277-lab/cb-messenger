@@ -69,7 +69,7 @@ def test_theme_defaults_to_dark_when_prefs_missing_or_broken(tmp_path, env):
 def test_save_writes_same_keys_as_old_dialog(tmp_path, env):
     calls = []
     r = _api(tmp_path, on_saved=lambda: calls.append(1) or {"ok": True}).save(_data())
-    assert r == {"ok": True, "error": "", "restarted": True} and calls == [1]
+    assert r == {"ok": True, "error": "", "restarted": True, "restart_error": ""} and calls == [1]
     assert env["AI_ANALYZE"] == "chatgpt_plan:gpt-5.6-sol"
     assert env["AI_DIGEST"] == "chatgpt_plan:gpt-5.6-sol"        # 비우면 분석 모델과 같게
     assert env["AI_FALLBACK"] == "claude_cli:opus" and env["AI_REASONING"] == "low"
@@ -82,6 +82,48 @@ def test_save_writes_same_keys_as_old_dialog(tmp_path, env):
 
 def test_save_without_calendar_reports_not_restarted(tmp_path, env):
     assert _api(tmp_path).save(_data())["restarted"] is False
+
+
+def test_save_reports_why_watch_could_not_restart(tmp_path, env):
+    """새 설정으로 감시를 못 켜면(예: API 키 없음) 감시가 멈춘 상태 → 이유를 화면에 알려야 함"""
+    r = _api(tmp_path, on_saved=lambda: {"ok": False, "error": "OpenAI API 키가 없습니다."}).save(_data())
+    assert r["ok"] is True and r["restarted"] is False and "API 키" in r["restart_error"]
+
+    def boom():
+        raise RuntimeError("감시 시작 실패")
+
+    assert "감시 시작 실패" in _api(tmp_path, on_saved=boom).save(_data())["restart_error"]
+    assert _api(tmp_path, on_saved=lambda: {"ok": False}).save(_data())["restart_error"] == ""   # 감시 없이 켠 캘린더
+
+
+def test_save_keeps_spaces_inside_folder_names(tmp_path, env):
+    r = _api(tmp_path).save(_data(archive={"local_dir": "  C:\\Archive  2026\\쪽지 기록 ",
+                                           "gdrive_dir": "G:\\내 드라이브\nX=1"}))
+    assert r["ok"] is True
+    assert env["ARCHIVE_LOCAL_DIR"] == "C:\\Archive  2026\\쪽지 기록"      # 연속 공백 그대로
+    assert env["ARCHIVE_GDRIVE_DIR"] == "G:\\내 드라이브X=1"                 # 줄바꿈만 없앰
+
+
+def test_chatgpt_models_concurrent_calls_fetch_once(tmp_path, env, monkeypatch):
+    import threading
+    calls, gate = [], threading.Event()
+
+    def slow_list(sess):
+        calls.append(1)
+        gate.wait(2)
+        return [{"slug": "gpt-a", "display_name": "A"}]
+
+    monkeypatch.setattr(auth, "ChatGPTSession", type("S", (_Sess,), {}))
+    monkeypatch.setattr(plan, "list_models", slow_list)
+    api, out = _api(tmp_path), []
+    threads = [threading.Thread(target=lambda: out.append(api.chatgpt_models())) for _ in range(3)]
+    for t in threads:
+        t.start()
+    time.sleep(0.1)
+    gate.set()
+    for t in threads:
+        t.join(3)
+    assert len(calls) == 1 and len(out) == 3 and all(o["options"] for o in out)
 
 
 def test_save_rejects_missing_or_bad_models(tmp_path, env):

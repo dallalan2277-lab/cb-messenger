@@ -40,6 +40,11 @@ def _one_line(v, limit: int = 500) -> str:
     return " ".join(str(v or "").split())[:limit]
 
 
+def _path_line(v, limit: int = 500) -> str:
+    """폴더 경로 — 이름 안의 공백은 그대로 두고(연속 공백도 다른 폴더임) 줄바꿈만 없앰."""
+    return "".join(ch for ch in str(v or "") if ch not in "\r\n").strip()[:limit]
+
+
 def _comma_lines(v, limit: int = 1000) -> str:
     """여러 줄 입력 → '가, 나, 다' 한 줄 (tkinter 설정 창과 같은 규칙)."""
     parts = [" ".join(x.split()) for x in str(v or "").splitlines()]
@@ -62,6 +67,7 @@ class SettingsAPI:
         self._gpt = {"busy": False, "error": ""}
         self._claude_cache = None          # (시각, 결과)
         self._models_cache = None          # (시각, options)
+        self._models_lock = threading.Lock()   # 모델 목록을 동시에 두 번 묻지 않게 (토큰 갱신이 겹치면 로그인이 깨질 수 있음)
 
     # ---------- 읽기 ----------
     def _theme(self) -> str:
@@ -178,8 +184,8 @@ class SettingsAPI:
             "AI_REASONING": reasoning if reasoning in REASONING_LEVELS else "default",
             "SKIP_AI_KEYWORDS": ",".join(k.strip() for k in _one_line(skip.get("keywords"), 1000).split(",") if k.strip()),
             "SKIP_AI_MIN_CHARS": str(min_chars),
-            "ARCHIVE_LOCAL": _b(arc.get("local_on")), "ARCHIVE_LOCAL_DIR": _one_line(arc.get("local_dir")),
-            "ARCHIVE_GDRIVE": _b(arc.get("gdrive_on")), "ARCHIVE_GDRIVE_DIR": _one_line(arc.get("gdrive_dir")),
+            "ARCHIVE_LOCAL": _b(arc.get("local_on")), "ARCHIVE_LOCAL_DIR": _path_line(arc.get("local_dir")),
+            "ARCHIVE_GDRIVE": _b(arc.get("gdrive_on")), "ARCHIVE_GDRIVE_DIR": _path_line(arc.get("gdrive_dir")),
             "ARCHIVE_GDRIVE_REDACT": _b(arc.get("gdrive_redact")),
             "ARCHIVE_FORMAT": fmt if fmt in ("txt", "md") else "txt",
             "ARCHIVE_SUMMARY": _b(arc.get("summary_on")),
@@ -198,16 +204,19 @@ class SettingsAPI:
             save_env(updates)
         except OSError as e:
             return {"ok": False, "error": f"설정 파일을 저장하지 못했습니다: {e}"}
-        return {"ok": True, "error": "", "restarted": self._after_save()}
+        restarted, restart_error = self._after_save()
+        return {"ok": True, "error": "", "restarted": restarted, "restart_error": restart_error}
 
-    def _after_save(self) -> bool:
+    def _after_save(self) -> tuple[bool, str]:
+        """저장 뒤 감시 다시 시작. (다시 시작했는지, 실패 이유) — 실패하면 감시가 멈춘 상태이므로 이유를 화면에 알림"""
         self._models_cache = None
         if not self._on_saved:
-            return False
+            return False, ""
         try:
-            return bool((self._on_saved() or {}).get("ok"))
-        except Exception:  # noqa: BLE001
-            return False
+            r = self._on_saved() or {}
+        except Exception as e:  # noqa: BLE001
+            return False, str(e)[:300]
+        return bool(r.get("ok")), str(r.get("error") or "")[:300]
 
     # ---------- ChatGPT 구독 ----------
     def chatgpt_status(self) -> dict:
@@ -259,6 +268,10 @@ class SettingsAPI:
         return {"ok": True, "error": ""}
 
     def chatgpt_models(self, refresh: bool = False) -> dict:
+        with self._models_lock:   # 화면이 여러 칸에서 한꺼번에 불러도 실제 조회는 한 번
+            return self._chatgpt_models(refresh)
+
+    def _chatgpt_models(self, refresh: bool) -> dict:
         cache = self._models_cache
         if cache and not refresh and time.time() - cache[0] < self._MODELS_TTL:
             return {"options": cache[1], "error": ""}
@@ -338,7 +351,8 @@ class SettingsAPI:
             return {"ok": False, "error": str(e)}
         except OSError as e:
             return {"ok": False, "error": f"설정 파일을 저장하지 못했습니다: {e}"}
-        return {"ok": True, "error": "", "account": acc, "restarted": self._after_save()}
+        restarted, restart_error = self._after_save()
+        return {"ok": True, "error": "", "account": acc, "restarted": restarted, "restart_error": restart_error}
 
     def mail_disconnect(self, account: str = "") -> dict:
         from ..config import save_env

@@ -155,6 +155,9 @@
     Codex 플러그인에 긴 한국어 지시문을 직접 넘기면 따옴표 때문에 셸 오류가 남 → **지시문을 파일로 쓰고 "그 파일을 읽어라"고 짧게 호출**할 것.
 - **Claude 로그인**: [AI 연결] 탭. `claude auth status`(JSON: loggedIn, email, subscriptionType)로 상태, `claude auth login` 을 새 콘솔로 띄워 로그인, 미설치면 공식 설치 명령을 보이는 PowerShell 창으로 실행. 로그인 파일은 읽지 않음.
 - **밝은 테마 투명도**: `applyOpacity` 가 `--bg` 를 html 에 넣었는데 `body.light` 가 `--bg` 를 다시 정해 가려졌음 → body 에 넣도록 수정. 밝은 테마의 메뉴·대화상자는 불투명 배경 고정.
+- Codex 교차 검토(gpt-6-astra) 지적 4건 반영: 모델 목록 동시 조회 잠금, 저장 뒤 감시 재시작 실패 이유를 화면에 표시(`restart_error`), 저장 기준은 '보낸 값', 폴더 경로의 연속 공백 보존.
+- Codex 플러그인 팁: `review --model <모델>` 로 검토 모델을 고를 수 있음(도움말엔 없음) — 학교 PC 는 `--model gpt-6-astra`. `task --prompt-file <파일>` 로 긴 지시문을 파일로 넘길 수 있음.
+  학교 PC 의 `~/.codex/config.toml` 기본 모델이 `gpt-6.1-sol` 이면 모델을 안 붙인 호출이 전부 실패함(계정 미지원).
 - 남은 것: 설치판(v0.8.0)으로 빌드해 settings.html 이 포함되는지·시작 메뉴 "설정"이 새 화면을 여는지 확인, 실제 Claude 로그아웃 상태에서 [Claude 로그인] 버튼 한 바퀴.
 
 ## 3. 지켜야 할 설계 규칙
