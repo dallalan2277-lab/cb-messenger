@@ -567,6 +567,12 @@
             <label for="schoolRole">내 역할</label>
             <input id="schoolRole" autocomplete="off">
           </div>
+          <div class="field">
+            <label for="schoolMyNames">메신저에 표시되는 내 이름</label>
+            <input id="schoolMyNames" autocomplete="off" placeholder="예) 홍길동">
+            <span class="hint">보낸 사람이 이 이름과 똑같은 쪽지(내가 보낸 쪽지)는 저장·AI 분석·알림을 하지 않습니다.
+              이름이 일부만 같은 다른 선생님 쪽지는 그대로 받습니다. 여러 개면 쉼표로. '나에게 쓰기'로 시험할 때는 잠시 비워 두세요.</span>
+          </div>
           <p class="hint">예) 담당 업무: 3학년 2반 담임, 정보부 정보업무 / 참고 발신처: 충북교육청, @cbe.go.kr, 교무부</p>
         </section>
       </section>
@@ -690,7 +696,7 @@ function MockAPI() {
       quiet_start: "22:00",
       quiet_end: "08:00"
     },
-    school: { name: "", duties: "", senders: "", role: "교사" }
+    school: { name: "", duties: "", senders: "", role: "교사", my_names: "" }
   };
 
   const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -864,7 +870,8 @@ function collectData() {
       name: $("schoolName").value,
       duties: $("schoolDuties").value,
       senders: $("schoolSenders").value,
-      role: $("schoolRole").value
+      role: $("schoolRole").value,
+      my_names: $("schoolMyNames").value
     }
   };
 }
@@ -1028,6 +1035,7 @@ function populateForm(data) {
   setValue("schoolDuties", school.duties);
   setValue("schoolSenders", school.senders);
   setValue("schoolRole", school.role);
+  setValue("schoolMyNames", school.my_names);
   $("version").textContent = "v" + String(data.version || "?").replace(/^v/i, "");
 }
 

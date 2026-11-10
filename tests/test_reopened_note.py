@@ -110,3 +110,32 @@ def test_reopened_old_view_window_is_skipped_but_alarms_never():
     assert is_reopened_old({"source": "view", "time": "2026.11.10 08:25"}, started, now=NOW) is False   # 켜기 직전 10분 안
     assert is_reopened_old({"source": "view", "time": "2026.11.10 09:20"}, started, now=NOW) is False   # 켠 뒤에 온 쪽지
     assert is_reopened_old({"source": "view", "time": ""}, started, now=NOW) is False                   # 시각을 못 읽으면 새 쪽지로
+
+
+# ---------- 내가 보낸 쪽지 ----------
+def _pipe_me(tmp_path, names):
+    pipe = _pipe(tmp_path)
+    pipe.s.my_names = names
+    return pipe
+
+
+def test_my_own_note_is_skipped(tmp_path):
+    pipe = _pipe_me(tmp_path, ["홍길동"])
+    assert pipe.handle(_note(BODY, sender="홍길동")) is None
+    assert pipe.handle(_note(BODY.replace("자료", "서류"), sender="홍길동 선생님", key="k2")) is None
+    assert _count(pipe) == 0
+
+
+def test_similar_names_and_others_still_come_in(tmp_path):
+    pipe = _pipe_me(tmp_path, ["홍길동"])
+    assert pipe.handle(_note(BODY, sender="홍길동수", key="a")) is not None      # 이름 일부만 같은 다른 사람
+    assert pipe.handle(_note(BODY, sender="김철수", key="b")) is not None
+    assert _count(pipe) == 2
+
+
+def test_no_my_name_set_means_nothing_skipped_and_mail_unaffected(tmp_path):
+    pipe = _pipe_me(tmp_path, [])
+    assert pipe.handle(_note(BODY, sender="홍길동")) is not None
+    pipe2 = _pipe_me(tmp_path / "b", ["홍길동"])
+    (tmp_path / "b").mkdir(exist_ok=True)
+    assert pipe2.handle(_note(BODY, sender="홍길동", source="mail", key="<m@x>")) is not None

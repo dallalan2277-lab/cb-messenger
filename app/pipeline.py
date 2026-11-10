@@ -31,6 +31,19 @@ class Pipeline:
     def _archive_on(self, m: Message) -> bool:
         return bool(self.archiver and self.archiver.enabled and m.source in self.s.archive_sources)
 
+    @staticmethod
+    def _name_key(name: str) -> str:
+        """이름 비교용: 공백과 끝의 '선생님'·'님' 을 없앰 ('홍길동 선생님' = '홍길동')"""
+        k = re.sub(r"\s+", "", name or "")
+        return re.sub(r"(선생님|님)$", "", k)
+
+    def is_from_me(self, m: Message) -> bool:
+        """내가 보낸 쪽지인지 (설정의 '내 이름' 과 보낸 사람이 정확히 같을 때만 — 이름 일부만 같은 다른 선생님은 그대로)"""
+        if m.source != "eztalk" or not getattr(self.s, "my_names", None):
+            return False
+        me = {self._name_key(n) for n in self.s.my_names if self._name_key(n)}
+        return self._name_key(m.sender) in me
+
     def _allowed(self, m: Message) -> bool:
         if self.s.include_senders and not any(k in m.sender for k in self.s.include_senders):
             return False
@@ -65,6 +78,9 @@ class Pipeline:
         """새 메시지 1건 처리. 중복이거나 필터에 걸리면 None."""
         if not self._allowed(m):
             log.info("필터로 제외: %s", m.sender)
+            return None
+        if self.is_from_me(m):
+            log.info("내가 보낸 쪽지라 건너뜀")
             return None
         if self._seen_before(m):
             return None  # 예전에 받은 쪽지를 메신저에서 다시 열어 본 것

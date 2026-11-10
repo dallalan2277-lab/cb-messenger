@@ -74,6 +74,8 @@ class Settings:
     # ---- 요약 대상 필터 (비어 있으면 전체) ----
     include_senders: list[str] = field(default_factory=lambda: _list(_env("INCLUDE_SENDERS", "")))
     exclude_senders: list[str] = field(default_factory=lambda: _list(_env("EXCLUDE_SENDERS", "")))
+    # 메신저에 표시되는 내 이름 (쉼표로 여러 개) — 보낸 사람이 이 이름과 '정확히' 같은 쪽지(내가 보낸 쪽지)는 저장·분석 안 함
+    my_names: list[str] = field(default_factory=lambda: _list(_env("MY_NAMES", "")))
 
     # ---- 원문·요약 보관 (이 PC / 구글 드라이브 따로) ----
     archive_local_enabled: bool = field(default_factory=lambda: _bool("ARCHIVE_LOCAL", True))

@@ -40,7 +40,8 @@ def _data(**over):
         "mail": {"on": False, "account": "", "interval": "5"},
         "notify": {"on": True, "scope": "school", "high_only": False, "eztalk": True, "mail": False, "sound": False,
                    "preview": False, "quiet": True, "quiet_start": "22:00", "quiet_end": "08:00"},
-        "school": {"name": " 가상초등학교 ", "duties": "3학년 2반 담임\n정보부", "senders": "교무부", "role": "교사"},
+        "school": {"name": " 가상초등학교 ", "duties": "3학년 2반 담임\n정보부", "senders": "교무부", "role": "교사",
+                   "my_names": " 홍길동 ,, 길동이\nX=1 "},
     }
     for k, v in over.items():
         d[k] = {**d[k], **v}
@@ -78,6 +79,7 @@ def test_save_writes_same_keys_as_old_dialog(tmp_path, env):
     assert env["MAIL_ENABLED"] == "false" and env["MAIL_INTERVAL_MIN"] == "5"
     assert env["NOTIFY_SOURCES"] == "eztalk" and env["NOTIFY_QUIET_START"] == "22:00"
     assert env["SCHOOL_NAME"] == "가상초등학교" and env["SCHOOL_DUTIES"] == "3학년 2반 담임, 정보부"
+    assert env["MY_NAMES"] == "홍길동,길동이 X=1"                    # 한 줄로, 빈 이름은 뺌
 
 
 def test_save_without_calendar_reports_not_restarted(tmp_path, env):

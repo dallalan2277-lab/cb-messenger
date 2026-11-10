@@ -111,7 +111,7 @@ class SettingsAPI:
                        "sound": s.notify_sound, "preview": s.notify_preview, "quiet": s.notify_quiet,
                        "quiet_start": s.notify_quiet_start, "quiet_end": s.notify_quiet_end},
             "school": {"name": s.school_name, "duties": s.school_duties, "senders": s.school_senders,
-                       "role": s.user_role},
+                       "role": s.user_role, "my_names": ", ".join(s.my_names)},
         }
 
     @staticmethod
@@ -196,6 +196,7 @@ class SettingsAPI:
             "NOTIFY_SOUND": _b(noti.get("sound")), "NOTIFY_PREVIEW": _b(noti.get("preview")),
             "NOTIFY_QUIET": _b(noti.get("quiet")),
             "SCHOOL_NAME": _one_line(school.get("name"), 200), "USER_ROLE": _one_line(school.get("role"), 200),
+            "MY_NAMES": ",".join(n.strip() for n in _one_line(school.get("my_names"), 200).split(",") if n.strip()),
             "SCHOOL_DUTIES": _comma_lines(school.get("duties")), "SCHOOL_SENDERS": _comma_lines(school.get("senders")),
         }
         if noti.get("quiet") or (qs and qe):   # 끈 상태에서 비워 둔 시각으로 기존 값을 지우지 않음
