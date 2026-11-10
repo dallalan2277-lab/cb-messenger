@@ -198,7 +198,10 @@
 - 구현: `app/ocr.py`, `app/memo.py`(MEMO_PROMPT·MEMO_SCHEMA·organize), `LLMProvider.complete_json_image`(chatgpt_plan·claude_cli·Fallback), storage memos CRUD, CalendarAPI memo_* (계약은 memo_spec_common.tmp.md — git 제외), calendar.html 메모 탭, 설정 화면 메모 켜기·기본 읽는 방식.
   GPT(Codex gpt-5.6-sol) 두 개가 뒷단·화면을 동시에 작성하다 ChatGPT 사용 한도(18:44 까지)로 마무리 직전 멈춤 → Claude 가 검토·테스트·실제 창 확인 후 다듬음. 두 작업을 같은 순간에 시작하면 Codex 플러그인 브로커가 충돌함 → 몇 초 띄워서 시작할 것.
 - `clean_details`: '오후 3시'→'15:00' 같은 24시간 표기와 ':00'·':30' 분을 지어낸 숫자로 보지 않게 고침.
-- 남은 것: GPT 교차 검토(한도 풀린 뒤), 설치판으로 시험(시험판), 사용자 확인 후 main 에 합치기.
+- 시험판: `__version__ = "0.9.0-beta.2"` (updater.is_newer 가 '같은 번호의 정식판 > 시험판' 으로 보게 고침 → 정식 v0.9.0 이 나오면 시험판에서도 업데이트가 뜸). GitHub 배포 안 함, 이 PC 에만 설치 파일.
+  빌드된 프로그램에서 `cbm.exe ocr-check <이미지>` 로 글자 인식 동작 확인. beta.2: 펼친 목록(select option)이 흰 바탕+흐린 글자로 보이던 문제(color-scheme 없음) 수정.
+- GPT 가 남긴 `.agent-pytest-api-review/`, `.tmp-pytest-root/` 폴더는 권한 문제로 못 지움 (.git/info/exclude 에 넣음, 동작 영향 없음).
+- 남은 것: 사용자 실사용 의견, GPT 교차 검토(ChatGPT 한도 풀린 뒤 — `review --base main --model gpt-6-astra`), 확인 후 main 에 합쳐 v0.9.0 배포.
 
 ## 3. 지켜야 할 설계 규칙
 
