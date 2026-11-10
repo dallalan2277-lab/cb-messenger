@@ -40,6 +40,11 @@
     --danger: #d93025;
     --ok: #188038;
   }
+  /* 펼친 목록(select)·날짜·시간 입력 같은 기본 부품도 테마 색으로 (없으면 흰 바탕에 흐린 글자로 보임) */
+  :root { color-scheme: dark; }
+  body.light { color-scheme: light; }
+  select option, select optgroup { background: rgb(28, 32, 40); color: #e8eaed; }
+  body.light select option, body.light select optgroup { background: #ffffff; color: #202124; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
   body {

@@ -33,6 +33,8 @@
   }
   :root { color-scheme: dark; }            /* 목록 상자·시간 입력 같은 기본 부품도 테마 색으로 */
   body.light { color-scheme: light; }
+  select option, select optgroup { background: rgb(28, 32, 40); color: #e8eaed; }
+  body.light select option, body.light select optgroup { background: #ffffff; color: #202124; }
   * { box-sizing: border-box; }
   ::-webkit-scrollbar { width: 12px; height: 12px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -658,7 +660,7 @@ function MockAPI() {
   let claudeInstalled = claudeMode !== "none";
   let claudeLoggedIn = claudeInstalled && claudeMode !== "logout";
   let mockData = {
-    version: "0.9.0-beta.1",
+    version: "0.9.0-beta.2",
     theme: query.get("theme") === "light" ? "light" : "dark",
     in_calendar: true,
     providers: [
