@@ -122,6 +122,10 @@ def clean_details(raw, source: str, extra: str = "") -> list[str]:
     if not isinstance(raw, list):
         return []
     known = {d.lstrip("0") or "0" for d in _DIGITS.findall((source or "") + " " + (extra or ""))}
+    # '오후 3시' → '15:00' 처럼 24시간으로 바꿔 적은 시각은 지어낸 숫자가 아님
+    known |= {str(int(d) + 12) for d in list(known) if d.isdigit() and 1 <= int(d) <= 11}
+    known.add("0")   # '15:00' 의 '00' 분
+    known.add("30")  # '3시 반' → '15:30'
     out = []
     for item in raw:
         line = re.sub(r"^\s*[-•·*]\s*", "", str(item or "")).strip()

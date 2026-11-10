@@ -10,6 +10,7 @@ Anthropic 정책상 구독 로그인 토큰을 꺼내 직접 API 를 부르는 �
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -18,7 +19,7 @@ import tempfile
 
 from pathlib import Path
 
-from .base import LLMProvider, LLMError
+from .base import LLMProvider, LLMError, parse_json_loose
 
 
 def find_claude() -> str | None:
@@ -39,6 +40,7 @@ def find_claude() -> str | None:
 
 class ClaudeCLIProvider(LLMProvider):
     name = "claude_cli"
+    supports_images = True
 
     def __init__(self, model: str = "", timeout_sec: int = 180):
         super().__init__(model or "(claude code 기본)")
@@ -76,11 +78,71 @@ class ClaudeCLIProvider(LLMProvider):
                            + int(u.get("cache_creation_input_tokens", 0) or 0),
                            "output_tokens": int(u.get("output_tokens", 0) or 0)}
         if out.get("is_error"):
-            msg = str(out.get("result", ""))
-            if "not logged in" in msg.lower() or "/login" in msg:
-                raise LLMError("Claude Code 에 로그인돼 있지 않습니다. 명령 프롬프트에서 claude 를 한 번 실행해 로그인하세요.")
-            raise LLMError(f"Claude Code 오류: {msg[:300]}")
+            self._raise_result_error(out)
         return str(out.get("result", ""))
+
+    @staticmethod
+    def _raise_result_error(out: dict) -> None:
+        msg = str(out.get("result", ""))
+        if "not logged in" in msg.lower() or "/login" in msg:
+            raise LLMError("Claude Code 에 로그인돼 있지 않습니다. 명령 프롬프트에서 claude 를 한 번 실행해 로그인하세요.")
+        raise LLMError(f"Claude Code 오류: {msg[:300]}")
+
+    def complete_json_image(self, system: str, user: str, image_bytes: bytes,
+                            mime: str, schema: dict | None = None) -> dict:
+        cmd = [self.exe, "-p", "--input-format", "stream-json",
+               "--output-format", "stream-json", "--verbose", "--max-turns", "1",
+               "--system-prompt", system]
+        if self._model_arg:
+            cmd += ["--model", self._model_arg]
+        payload = {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {
+                        "type": "base64", "media_type": mime,
+                        "data": base64.b64encode(image_bytes).decode("ascii"),
+                    }},
+                    {"type": "text", "text": user},
+                ],
+            },
+        }
+        env = dict(os.environ)
+        env.pop("ANTHROPIC_API_KEY", None)
+        try:
+            p = subprocess.run(
+                cmd, input=json.dumps(payload, ensure_ascii=False) + "\n",
+                capture_output=True, text=True, encoding="utf-8",
+                timeout=self.timeout, cwd=self._workdir, env=env,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except subprocess.TimeoutExpired as e:
+            raise LLMError("Claude Code 응답 시간이 초과되었습니다.") from e
+        if p.returncode != 0 and not p.stdout.strip():
+            raise LLMError(f"Claude Code 실행 실패: {p.stderr.strip()[:300]} (로그인 상태를 확인하세요: claude)")
+
+        result = None
+        for line in p.stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(event, dict) and event.get("type") == "result":
+                result = event
+        if result is None:
+            raise LLMError("Claude Code 응답에서 결과를 찾지 못했습니다.")
+
+        u = result.get("usage") or {}
+        self.last_usage = {
+            "input_tokens": int(u.get("input_tokens", 0) or 0)
+            + int(u.get("cache_read_input_tokens", 0) or 0)
+            + int(u.get("cache_creation_input_tokens", 0) or 0),
+            "output_tokens": int(u.get("output_tokens", 0) or 0),
+        }
+        if result.get("is_error"):
+            self._raise_result_error(result)
+        return parse_json_loose(str(result.get("result", "")))
 
 
 # ───────── 설정 화면용: 설치·로그인 상태 확인, 로그인 창 띄우기 ─────────

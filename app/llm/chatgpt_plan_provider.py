@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import base64
 import json
 
 import httpx
@@ -68,6 +69,7 @@ def parse_sse_text(lines, usage_out: dict | None = None) -> str:
 
 class ChatGPTPlanProvider(LLMProvider):
     name = "chatgpt_plan"
+    supports_images = True
 
     def __init__(self, model: str = "", session: ChatGPTSession | None = None,
                  http: httpx.Client | None = None):
@@ -106,10 +108,26 @@ class ChatGPTPlanProvider(LLMProvider):
                     raise
         return parse_json_loose(self._complete(system, user, None))
 
+    def complete_json_image(self, system: str, user: str, image_bytes: bytes,
+                            mime: str, schema: dict | None = None) -> dict:
+        encoded = base64.b64encode(image_bytes).decode("ascii")
+        content = [
+            {"type": "input_image", "image_url": f"data:{mime};base64,{encoded}"},
+            {"type": "input_text", "text": user},
+        ]
+        if schema:
+            try:
+                return parse_json_loose(self._complete(system, content, {"format": {
+                    "type": "json_schema", "name": "item_assessment", "strict": True, "schema": schema}}))
+            except LLMError as e:
+                if "400" not in str(e):
+                    raise
+        return parse_json_loose(self._complete(system, content, None))
+
     def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
         return self._complete(system, user, None)
 
-    def _complete(self, system: str, user: str, text_format: dict | None) -> str:
+    def _complete(self, system: str, user: str | list[dict], text_format: dict | None) -> str:
         body = {
             "model": self.model,
             "instructions": system,                       # system 메시지 대신

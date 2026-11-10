@@ -161,3 +161,9 @@ def test_api_reanalyze_uses_settings_and_reports_errors(tmp_path, monkeypatch):
     assert r["ok"] is True and r["model"].startswith("fake") and refreshed
     assert api.item(m.id)["summary"]
     assert "찾을 수 없습니다" in api.reanalyze(99999)["error"]
+
+
+def test_clean_details_accepts_24h_conversion_of_pm_time():
+    src = "11월 18일(수) 오후 3시, 본관 2층 회의실"
+    assert clean_details(["일시: 2026-11-18 15:00"], src, "2026-11-18") == ["일시: 2026-11-18 15:00"]
+    assert clean_details(["일시: 11월 18일 16:00"], src) == []          # 원문에 없는 시각(4시)은 여전히 뺌

@@ -443,6 +443,26 @@
             <label for="summaryOn">AI 요약도 함께 저장 (쪽지요약_YYYY-MM 파일)</label>
           </div>
         </section>
+
+        <section class="section" aria-labelledby="memoSettingsTitle">
+          <h3 id="memoSettingsTitle">메모</h3>
+          <div class="check-row">
+            <input id="memoEnabled" type="checkbox">
+            <label for="memoEnabled"><strong>메모 기능 켜기</strong></label>
+          </div>
+          <p class="help">캡처나 붙여 넣은 글을 AI가 제목·요약·일정으로 정리합니다.</p>
+          <div class="subgroup">
+            <div class="help">캡처를 읽는 기본 방식</div>
+            <div class="check-row">
+              <input id="memoReadOcr" type="radio" name="memoReadMode" value="ocr">
+              <label for="memoReadOcr">이 PC에서 글자만 읽기 (권장 — 개인정보 가림, 사용량 적음)</label>
+            </div>
+            <div class="check-row">
+              <input id="memoReadImage" type="radio" name="memoReadMode" value="image">
+              <label for="memoReadImage">캡처를 AI에 그대로 보내기 (표·그림 이해가 낫지만 개인정보가 가려지지 않음)</label>
+            </div>
+          </div>
+        </section>
         <div class="err" id="storageError" role="alert"></div>
       </section>
 
@@ -678,6 +698,7 @@ function MockAPI() {
       format: "txt",
       summary_on: true
     },
+    memo: { enabled: true, read_mode: "ocr" },
     mail: { on: false, account: "", interval: "2", password_saved: false },
     notify: {
       on: true,
@@ -829,6 +850,7 @@ function collectData() {
   const reasoning = document.querySelector('input[name="reasoning"]:checked');
   const scope = document.querySelector('input[name="notifyScope"]:checked');
   const format = document.querySelector('input[name="archiveFormat"]:checked');
+  const memoReadMode = document.querySelector('input[name="memoReadMode"]:checked');
   return {
     models: {
       analyze: joinModelSpec("analyze"),
@@ -848,6 +870,10 @@ function collectData() {
       gdrive_redact: $("gdriveRedact").checked,
       format: format ? format.value : "txt",
       summary_on: $("summaryOn").checked
+    },
+    memo: {
+      enabled: $("memoEnabled").checked,
+      read_mode: memoReadMode ? memoReadMode.value : "ocr"
     },
     mail: {
       on: $("mailOn").checked,
@@ -988,6 +1014,7 @@ function renderNotifyScopes(scopes, selected) {
 function populateForm(data) {
   const models = data.models || {};
   const archive = data.archive || {};
+  const memo = data.memo || {};
   const mail = data.mail || {};
   const notify = data.notify || {};
   const school = data.school || {};
@@ -1014,6 +1041,11 @@ function populateForm(data) {
   $("formatTxt").checked = format === "txt";
   $("formatMd").checked = format === "md";
   setChecked("summaryOn", archive.summary_on);
+
+  setChecked("memoEnabled", memo.enabled !== false);
+  const memoReadMode = memo.read_mode === "image" ? "image" : "ocr";
+  $("memoReadOcr").checked = memoReadMode === "ocr";
+  $("memoReadImage").checked = memoReadMode === "image";
 
   setChecked("mailOn", mail.on);
   setValue("mailAccount", mail.account);

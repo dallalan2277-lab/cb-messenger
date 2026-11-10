@@ -16,6 +16,7 @@ class LLMError(RuntimeError):
 
 class LLMProvider(ABC):
     name: str = "base"
+    supports_images: bool = False
 
     def __init__(self, model: str):
         self.model = model
@@ -35,6 +36,14 @@ class LLMProvider(ABC):
         schema(JSON 스키마)를 지원하는 제공자는 형식을 강제하고, 아니면 프롬프트에 적힌 형식을 따릅니다."""
         text = self.complete(system, user, max_tokens=max_tokens)
         return parse_json_loose(text)
+
+    def complete_json_image(self, system: str, user: str, image_bytes: bytes,
+                            mime: str, schema: dict | None = None) -> dict:
+        """이미지와 글을 함께 보내 JSON 객체를 받습니다.
+
+        이미지 입력을 구현한 제공자만 이 메서드를 재정의합니다.
+        """
+        raise LLMError("이 AI 연결은 이미지를 받지 못합니다.")
 
 
 def parse_json_loose(text: str) -> dict:

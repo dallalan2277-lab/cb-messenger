@@ -37,6 +37,7 @@ def _data(**over):
         "skip": {"keywords": " 식단 , ,급식", "min_chars": "5"},
         "archive": {"local_on": True, "local_dir": "C:\\기록", "gdrive_on": False, "gdrive_dir": "",
                     "gdrive_redact": True, "format": "md", "summary_on": False},
+        "memo": {"enabled": True, "read_mode": "ocr"},
         "mail": {"on": False, "account": "", "interval": "5"},
         "notify": {"on": True, "scope": "school", "high_only": False, "eztalk": True, "mail": False, "sound": False,
                    "preview": False, "quiet": True, "quiet_start": "22:00", "quiet_end": "08:00"},
@@ -53,7 +54,8 @@ def test_load_has_every_section_and_no_secrets(tmp_path, env):
     (tmp_path / "prefs.json").write_text(json.dumps({"theme": "light"}), encoding="utf-8")
     r = _api(tmp_path, in_calendar=True).load()
     assert r["theme"] == "light" and r["in_calendar"] is True
-    assert {"models", "skip", "archive", "mail", "notify", "school", "providers", "model_hints"} <= set(r)
+    assert {"models", "skip", "archive", "memo", "mail", "notify", "school", "providers", "model_hints"} <= set(r)
+    assert r["memo"] == {"enabled": True, "read_mode": "ocr"}
     assert [p["id"] for p in r["providers"]][:2] == ["chatgpt_plan", "claude_cli"]
     assert r["mail"]["password_saved"] is False
     assert "password" not in json.dumps(r).replace("password_saved", "")   # 비밀번호 값은 어디에도 없음
@@ -76,6 +78,7 @@ def test_save_writes_same_keys_as_old_dialog(tmp_path, env):
     assert env["AI_FALLBACK"] == "claude_cli:opus" and env["AI_REASONING"] == "low"
     assert env["SKIP_AI_KEYWORDS"] == "식단,급식" and env["SKIP_AI_MIN_CHARS"] == "5"
     assert env["ARCHIVE_LOCAL"] == "true" and env["ARCHIVE_FORMAT"] == "md" and env["ARCHIVE_SUMMARY"] == "false"
+    assert env["MEMO_ENABLED"] == "true" and env["MEMO_READ_MODE"] == "ocr"
     assert env["MAIL_ENABLED"] == "false" and env["MAIL_INTERVAL_MIN"] == "5"
     assert env["NOTIFY_SOURCES"] == "eztalk" and env["NOTIFY_QUIET_START"] == "22:00"
     assert env["SCHOOL_NAME"] == "가상초등학교" and env["SCHOOL_DUTIES"] == "3학년 2반 담임, 정보부"
@@ -84,6 +87,13 @@ def test_save_writes_same_keys_as_old_dialog(tmp_path, env):
 
 def test_save_without_calendar_reports_not_restarted(tmp_path, env):
     assert _api(tmp_path).save(_data())["restarted"] is False
+
+
+def test_save_memo_settings_and_normalizes_bad_mode(tmp_path, env):
+    assert _api(tmp_path).save(_data(memo={"enabled": False, "read_mode": "image"}))["ok"] is True
+    assert env["MEMO_ENABLED"] == "false" and env["MEMO_READ_MODE"] == "image"
+    assert _api(tmp_path).save(_data(memo={"enabled": True, "read_mode": "unknown"}))["ok"] is True
+    assert env["MEMO_ENABLED"] == "true" and env["MEMO_READ_MODE"] == "ocr"
 
 
 def test_save_reports_why_watch_could_not_restart(tmp_path, env):
@@ -359,11 +369,13 @@ def test_settings_api_claude_login_reports_errors(tmp_path, env, monkeypatch):
 # ---------- 그 밖 ----------
 def test_usage_rows_are_labelled(tmp_path, env):
     rows = [{"provider": "chatgpt_plan", "model": "gpt-5.6-sol", "purpose": "analyze", "calls": 3, "inp": 1200, "outp": None},
-            {"provider": "claude_cli", "model": "opus", "purpose": "digest", "calls": 1, "inp": 10, "outp": 5}]
+            {"provider": "claude_cli", "model": "opus", "purpose": "digest", "calls": 1, "inp": 10, "outp": 5},
+            {"provider": "chatgpt_plan", "model": "gpt-5.6-sol", "purpose": "memo", "calls": 2, "inp": 20, "outp": 8}]
     r = _api(tmp_path, usage_fn=lambda since: rows).usage()
     assert r["since"].endswith("-01")
     assert r["rows"][0] == {"purpose": "분석", "provider": "ChatGPT 구독", "model": "gpt-5.6-sol", "calls": 3, "inp": 1200, "outp": 0}
     assert r["rows"][1]["purpose"] == "브리핑" and r["rows"][1]["provider"] == "Claude 구독"
+    assert r["rows"][2]["purpose"] == "메모"
     assert _api(tmp_path).usage()["rows"] == []
 
 

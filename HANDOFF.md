@@ -191,6 +191,15 @@
 - `MY_NAMES`(설정 화면 학교 정보 탭 '메신저에 표시되는 내 이름', 쉼표 여러 개) + `Pipeline.is_from_me`: 쪽지(eztalk)만, 공백·끝의 '선생님/님' 을 뺀 이름이 **정확히** 같을 때만 저장·분석·알림 안 함. EXCLUDE_SENDERS(일부 일치)와 별개.
 - 창의 '보낸 쪽지' 표시로 거르는 방법은 실제 창 글자를 확인하지 못해 넣지 않음 (받은 쪽지를 잘못 거를 위험). 필요하면 보낸 쪽지를 연 채로 `messenger-check --raw` 로 확인 뒤 추가.
 
+### 2-12. 메모 기능 (브랜치 feature/memo) — 2026-11-10
+- 동료 제안: 캡처를 캘린더에 붙여 넣으면 AI 가 정리한 메모가 되고, 그 메모를 일정으로. 사용자 결정: 캘린더 옆 '메모' 탭 / 읽는 방식 선택(이 PC 글자 인식 = 기본·권장, 캡처를 AI 에 그대로) / 종류는 AI 가 고르고 사람이 수정 / 캡처 이미지 보관 / 되돌리기 대비.
+- 되돌리기 대비: 브랜치에서 작업, 새 표(memos)·새 칸(calendar_events.memo_id)·새 폴더(data/메모)만 추가, 설정 MEMO_ENABLED 로 끄면 탭이 사라짐, v0.8.3 태그·설치 파일 그대로.
+- 확인된 사실 (2026-11-10, 학교 PC): Windows.Media.Ocr 한국어 인식기가 기본으로 있음(winrt 패키지는 win11toast 와 함께 이미 설치). ChatGPT 구독(/v1/responses 의 input_image)·Claude 구독(claude -p --input-format stream-json 의 image 블록) 모두 이미지 입력 동작.
+- 구현: `app/ocr.py`, `app/memo.py`(MEMO_PROMPT·MEMO_SCHEMA·organize), `LLMProvider.complete_json_image`(chatgpt_plan·claude_cli·Fallback), storage memos CRUD, CalendarAPI memo_* (계약은 memo_spec_common.tmp.md — git 제외), calendar.html 메모 탭, 설정 화면 메모 켜기·기본 읽는 방식.
+  GPT(Codex gpt-5.6-sol) 두 개가 뒷단·화면을 동시에 작성하다 ChatGPT 사용 한도(18:44 까지)로 마무리 직전 멈춤 → Claude 가 검토·테스트·실제 창 확인 후 다듬음. 두 작업을 같은 순간에 시작하면 Codex 플러그인 브로커가 충돌함 → 몇 초 띄워서 시작할 것.
+- `clean_details`: '오후 3시'→'15:00' 같은 24시간 표기와 ':00'·':30' 분을 지어낸 숫자로 보지 않게 고침.
+- 남은 것: GPT 교차 검토(한도 풀린 뒤), 설치판으로 시험(시험판), 사용자 확인 후 main 에 합치기.
+
 ## 3. 지켜야 할 설계 규칙
 
 0. **모델 선택은 항상 `create_provider(settings, spec)` / `build_pipeline(settings)` 경유**. spec 형식 `제공자[:모델]`.
