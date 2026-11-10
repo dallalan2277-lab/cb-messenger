@@ -123,6 +123,10 @@ python main.py gui                          :: 테스트 화면 (메시지 붙�
 화면만 고칠 때: `app/desktop_calendar/calendar.html` · `settings.html` 을 브라우저로 열면 예시 데이터(MockAPI)로 동작 (settings.html 은 `?theme=light`, `?claude=none`, `?claude=logout` 으로 상태를 바꿔 볼 수 있음).
 
 ## 남은 작업 (우선순위 순)
+0. **진행 중: 메모 기능 (브랜치 `feature/memo`, 시험판 v0.9.0-beta.2)** — 2026-11-10 기준
+   - 캡처·글 → (이 PC 글자 인식 또는 캡처를 AI 에 그대로) → AI 메모 정리(종류 자동·수정 가능) → 일정 제안/일정으로 넣기. 자세한 내용은 그 브랜치의 HANDOFF.md 2-12.
+   - 다음에 할 일: ① 사용자가 시험판(packaging\Output\CBMessengerAI_Setup_0.9.0-beta.2.exe, GitHub 배포 안 함)을 실제로 써 보고 의견 ② GPT 교차 검토 (`review --base main --model gpt-6-astra`, 학교 PC) ③ 괜찮으면 main 에 합쳐 v0.9.0 정식 배포, 아니면 브랜치 버리고 v0.8.3 설치 파일로 되돌리기.
+   - 시작 전: `git fetch` 후 `git checkout feature/memo` (main 에는 메모 기능이 없음).
 1. **사용자 PC 에서 실제 확인·수정** (가장 먼저)
    - ~~설치 오류 여부~~ → 2026-11-08 확인: Python 3.10.6 에서 requirements 설치 OK, Windows 라이브러리 import OK, 테스트 52 통과·1 건너뜀(유닉스용 가짜 claude), `--provider fake test` 정상
    - ChatGPT 구독 로그인: 첫 콜백의 `client_id`, ID 토큰 검증(OIDC discovery 주소 미확인, 대체 jwks 주소 사용 중), 토큰 갱신, `text.format json_schema` 허용 여부, `reasoning` 허용 여부
