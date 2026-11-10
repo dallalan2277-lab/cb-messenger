@@ -47,7 +47,8 @@ Source: "dist\CBMessengerAI\*"; DestDir: "{app}"; Flags: ignoreversion recursesu
 
 [Icons]
 Name: "{group}\충북메신저 AI 캘린더"; Filename: "{app}\{#MyAppExe}"
-Name: "{group}\설정"; Filename: "{app}\{#MyAppExe}"; Parameters: "gui"
+Name: "{group}\설정"; Filename: "{app}\{#MyAppExe}"; Parameters: "settings"
+Name: "{group}\테스트 화면"; Filename: "{app}\{#MyAppExe}"; Parameters: "gui"
 Name: "{group}\ChatGPT 로그인"; Filename: "{cmd}"; Parameters: "/c """"{app}\{#MyCliExe}"" chatgpt-login & pause"""; IconFilename: "{app}\{#MyAppExe}"
 Name: "{group}\샘플 테스트"; Filename: "{cmd}"; Parameters: "/c """"{app}\{#MyCliExe}"" test & pause"""; IconFilename: "{app}\{#MyAppExe}"
 Name: "{group}\쪽지 창 읽기 확인"; Filename: "{cmd}"; Parameters: "/c """"{app}\{#MyCliExe}"" messenger-check & pause"""; IconFilename: "{app}\{#MyAppExe}"

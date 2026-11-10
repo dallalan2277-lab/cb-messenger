@@ -1,0 +1,1557 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>설정</title>
+<style>
+  :root {
+    --bg: rgba(18, 22, 30, 0.86);
+    --panel: rgba(255, 255, 255, 0.04);
+    --line: rgba(255, 255, 255, 0.08);
+    --text: #e8eaed;
+    --dim: #9aa0a6;
+    --faint: #5f6368;
+    --accent: #7cacf8;
+    --sugg: #fdd663;
+    --danger: #f28b82;
+    --ok: #81c995;
+    --radius: 10px;
+    --font: "Pretendard", "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", sans-serif;
+  }
+  body.light {
+    --bg: rgba(250, 250, 252, 0.90);
+    --panel: rgba(0, 0, 0, 0.03);
+    --line: rgba(0, 0, 0, 0.08);
+    --text: #202124;
+    --dim: #5f6368;
+    --faint: #9aa0a6;
+    --accent: #1a73e8;
+    --sugg: #b06000;
+    --danger: #d93025;
+    --ok: #188038;
+  }
+  :root { color-scheme: dark; }            /* 목록 상자·시간 입력 같은 기본 부품도 테마 색으로 */
+  body.light { color-scheme: light; }
+  * { box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 12px; height: 12px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(128, 134, 145, 0.35); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background-color: rgba(128, 134, 145, 0.6); }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    font-family: var(--font); color: var(--text); font-size: 13px;
+    user-select: none; -webkit-user-select: none;
+    background: rgb(22, 26, 34);
+  }
+  body.light { background: rgb(250, 250, 252); }
+  button, input, select, textarea { user-select: text; -webkit-user-select: text; }
+  .app { height: 100%; display: flex; flex-direction: column; min-width: 0; }
+  .header {
+    flex: none; display: flex; align-items: baseline; gap: 10px;
+    min-height: 52px; padding: 14px 18px 10px; border-bottom: 1px solid var(--line);
+  }
+  .header h1 { margin: 0; font-size: 20px; letter-spacing: -0.3px; }
+  .header p { margin: 0; color: var(--dim); font-size: 12px; }
+  .main { flex: 1; min-height: 0; min-width: 0; display: flex; }
+  .nav {
+    width: 154px; flex: none; padding: 12px 9px; border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .nav-tab {
+    min-width: 0; border: 1px solid transparent; border-radius: 8px; background: transparent;
+    color: var(--dim); padding: 9px 11px; font: inherit; font-weight: 600; text-align: left; cursor: pointer;
+  }
+  .nav-tab:hover { background: var(--panel); color: var(--text); }
+  .nav-tab[aria-selected="true"] {
+    color: var(--text); background: var(--panel); border-color: var(--line);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  .nav-tab:focus-visible, .btn:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .content {
+    flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden;
+    padding: 18px 22px 34px; scroll-behavior: smooth;
+  }
+  .pane { width: 100%; max-width: 760px; margin: 0 auto; }
+  .pane > h2 { margin: 0 0 4px; font-size: 18px; }
+  .lead { margin: 0 0 16px; color: var(--dim); line-height: 1.55; }
+  .section { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .section:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+  .cards + .section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .section h3 { margin: 0 0 5px; font-size: 15px; }
+  .help { color: var(--dim); font-size: 12px; line-height: 1.55; }
+  .hint { color: var(--faint); font-size: 12px; line-height: 1.5; }
+  .ok-text { color: var(--ok); font-size: 12px; }
+  .btn {
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    border-radius: 8px; padding: 5px 10px; font: inherit; cursor: pointer; line-height: 1.2;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  body:not(.light) .btn.primary { color: #0b1a33; }
+  .btn:disabled { cursor: default; opacity: 0.55; }
+  .btn.danger { color: var(--danger); }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .field label { color: var(--dim); font-size: 12px; }
+  input, textarea, select {
+    font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 9px; outline: none; width: 100%;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 60px; }
+  ::-webkit-calendar-picker-indicator { filter: invert(0.7); }
+  body.light ::-webkit-calendar-picker-indicator { filter: none; }
+  input[type="checkbox"], input[type="radio"] {
+    width: 16px; height: 16px; flex: none; margin: 0; padding: 0; accent-color: var(--accent);
+  }
+  .err { color: var(--danger); font-size: 12px; min-height: 16px; }
+  .toast { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(0,0,0,0.75); color: #fff; padding: 7px 14px; border-radius: 999px; font-size: 12px; display: none; z-index: 20; }
+  .toast.on { display: block; }
+  .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .card {
+    min-width: 0; padding: 15px; border: 1px solid var(--line);
+    border-radius: var(--radius); background: var(--panel);
+  }
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .card h3 { margin: 0 0 8px; font-size: 15px; }
+  .status { display: flex; align-items: flex-start; gap: 7px; min-width: 0; line-height: 1.4; }
+  .dot { width: 9px; height: 9px; margin-top: 4px; border-radius: 50%; background: var(--faint); flex: none; }
+  .dot.ok { background: var(--ok); }
+  .dot.warn { background: var(--sugg); }
+  .status-copy { min-width: 0; overflow-wrap: anywhere; }
+  .status-main { font-weight: 600; }
+  .status-meta { color: var(--dim); font-size: 12px; margin-top: 2px; }
+  .card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
+  .card .err { margin-top: 8px; }
+  .card .err:empty, .card .guide:empty, .load-error:empty { display: none; }
+  .card-note { margin: 12px 0 0; color: var(--faint); font-size: 11px; line-height: 1.5; }
+  .guide { margin-top: 9px; color: var(--sugg); font-size: 12px; line-height: 1.45; min-height: 17px; }
+  .table-wrap { width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+  th { color: var(--dim); font-size: 11px; font-weight: 600; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .usage-empty { padding: 16px; color: var(--faint); text-align: center; }
+  .model-row { padding: 15px 0; border-bottom: 1px solid var(--line); }
+  .model-row:first-of-type { padding-top: 6px; }
+  .model-row h3 { margin: 0 0 3px; font-size: 14px; }
+  .model-grid {
+    display: grid; grid-template-columns: minmax(150px, 0.8fr) minmax(190px, 1.2fr);
+    gap: 9px; margin-top: 10px;
+  }
+  .model-grid .field { margin-bottom: 0; }
+  .warning { color: var(--sugg); font-size: 12px; min-height: 17px; margin-top: 7px; }
+  .segments { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+  .segments input { position: absolute; opacity: 0; pointer-events: none; }
+  .segments label {
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px;
+    color: var(--dim); cursor: pointer;
+  }
+  .segments input:checked + label { border-color: var(--accent); color: var(--text); background: var(--panel); }
+  .segments input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .check-row { display: flex; align-items: flex-start; gap: 8px; margin: 9px 0; line-height: 1.45; }
+  .check-row label { cursor: pointer; }
+  .subgroup { margin: 8px 0 0 24px; min-width: 0; }
+  .folder-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; align-items: end; }
+  .folder-row .field { margin: 0; min-width: 0; }
+  .divider { height: 1px; background: var(--line); margin: 16px 0; }
+  .choice-row { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 16px; margin: 8px 0; }
+  .choice { display: inline-flex; align-items: center; gap: 7px; }
+  .choice label { cursor: pointer; }
+  .form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 12px; }
+  .form-grid .wide { grid-column: 1 / -1; }
+  .password-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(155px, auto); gap: 8px; align-items: center; }
+  .action-line { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0; }
+  .inline-confirm {
+    margin-top: 9px; padding: 10px 12px; border: 1px solid var(--danger);
+    border-radius: var(--radius); background: var(--panel);
+  }
+  .inline-confirm p { margin: 0 0 8px; line-height: 1.45; }
+  .quiet-line { display: grid; grid-template-columns: auto minmax(105px, 1fr) auto minmax(105px, 1fr); gap: 7px; align-items: center; }
+  .footer {
+    flex: none; border-top: 1px solid var(--line); background: rgb(22, 26, 34);
+    padding: 7px 14px 9px; z-index: 5;
+  }
+  body.light .footer { background: rgb(250, 250, 252); }
+  .footer .err { text-align: right; }
+  .footer-row { display: flex; align-items: center; gap: 8px; }
+  .version { color: var(--faint); font-size: 11px; }
+  .spacer { flex: 1; }
+  .scrim {
+    position: absolute; inset: 0; z-index: 30; display: grid; place-items: center;
+    padding: 18px; background: rgba(0, 0, 0, 0.58);
+  }
+  .dialog {
+    width: min(390px, 100%); background: rgb(28, 32, 40); border: 1px solid var(--line);
+    border-radius: 14px; padding: 18px; box-shadow: 0 10px 40px rgba(0,0,0,0.35);
+  }
+  body.light .dialog { background: rgb(250, 250, 252); }
+  .dialog h2 { margin: 0 0 8px; font-size: 16px; }
+  .dialog p { margin: 0 0 14px; color: var(--dim); line-height: 1.5; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; }
+  .load-error { max-width: 760px; margin: 0 auto 12px; }
+  @media (max-width: 720px) {
+    .header { min-height: 46px; padding: 11px 13px 8px; }
+    .header h1 { font-size: 18px; }
+    .header p { display: none; }
+    .main { flex-direction: column; }
+    .nav {
+      width: auto; padding: 7px 8px; border-right: 0; border-bottom: 1px solid var(--line);
+      display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 3px;
+    }
+    .nav-tab { padding: 7px 3px; text-align: center; white-space: nowrap; font-size: 12px; }
+    .nav-tab[aria-selected="true"] { box-shadow: inset 0 -3px 0 var(--accent); }
+    .content { padding: 14px 14px 30px; }
+    .cards { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .model-grid, .form-grid { grid-template-columns: 1fr; }
+    .form-grid .wide { grid-column: auto; }
+    .password-line { grid-template-columns: 1fr; }
+    .quiet-line { grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); }
+    th, td { padding: 7px 5px; font-size: 11px; }
+    .footer { padding-left: 9px; padding-right: 9px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="header">
+    <h1>설정</h1>
+    <p>AI 연결, 저장, 메일과 알림을 한곳에서 관리합니다.</p>
+  </header>
+
+  <div class="main">
+    <nav class="nav" role="tablist" aria-label="설정 항목" aria-orientation="vertical">
+      <button class="nav-tab" id="tab-ai" role="tab" aria-selected="true" aria-controls="pane-ai" data-tab="ai">AI 연결</button>
+      <button class="nav-tab" id="tab-models" role="tab" aria-selected="false" aria-controls="pane-models" data-tab="models" tabindex="-1">모델</button>
+      <button class="nav-tab" id="tab-storage" role="tab" aria-selected="false" aria-controls="pane-storage" data-tab="storage" tabindex="-1">저장</button>
+      <button class="nav-tab" id="tab-mail" role="tab" aria-selected="false" aria-controls="pane-mail" data-tab="mail" tabindex="-1">메일</button>
+      <button class="nav-tab" id="tab-notify" role="tab" aria-selected="false" aria-controls="pane-notify" data-tab="notify" tabindex="-1">알림</button>
+      <button class="nav-tab" id="tab-school" role="tab" aria-selected="false" aria-controls="pane-school" data-tab="school" tabindex="-1">학교 정보</button>
+    </nav>
+
+    <main class="content" id="content">
+      <div class="err load-error" id="loadError" role="alert"></div>
+
+      <section class="pane" id="pane-ai" role="tabpanel" aria-labelledby="tab-ai">
+        <h2>AI 연결</h2>
+        <p class="lead">구독 계정의 로그인 상태를 확인하고 연결합니다.</p>
+        <div class="cards">
+          <article class="card" aria-labelledby="chatgptTitle">
+            <div class="card-head">
+              <div>
+                <h3 id="chatgptTitle">ChatGPT 구독</h3>
+                <div class="status">
+                  <span class="dot" id="chatgptDot" aria-hidden="true"></span>
+                  <div class="status-copy">
+                    <div class="status-main" id="chatgptStatus">확인 중…</div>
+                    <div class="status-meta" id="chatgptMeta"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="guide" id="chatgptGuide" aria-live="polite"></div>
+            <div class="err" id="chatgptError" role="alert"></div>
+            <div class="card-actions">
+              <button class="btn" id="chatgptLogin" type="button">로그인</button>
+              <button class="btn" id="chatgptLogout" type="button" hidden>로그아웃</button>
+            </div>
+          </article>
+
+          <article class="card" aria-labelledby="claudeTitle">
+            <div class="card-head">
+              <div>
+                <h3 id="claudeTitle">Claude 구독</h3>
+                <div class="status">
+                  <span class="dot" id="claudeDot" aria-hidden="true"></span>
+                  <div class="status-copy">
+                    <div class="status-main" id="claudeStatus">확인 중…</div>
+                    <div class="status-meta" id="claudeMeta"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="guide" id="claudeGuide" aria-live="polite"></div>
+            <div class="err" id="claudeError" role="alert"></div>
+            <div class="card-actions">
+              <button class="btn" id="claudeInstall" type="button" hidden>Claude Code 설치</button>
+              <button class="btn" id="claudeLogin" type="button" hidden>Claude 로그인</button>
+              <button class="btn" id="claudeRefresh" type="button">다시 확인</button>
+            </div>
+            <p class="card-note">Claude 는 공식 Claude Code 프로그램으로 로그인합니다. 이 프로그램은 Claude 로그인 정보를 직접 다루지 않습니다.</p>
+          </article>
+        </div>
+
+        <section class="section" aria-labelledby="usageTitle">
+          <h3 id="usageTitle">이번 달 AI 사용량</h3>
+          <p class="help" id="usageSince"></p>
+          <div class="table-wrap">
+            <table id="usageTable">
+              <colgroup>
+                <col style="width:15%">
+                <col style="width:39%">
+                <col style="width:14%">
+                <col style="width:32%">
+              </colgroup>
+              <thead>
+                <tr><th scope="col">용도</th><th scope="col">모델</th><th scope="col">호출 수</th><th scope="col">입력 · 출력 토큰</th></tr>
+              </thead>
+              <tbody id="usageBody"></tbody>
+            </table>
+            <div class="usage-empty" id="usageEmpty" hidden>이번 달 사용 기록이 없습니다.</div>
+          </div>
+          <div class="err" id="usageError" role="alert"></div>
+          <p class="hint">구독은 토큰만큼 돈이 나가지 않고 플랜 사용 한도에서 차감됩니다.</p>
+        </section>
+      </section>
+
+      <section class="pane" id="pane-models" role="tabpanel" aria-labelledby="tab-models" hidden>
+        <h2>모델</h2>
+        <p class="lead">구독(ChatGPT·Claude)은 플랜 사용 한도에서, API 키는 사용한 토큰만큼 결제됩니다.</p>
+
+        <div class="model-row" data-model-row="analyze">
+          <h3>분석 모델</h3>
+          <div class="help">메시지가 올 때마다 분류·요약합니다. 호출이 가장 많으니 가벼운 모델을 권장합니다.</div>
+          <div class="model-grid">
+            <div class="field">
+              <label for="analyzeProvider">제공자</label>
+              <select id="analyzeProvider" data-provider="analyze"></select>
+            </div>
+            <div class="field">
+              <label for="analyzeModel">모델</label>
+              <input id="analyzeModel" data-model="analyze" list="analyzeModels" placeholder="자동/기본 모델" autocomplete="off">
+              <datalist id="analyzeModels"></datalist>
+            </div>
+          </div>
+          <div class="warning" id="analyzeWarning"></div>
+        </div>
+
+        <div class="model-row" data-model-row="digest">
+          <h3>브리핑 모델</h3>
+          <div class="help">하루 정리용입니다. 호출이 적어 좋은 모델을 써도 부담이 작습니다.</div>
+          <div class="model-grid">
+            <div class="field">
+              <label for="digestProvider">제공자</label>
+              <select id="digestProvider" data-provider="digest"></select>
+            </div>
+            <div class="field">
+              <label for="digestModel">모델</label>
+              <input id="digestModel" data-model="digest" list="digestModels" placeholder="자동/기본 모델" autocomplete="off">
+              <datalist id="digestModels"></datalist>
+            </div>
+          </div>
+          <div class="warning" id="digestWarning"></div>
+        </div>
+
+        <div class="model-row" data-model-row="fallback">
+          <h3>대체 모델</h3>
+          <div class="help">위 모델이 한도 초과·로그인 만료 등으로 실패하면 대신 사용합니다.</div>
+          <div class="model-grid">
+            <div class="field">
+              <label for="fallbackProvider">제공자</label>
+              <select id="fallbackProvider" data-provider="fallback"></select>
+            </div>
+            <div class="field">
+              <label for="fallbackModel">모델</label>
+              <input id="fallbackModel" data-model="fallback" list="fallbackModels" placeholder="자동/기본 모델" autocomplete="off">
+              <datalist id="fallbackModels"></datalist>
+            </div>
+          </div>
+          <div class="warning" id="fallbackWarning"></div>
+        </div>
+
+        <section class="section" aria-labelledby="reasoningTitle">
+          <h3 id="reasoningTitle">사고 수준</h3>
+          <div class="help">(GPT 계열에만 적용, 낮을수록 빠르고 토큰 절약)</div>
+          <div class="segments" id="reasoningLevels"></div>
+        </section>
+
+        <section class="section" aria-labelledby="skipTitle">
+          <h3 id="skipTitle">토큰 절약: AI 생략 규칙</h3>
+          <p class="help">해당 메시지는 AI 를 부르지 않고 '참고'로 저장합니다.</p>
+          <div class="form-grid">
+            <div class="field">
+              <label for="skipKeywords">생략 키워드 (쉼표로 구분)</label>
+              <input id="skipKeywords" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="skipMinChars">이 글자 수보다 짧으면 생략</label>
+              <input id="skipMinChars" type="number" min="0" max="200" step="1">
+              <span class="hint">0 = 사용 안 함</span>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="pane" id="pane-storage" role="tabpanel" aria-labelledby="tab-storage" hidden>
+        <h2>저장</h2>
+        <p class="lead">쪽지 원문·요약 보관</p>
+        <p class="help">메신저에서 읽은 쪽지를 월별 파일(쪽지원문_2026-11.txt, 쪽지요약_2026-11.txt)에 덧붙여 남깁니다. 보안 쪽지는 기록하지 않습니다. 두 곳을 따로 켜고 끌 수 있습니다.</p>
+
+        <section class="section">
+          <div class="check-row">
+            <input id="localOn" type="checkbox">
+            <label for="localOn"><strong>이 PC에 저장</strong></label>
+          </div>
+          <div class="subgroup">
+            <div class="folder-row">
+              <div class="field">
+                <label for="localDir">저장 폴더</label>
+                <input id="localDir" autocomplete="off">
+              </div>
+              <button class="btn" id="pickLocal" type="button">찾아보기</button>
+            </div>
+            <p class="hint">원문을 그대로 저장합니다 (개인정보 포함). 이 PC에서만 볼 수 있습니다.</p>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="check-row">
+            <input id="gdriveOn" type="checkbox">
+            <label for="gdriveOn"><strong>구글 드라이브에 저장 (Google Drive 데스크톱 동기화 폴더)</strong></label>
+          </div>
+          <div class="subgroup">
+            <div class="folder-row">
+              <div class="field">
+                <label for="gdriveDir">드라이브 폴더</label>
+                <input id="gdriveDir" autocomplete="off">
+              </div>
+              <button class="btn" id="pickGdrive" type="button">찾아보기</button>
+            </div>
+            <p class="hint" id="gdriveHint"></p>
+            <div class="check-row">
+              <input id="gdriveRedact" type="checkbox">
+              <label for="gdriveRedact">드라이브에는 개인정보를 가리고 저장 (전화번호·주민번호·등록한 이름 등) — 권장</label>
+            </div>
+            <p class="hint">드라이브에 못 쓰면(동기화 꺼짐 등) 이 PC의 '드라이브_대기' 폴더에 임시로 쌓았다가 다음 감시 시작 때 옮깁니다.</p>
+          </div>
+        </section>
+
+        <section class="section">
+          <h3>파일 형식</h3>
+          <div class="choice-row">
+            <span class="choice"><input id="formatTxt" type="radio" name="archiveFormat" value="txt"><label for="formatTxt">txt (메모장)</label></span>
+            <span class="choice"><input id="formatMd" type="radio" name="archiveFormat" value="md"><label for="formatMd">md (마크다운)</label></span>
+          </div>
+          <div class="check-row">
+            <input id="summaryOn" type="checkbox">
+            <label for="summaryOn">AI 요약도 함께 저장 (쪽지요약_YYYY-MM 파일)</label>
+          </div>
+        </section>
+        <div class="err" id="storageError" role="alert"></div>
+      </section>
+
+      <section class="pane" id="pane-mail" role="tabpanel" aria-labelledby="tab-mail" hidden>
+        <h2>메일</h2>
+        <p class="lead">네이버 메일</p>
+        <p class="help">받은편지함을 읽기 전용으로만 확인합니다 (읽음 표시·삭제·보내기 없음). 처음 연결한 날 0시 이후 도착한 메일부터 가져옵니다.<br>준비: 네이버 메일 환경설정 → POP3/IMAP 설정 → IMAP/SMTP 사용함 저장 → 2단계 인증 후 '애플리케이션 비밀번호' 발급</p>
+
+        <section class="section">
+          <div class="check-row">
+            <input id="mailOn" type="checkbox">
+            <label for="mailOn">메일 확인 켜기</label>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="mailAccount">네이버 메일 주소</label>
+              <input id="mailAccount" type="email" inputmode="email" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="mailInterval">확인 간격</label>
+              <select id="mailInterval">
+                <option value="1">1분</option>
+                <option value="2">2분</option>
+                <option value="5">5분</option>
+                <option value="10">10분</option>
+              </select>
+            </div>
+            <div class="field wide">
+              <label for="mailPassword">애플리케이션 비밀번호</label>
+              <div class="password-line">
+                <input id="mailPassword" type="password" autocomplete="off">
+                <span class="hint" id="mailPasswordHint">아직 저장된 비밀번호 없음</span>
+              </div>
+            </div>
+          </div>
+          <div class="action-line">
+            <button class="btn" id="mailConnect" type="button">연결 확인 후 비밀번호 저장</button>
+            <button class="btn danger" id="mailDisconnect" type="button">연결 끊기 (비밀번호 지우기)</button>
+          </div>
+          <div class="inline-confirm" id="mailDisconnectConfirm" role="alertdialog" aria-labelledby="mailDisconnectQuestion" hidden>
+            <p id="mailDisconnectQuestion">연결을 끊고 저장된 비밀번호를 지울까요?</p>
+            <div class="action-line">
+              <button class="btn danger" id="mailDisconnectYes" type="button">연결 끊기</button>
+              <button class="btn" id="mailDisconnectNo" type="button">취소</button>
+            </div>
+          </div>
+          <div class="err" id="mailError" role="alert"></div>
+          <div class="ok-text" id="mailResult" aria-live="polite"></div>
+          <p class="help">비밀번호는 파일에 쓰지 않고 Windows 자격 증명 관리자에만 저장합니다 (제어판 &gt; 자격 증명 관리자에서 확인·삭제 가능). 학교 업무망 PC 에서는 메일 서버 접속이 막혀 있을 수 있습니다.</p>
+        </section>
+      </section>
+
+      <section class="pane" id="pane-notify" role="tabpanel" aria-labelledby="tab-notify" hidden>
+        <h2>알림</h2>
+        <p class="lead">알림 (쪽지·메일 공통)</p>
+        <p class="help">알림을 꺼도, 방해금지 시간이어도 수집과 AI 분석은 계속됩니다. 막힌 알림은 나중에 몰아서 보내지 않습니다.</p>
+
+        <section class="section">
+          <div class="check-row">
+            <input id="notifyOn" type="checkbox">
+            <label for="notifyOn">알림 받기</label>
+          </div>
+          <h3>알림 범위</h3>
+          <div class="choice-row" id="notifyScopes"></div>
+          <div class="check-row">
+            <input id="notifyHighOnly" type="checkbox">
+            <label for="notifyHighOnly">그 범위에서 '긴급'만 알림</label>
+          </div>
+          <h3>알릴 것</h3>
+          <div class="choice-row">
+            <span class="choice"><input id="notifyEztalk" type="checkbox"><label for="notifyEztalk">쪽지</label></span>
+            <span class="choice"><input id="notifyMail" type="checkbox"><label for="notifyMail">메일</label></span>
+          </div>
+          <div class="check-row">
+            <input id="notifySound" type="checkbox">
+            <label for="notifySound">알림 소리</label>
+          </div>
+          <div class="check-row">
+            <input id="notifyPreview" type="checkbox">
+            <label for="notifyPreview">알림에 보낸 사람·제목·요약 보이기 (끄면 '새 메일' 처럼만 표시 — 옆 사람이 볼 수 있는 화면이면 끄기 권장)</label>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="check-row">
+            <input id="notifyQuiet" type="checkbox">
+            <label for="notifyQuiet"><strong>방해금지</strong></label>
+          </div>
+          <div class="quiet-line subgroup">
+            <label for="quietStart">시작</label>
+            <input id="quietStart" type="time">
+            <label for="quietEnd">끝</label>
+            <input id="quietEnd" type="time">
+          </div>
+          <p class="hint subgroup">한국 시각, 예: 22:00 ~ 08:00</p>
+          <div class="action-line">
+            <button class="btn" id="notifyTest" type="button">테스트 알림</button>
+          </div>
+          <div class="err" id="notifyError" role="alert"></div>
+          <div class="ok-text" id="notifyResult" aria-live="polite"></div>
+        </section>
+      </section>
+
+      <section class="pane" id="pane-school" role="tabpanel" aria-labelledby="tab-school" hidden>
+        <h2>학교 정보</h2>
+        <p class="lead">학교 업무 기준 (모두 선택)</p>
+        <p class="help">AI 가 '학교 업무인지' 판단할 때 참고합니다. 참고 발신처는 판단을 돕는 정보일 뿐, 그 발신처만 받거나 무조건 학교 업무로 정하지 않습니다. 다음 분석부터 적용됩니다.</p>
+        <section class="section">
+          <div class="field">
+            <label for="schoolName">소속 학교</label>
+            <input id="schoolName" autocomplete="organization">
+          </div>
+          <div class="field">
+            <label for="schoolDuties">담당 업무</label>
+            <textarea id="schoolDuties" rows="3"></textarea>
+          </div>
+          <div class="field">
+            <label for="schoolSenders">참고 발신처</label>
+            <textarea id="schoolSenders" rows="3"></textarea>
+          </div>
+          <div class="field">
+            <label for="schoolRole">내 역할</label>
+            <input id="schoolRole" autocomplete="off">
+          </div>
+          <p class="hint">예) 담당 업무: 3학년 2반 담임, 정보부 정보업무 / 참고 발신처: 충북교육청, @cbe.go.kr, 교무부</p>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="err" id="footerError" role="alert"></div>
+    <div class="footer-row">
+      <span class="version" id="version">v…</span>
+      <button class="btn" id="openTestScreen" type="button">테스트 화면 열기</button>
+      <span class="spacer"></span>
+      <button class="btn" id="closeButton" type="button">닫기</button>
+      <button class="btn primary" id="saveButton" type="button">저장</button>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="scrim" id="closeConfirm" role="dialog" aria-modal="true" aria-labelledby="closeConfirmTitle" hidden>
+    <div class="dialog">
+      <h2 id="closeConfirmTitle">저장하지 않은 변경이 있습니다. 닫을까요?</h2>
+      <p>지금 닫으면 바꾼 내용이 저장되지 않습니다.</p>
+      <div class="dialog-actions">
+        <button class="btn" id="closeCancel" type="button">계속 편집</button>
+        <button class="btn danger" id="closeAnyway" type="button">저장하지 않고 닫기</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const MODEL_KEYS = ["analyze", "digest", "fallback"];
+const numberText = (value) => Number(value || 0).toLocaleString("ko-KR");
+
+let api = null;
+let usingMock = false;
+let bootStarted = false;
+let uiBound = false;
+let loadingForm = true;
+let loadGeneration = 0;
+let settings = null;
+let savedSnapshot = "";
+const hintRequests = {};
+let chatgptState = { loaded: false, logged_in: false, busy: false, email: "", error: "" };
+let claudeState = { loaded: false, installed: false, logged_in: false, email: "", plan: "", error: "" };
+let chatgptTimer = null;
+let claudeTimer = null;
+let lastFocusedBeforeDialog = null;
+
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function MockAPI() {
+  const query = new URLSearchParams(window.location.search);
+  const claudeMode = query.get("claude") || "ready";
+  let chatgptLoggedIn = false;
+  let chatgptBusy = false;
+  let claudeInstalled = claudeMode !== "none";
+  let claudeLoggedIn = claudeInstalled && claudeMode !== "logout";
+  let mockData = {
+    version: "0.7.2",
+    theme: query.get("theme") === "light" ? "light" : "dark",
+    in_calendar: true,
+    providers: [
+      { id: "chatgpt_plan", label: "ChatGPT 구독" },
+      { id: "claude_cli", label: "Claude 구독" },
+      { id: "openai", label: "OpenAI API 키" },
+      { id: "claude", label: "Anthropic API 키" },
+      { id: "fake", label: "테스트(가짜)" }
+    ],
+    reasoning_levels: [
+      { id: "default", label: "기본값" },
+      { id: "low", label: "낮음" },
+      { id: "medium", label: "중간" },
+      { id: "high", label: "높음" }
+    ],
+    model_hints: {
+      chatgpt_plan: [],
+      claude_cli: ["haiku", "sonnet", "opus"],
+      openai: ["gpt-5-mini", "gpt-5"],
+      claude: ["claude-haiku-5-5", "claude-sonnet-5-5"],
+      fake: []
+    },
+    models: {
+      analyze: "chatgpt_plan:gpt-5.6-sol",
+      digest: "chatgpt_plan",
+      fallback: "claude_cli:opus",
+      reasoning: "default"
+    },
+    skip: { keywords: "식단,급식", min_chars: 0 },
+    archive: {
+      local_on: true,
+      local_dir: "",
+      gdrive_on: false,
+      gdrive_dir: "",
+      gdrive_hint: "비워 두면 자동: G:\\내 드라이브\\충북메신저AI_쪽지기록",
+      gdrive_redact: true,
+      format: "txt",
+      summary_on: true
+    },
+    mail: { on: false, account: "", interval: "2", password_saved: false },
+    notify: {
+      on: true,
+      scope: "school",
+      scopes: [
+        { id: "school", label: "학교 업무만" },
+        { id: "important", label: "긴급·중요만" },
+        { id: "all", label: "분석된 모든 것" }
+      ],
+      high_only: false,
+      eztalk: true,
+      mail: true,
+      sound: false,
+      preview: false,
+      quiet: true,
+      quiet_start: "22:00",
+      quiet_end: "08:00"
+    },
+    school: { name: "", duties: "", senders: "", role: "교사" }
+  };
+
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+  return {
+    load: async () => clone(mockData),
+    save: async (data) => {
+      await delay(250);
+      mockData = Object.assign({}, mockData, clone(data));
+      return { ok: true, error: "", restarted: true };
+    },
+    chatgpt_status: async () => ({
+      logged_in: chatgptLoggedIn,
+      email: chatgptLoggedIn ? "teacher@example.com" : "",
+      busy: chatgptBusy,
+      error: ""
+    }),
+    chatgpt_login: async () => {
+      if (chatgptBusy) return { ok: false, error: "이미 로그인 중입니다. 브라우저 창을 확인하세요." };
+      chatgptBusy = true;
+      window.setTimeout(() => {
+        chatgptBusy = false;
+        chatgptLoggedIn = true;
+      }, 2000);
+      return { ok: true, error: "" };
+    },
+    chatgpt_logout: async () => {
+      chatgptLoggedIn = false;
+      chatgptBusy = false;
+      return { ok: true, error: "" };
+    },
+    chatgpt_models: async () => ({
+      options: [
+        { slug: "gpt-5.6-sol", display_name: "GPT-5.6 Sol" },
+        { slug: "gpt-5.6-terra", display_name: "GPT-5.6 Terra" },
+        { slug: "gpt-5.6-luna", display_name: "GPT-5.6 Luna" }
+      ],
+      error: ""
+    }),
+    claude_status: async () => ({
+      installed: claudeInstalled,
+      logged_in: claudeLoggedIn,
+      email: claudeLoggedIn ? "teacher@example.com" : "",
+      plan: claudeLoggedIn ? "pro" : "",
+      error: ""
+    }),
+    claude_login: async () => {
+      if (!claudeInstalled) return { ok: false, error: "먼저 Claude Code를 설치하세요." };
+      window.setTimeout(() => { claudeLoggedIn = true; }, 2000);
+      return { ok: true, error: "" };
+    },
+    claude_install: async () => {
+      window.setTimeout(() => {
+        claudeInstalled = true;
+        claudeLoggedIn = false;
+      }, 2000);
+      return { ok: true, error: "" };
+    },
+    usage: async () => ({
+      since: "2026-11-01",
+      rows: [
+        { purpose: "분석", provider: "ChatGPT 구독", model: "gpt-5.6-sol", calls: 12, inp: 34567, outp: 2345 },
+        { purpose: "브리핑", provider: "Claude 구독", model: "sonnet", calls: 3, inp: 8421, outp: 1104 }
+      ]
+    }),
+    pick_folder: async () => ({ path: "C:\\Users\\Public\\Documents\\충북메신저AI" }),
+    mail_connect: async (account, password) => {
+      await delay(600);
+      if (!String(account || "").trim()) return { ok: false, error: "네이버 메일 주소를 입력하세요." };
+      if (!String(password || "").trim()) return { ok: false, error: "애플리케이션 비밀번호를 입력하세요." };
+      return { ok: true, error: "", account: String(account).trim().toLowerCase(), restarted: true };
+    },
+    mail_disconnect: async () => ({ ok: true, error: "" }),
+    notify_test: async () => {
+      await delay(200);
+      return { ok: true, error: "" };
+    },
+    open_test_screen: async () => ({ ok: true, error: "" }),
+    close: async () => ({ ok: true })
+  };
+}
+
+function errorMessage(error, fallback) {
+  if (error && typeof error === "object" && error.message) return String(error.message);
+  if (error != null && String(error)) return String(error);
+  return fallback || "처리하지 못했습니다.";
+}
+
+async function callApi(method, ...args) {
+  if (!api || typeof api[method] !== "function") {
+    throw new Error("이 기능을 사용할 수 없습니다: " + method);
+  }
+  return await api[method](...args);
+}
+
+function setError(id, message) {
+  $(id).textContent = message ? String(message) : "";
+}
+
+function toast(message) {
+  const el = $("toast");
+  el.textContent = String(message || "");
+  el.classList.add("on");
+  window.clearTimeout(toast.timer);
+  toast.timer = window.setTimeout(() => el.classList.remove("on"), 3000);
+}
+
+function setValue(id, value) {
+  $(id).value = value == null ? "" : String(value);
+}
+
+function setChecked(id, value) {
+  $(id).checked = Boolean(value);
+}
+
+function splitModelSpec(value) {
+  const spec = String(value || "");
+  const colon = spec.indexOf(":");
+  if (colon < 0) return { provider: spec, model: "" };
+  return { provider: spec.slice(0, colon), model: spec.slice(colon + 1) };
+}
+
+function joinModelSpec(key) {
+  const provider = $(key + "Provider").value;
+  const model = $(key + "Model").value.trim();
+  if (!provider) return "";
+  return model ? provider + ":" + model : provider;
+}
+
+function collectData() {
+  const reasoning = document.querySelector('input[name="reasoning"]:checked');
+  const scope = document.querySelector('input[name="notifyScope"]:checked');
+  const format = document.querySelector('input[name="archiveFormat"]:checked');
+  return {
+    models: {
+      analyze: joinModelSpec("analyze"),
+      digest: joinModelSpec("digest"),
+      fallback: joinModelSpec("fallback"),
+      reasoning: reasoning ? reasoning.value : "default"
+    },
+    skip: {
+      keywords: $("skipKeywords").value,
+      min_chars: Math.max(0, Math.min(200, Number.parseInt($("skipMinChars").value, 10) || 0))
+    },
+    archive: {
+      local_on: $("localOn").checked,
+      local_dir: $("localDir").value,
+      gdrive_on: $("gdriveOn").checked,
+      gdrive_dir: $("gdriveDir").value,
+      gdrive_redact: $("gdriveRedact").checked,
+      format: format ? format.value : "txt",
+      summary_on: $("summaryOn").checked
+    },
+    mail: {
+      on: $("mailOn").checked,
+      account: $("mailAccount").value,
+      interval: $("mailInterval").value
+    },
+    notify: {
+      on: $("notifyOn").checked,
+      scope: scope ? scope.value : "",
+      high_only: $("notifyHighOnly").checked,
+      eztalk: $("notifyEztalk").checked,
+      mail: $("notifyMail").checked,
+      sound: $("notifySound").checked,
+      preview: $("notifyPreview").checked,
+      quiet: $("notifyQuiet").checked,
+      quiet_start: $("quietStart").value,
+      quiet_end: $("quietEnd").value
+    },
+    school: {
+      name: $("schoolName").value,
+      duties: $("schoolDuties").value,
+      senders: $("schoolSenders").value,
+      role: $("schoolRole").value
+    }
+  };
+}
+
+function currentSnapshot() {
+  return JSON.stringify(collectData());
+}
+
+function isDirty() {
+  return Boolean(savedSnapshot && currentSnapshot() !== savedSnapshot);
+}
+
+function updateDirtyState() {
+  if (loadingForm || !settings) return;
+  document.title = isDirty() ? "설정 •" : "설정";
+}
+
+function switchTab(name, moveFocus) {
+  document.querySelectorAll(".nav-tab").forEach((tab) => {
+    const selected = tab.dataset.tab === name;
+    tab.setAttribute("aria-selected", selected ? "true" : "false");
+    tab.tabIndex = selected ? 0 : -1;
+    if (selected && moveFocus) tab.focus();
+  });
+  document.querySelectorAll(".pane").forEach((pane) => {
+    pane.hidden = pane.id !== "pane-" + name;
+  });
+  $("content").scrollTop = 0;
+}
+
+function populateSelect(select, providers, allowNone) {
+  select.replaceChildren();
+  if (allowNone) {
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "없음";
+    select.appendChild(none);
+  }
+  (Array.isArray(providers) ? providers : []).forEach((provider) => {
+    const option = document.createElement("option");
+    option.value = String(provider.id || "");
+    option.textContent = String(provider.label || provider.id || "");
+    select.appendChild(option);
+  });
+}
+
+function setDatalist(key, values) {
+  const list = $(key + "Models");
+  list.replaceChildren();
+  Array.from(new Set((values || []).map((value) => String(value || "")).filter(Boolean))).forEach((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    list.appendChild(option);
+  });
+}
+
+async function refreshModelHints(key, provider) {
+  const requestId = (hintRequests[key] || 0) + 1;
+  hintRequests[key] = requestId;
+  const canApply = () => hintRequests[key] === requestId && $(key + "Provider").value === provider;
+  const hints = settings && settings.model_hints && Array.isArray(settings.model_hints[provider])
+    ? settings.model_hints[provider].slice()
+    : [];
+  if (canApply()) setDatalist(key, hints);
+  if (provider !== "chatgpt_plan") return;
+  try {
+    const result = await callApi("chatgpt_models", false);
+    if (canApply() && result && !result.error && Array.isArray(result.options) && result.options.length) {
+      setDatalist(key, result.options.map((option) => option.slug));
+    }
+  } catch (_error) {
+    if (canApply()) setDatalist(key, hints);
+  }
+}
+
+function renderReasoning(levels, selected) {
+  const host = $("reasoningLevels");
+  host.replaceChildren();
+  (Array.isArray(levels) ? levels : []).forEach((level, index) => {
+    const id = "reasoning-" + String(level.id || index);
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "reasoning";
+    input.id = id;
+    input.value = String(level.id || "");
+    input.checked = input.value === selected;
+    const label = document.createElement("label");
+    label.htmlFor = id;
+    label.textContent = String(level.label || level.id || "");
+    host.append(input, label);
+  });
+}
+
+function renderNotifyScopes(scopes, selected) {
+  const host = $("notifyScopes");
+  host.replaceChildren();
+  (Array.isArray(scopes) ? scopes : []).forEach((scope, index) => {
+    const wrap = document.createElement("span");
+    wrap.className = "choice";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "notifyScope";
+    input.id = "notifyScope-" + String(scope.id || index);
+    input.value = String(scope.id || "");
+    input.checked = input.value === selected;
+    const label = document.createElement("label");
+    label.htmlFor = input.id;
+    label.textContent = String(scope.label || scope.id || "");
+    wrap.append(input, label);
+    host.appendChild(wrap);
+  });
+}
+
+function populateForm(data) {
+  const models = data.models || {};
+  const archive = data.archive || {};
+  const mail = data.mail || {};
+  const notify = data.notify || {};
+  const school = data.school || {};
+  const skip = data.skip || {};
+
+  MODEL_KEYS.forEach((key) => populateSelect($(key + "Provider"), data.providers, key === "fallback"));
+  MODEL_KEYS.forEach((key) => {
+    const parsed = splitModelSpec(models[key]);
+    $(key + "Provider").value = parsed.provider;
+    $(key + "Model").value = parsed.model;
+    void refreshModelHints(key, parsed.provider);
+  });
+  renderReasoning(data.reasoning_levels, String(models.reasoning || "default"));
+  setValue("skipKeywords", skip.keywords);
+  setValue("skipMinChars", skip.min_chars);
+
+  setChecked("localOn", archive.local_on);
+  setValue("localDir", archive.local_dir);
+  setChecked("gdriveOn", archive.gdrive_on);
+  setValue("gdriveDir", archive.gdrive_dir);
+  $("gdriveHint").textContent = String(archive.gdrive_hint || "");
+  setChecked("gdriveRedact", archive.gdrive_redact);
+  const format = archive.format === "md" ? "md" : "txt";
+  $("formatTxt").checked = format === "txt";
+  $("formatMd").checked = format === "md";
+  setChecked("summaryOn", archive.summary_on);
+
+  setChecked("mailOn", mail.on);
+  setValue("mailAccount", mail.account);
+  setValue("mailInterval", mail.interval || "2");
+  setMailPasswordSaved(Boolean(mail.password_saved));
+
+  setChecked("notifyOn", notify.on);
+  renderNotifyScopes(notify.scopes, String(notify.scope || ""));
+  setChecked("notifyHighOnly", notify.high_only);
+  setChecked("notifyEztalk", notify.eztalk);
+  setChecked("notifyMail", notify.mail);
+  setChecked("notifySound", notify.sound);
+  setChecked("notifyPreview", notify.preview);
+  setChecked("notifyQuiet", notify.quiet);
+  setValue("quietStart", notify.quiet_start);
+  setValue("quietEnd", notify.quiet_end);
+
+  setValue("schoolName", school.name);
+  setValue("schoolDuties", school.duties);
+  setValue("schoolSenders", school.senders);
+  setValue("schoolRole", school.role);
+  $("version").textContent = "v" + String(data.version || "?").replace(/^v/i, "");
+}
+
+function setMailPasswordSaved(saved) {
+  const hint = $("mailPasswordHint");
+  hint.textContent = saved ? "저장됨 (바꿀 때만 입력)" : "아직 저장된 비밀번호 없음";
+  hint.className = saved ? "ok-text" : "hint";
+}
+
+function renderChatGPTCard() {
+  const state = chatgptState;
+  $("chatgptDot").className = "dot" + (state.logged_in ? " ok" : "");
+  $("chatgptStatus").textContent = state.busy
+    ? "로그인 확인 중…"
+    : (state.logged_in ? "로그인됨" : "로그인 안 됨");
+  $("chatgptMeta").textContent = state.logged_in ? String(state.email || "") : "";
+  setError("chatgptError", state.error || "");
+  $("chatgptLogin").hidden = state.logged_in;
+  $("chatgptLogout").hidden = !state.logged_in;
+  $("chatgptLogin").disabled = Boolean(state.busy);
+  $("chatgptLogout").disabled = Boolean(state.busy);
+  updateModelWarnings();
+}
+
+async function refreshChatGPTStatus(generation = loadGeneration) {
+  try {
+    const result = await callApi("chatgpt_status");
+    if (generation !== loadGeneration) return chatgptState;
+    chatgptState = Object.assign({ loaded: true, logged_in: false, busy: false, email: "", error: "" }, result || {});
+  } catch (error) {
+    if (generation !== loadGeneration) return chatgptState;
+    chatgptState = {
+      loaded: true, logged_in: false, busy: false, email: "",
+      error: errorMessage(error, "ChatGPT 상태를 확인하지 못했습니다.")
+    };
+  }
+  renderChatGPTCard();
+  return chatgptState;
+}
+
+function stopChatGPTPolling() {
+  if (chatgptTimer) window.clearTimeout(chatgptTimer);
+  chatgptTimer = null;
+}
+
+function startChatGPTPolling() {
+  stopChatGPTPolling();
+  const started = Date.now();
+  const poll = async () => {
+    const status = await refreshChatGPTStatus();
+    if (!status.busy || Date.now() - started >= 5 * 60 * 1000) {
+      stopChatGPTPolling();
+      $("chatgptGuide").textContent = "";   // 끝났으면 "브라우저에서 로그인을 마치세요…" 안내를 지움
+      if (status.logged_in) {               // 로그인됐으면 모델 목록도 새로 받아 옴
+        MODEL_KEYS.forEach((key) => {
+          if ($(key + "Provider").value === "chatgpt_plan") void refreshModelHints(key, "chatgpt_plan");
+        });
+      }
+      return;
+    }
+    chatgptTimer = window.setTimeout(poll, 1500);
+  };
+  chatgptTimer = window.setTimeout(poll, 1500);
+}
+
+async function loginChatGPT() {
+  stopChatGPTPolling();
+  setError("chatgptError", "");
+  $("chatgptGuide").textContent = "";
+  $("chatgptLogin").disabled = true;
+  try {
+    const result = await callApi("chatgpt_login");
+    if (!result || result.ok === false) {
+      setError("chatgptError", result && result.error ? result.error : "로그인을 시작하지 못했습니다.");
+      return;
+    }
+    $("chatgptGuide").textContent = "브라우저에서 로그인을 마치세요…";
+    await refreshChatGPTStatus();
+    startChatGPTPolling();
+  } catch (error) {
+    setError("chatgptError", errorMessage(error, "로그인을 시작하지 못했습니다."));
+  } finally {
+    if (!chatgptState.busy) $("chatgptLogin").disabled = false;
+  }
+}
+
+async function logoutChatGPT() {
+  stopChatGPTPolling();
+  setError("chatgptError", "");
+  $("chatgptLogout").disabled = true;
+  try {
+    const result = await callApi("chatgpt_logout");
+    if (!result || result.ok === false) {
+      setError("chatgptError", result && result.error ? result.error : "로그아웃하지 못했습니다.");
+      return;
+    }
+    $("chatgptGuide").textContent = "";
+    await refreshChatGPTStatus();
+  } catch (error) {
+    setError("chatgptError", errorMessage(error, "로그아웃하지 못했습니다."));
+  } finally {
+    $("chatgptLogout").disabled = false;
+  }
+}
+
+function renderClaudeCard() {
+  const state = claudeState;
+  const dot = $("claudeDot");
+  dot.className = "dot";
+  let statusText = "Claude Code 가 설치돼 있지 않습니다";
+  let meta = "";
+  if (state.installed && !state.logged_in) {
+    dot.classList.add("warn");
+    statusText = "로그인이 필요합니다";
+  } else if (state.logged_in) {
+    dot.classList.add("ok");
+    statusText = "로그인됨";
+    meta = [state.email, state.plan].filter(Boolean).join(" · ");
+  }
+  $("claudeStatus").textContent = statusText;
+  $("claudeMeta").textContent = meta;
+  setError("claudeError", state.error || "");
+  $("claudeInstall").hidden = Boolean(state.installed);
+  $("claudeLogin").hidden = !state.installed || Boolean(state.logged_in);
+  updateModelWarnings();
+}
+
+async function refreshClaudeStatus(refresh, generation = loadGeneration) {
+  try {
+    const result = await callApi("claude_status", Boolean(refresh));
+    if (generation !== loadGeneration) return claudeState;
+    claudeState = Object.assign({ loaded: true, installed: false, logged_in: false, email: "", plan: "", error: "" }, result || {});
+  } catch (error) {
+    if (generation !== loadGeneration) return claudeState;
+    claudeState = {
+      loaded: true, installed: false, logged_in: false, email: "", plan: "",
+      error: errorMessage(error, "Claude 상태를 확인하지 못했습니다.")
+    };
+  }
+  renderClaudeCard();
+  return claudeState;
+}
+
+function stopClaudePolling() {
+  if (claudeTimer) window.clearTimeout(claudeTimer);
+  claudeTimer = null;
+}
+
+function startClaudePolling(previous) {
+  stopClaudePolling();
+  const started = Date.now();
+  const poll = async () => {
+    const status = await refreshClaudeStatus(true);
+    const changed = status.installed !== previous.installed || status.logged_in !== previous.logged_in;
+    if (changed || Date.now() - started >= 5 * 60 * 1000) {
+      stopClaudePolling();
+      if (changed) $("claudeGuide").textContent = "";   // 상태가 바뀌었으면 안내 문구를 지움
+      return;
+    }
+    claudeTimer = window.setTimeout(poll, 3000);
+  };
+  claudeTimer = window.setTimeout(poll, 3000);
+}
+
+async function runClaudeAction(method) {
+  stopClaudePolling();
+  setError("claudeError", "");
+  const before = { installed: claudeState.installed, logged_in: claudeState.logged_in };
+  const button = method === "claude_install" ? $("claudeInstall") : $("claudeLogin");
+  button.disabled = true;
+  try {
+    const result = await callApi(method);
+    if (!result || result.ok === false) {
+      setError("claudeError", result && result.error ? result.error : "작업을 시작하지 못했습니다.");
+      return;
+    }
+    $("claudeGuide").textContent = method === "claude_install"
+      ? "새로 열린 창에서 설치가 끝나면 [다시 확인]을 누르세요"
+      : "새로 열린 검은 창과 브라우저에서 로그인을 마치세요. 끝나면 자동으로 확인합니다.";
+    startClaudePolling(before);
+  } catch (error) {
+    setError("claudeError", errorMessage(error, "작업을 시작하지 못했습니다."));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function manualClaudeRefresh() {
+  $("claudeRefresh").disabled = true;
+  setError("claudeError", "");
+  try {
+    await refreshClaudeStatus(true);
+    if (claudeState.logged_in) $("claudeGuide").textContent = "";
+  } finally {
+    $("claudeRefresh").disabled = false;
+  }
+}
+
+function updateModelWarnings() {
+  MODEL_KEYS.forEach((key) => {
+    const provider = $(key + "Provider").value;
+    let message = "";
+    if (provider === "claude_cli" && claudeState.loaded && (!claudeState.installed || !claudeState.logged_in)) {
+      message = "Claude 가 준비되지 않았습니다. 'AI 연결' 탭에서 로그인하세요.";
+    } else if (provider === "chatgpt_plan" && chatgptState.loaded && !chatgptState.logged_in) {
+      message = "ChatGPT 로그인이 필요합니다. 'AI 연결' 탭에서 로그인하세요.";
+    }
+    $(key + "Warning").textContent = message;
+  });
+}
+
+async function loadUsage(generation = loadGeneration) {
+  setError("usageError", "");
+  try {
+    const result = await callApi("usage");
+    if (generation !== loadGeneration) return;
+    const rows = result && Array.isArray(result.rows) ? result.rows : [];
+    $("usageSince").textContent = result && result.since ? String(result.since) + "부터" : "";
+    $("usageBody").innerHTML = rows.map((row) => {
+      const model = [row.provider, row.model].filter(Boolean).join(" · ");
+      const tokens = numberText(row.inp) + " · " + numberText(row.outp);
+      return "<tr><td>" + esc(row.purpose) + "</td><td>" + esc(model) + "</td><td class=\"num\">" +
+        esc(numberText(row.calls)) + "</td><td class=\"num\">" + esc(tokens) + "</td></tr>";
+    }).join("");
+    $("usageTable").hidden = rows.length === 0;
+    $("usageEmpty").hidden = rows.length !== 0;
+  } catch (error) {
+    if (generation !== loadGeneration) return;
+    $("usageBody").replaceChildren();
+    $("usageTable").hidden = true;
+    $("usageEmpty").hidden = false;
+    setError("usageError", errorMessage(error, "사용량을 불러오지 못했습니다."));
+  }
+}
+
+async function pickFolder(inputId) {
+  setError("storageError", "");
+  try {
+    const result = await callApi("pick_folder", $(inputId).value);
+    if (result && result.path) {
+      $(inputId).value = String(result.path);
+      updateDirtyState();
+    }
+  } catch (error) {
+    setError("storageError", errorMessage(error, "폴더를 고르지 못했습니다."));
+  }
+}
+
+async function connectMail() {
+  const button = $("mailConnect");
+  const original = button.textContent;
+  setError("mailError", "");
+  $("mailResult").textContent = "";
+  button.disabled = true;
+  button.textContent = "확인 중…";
+  try {
+    const result = await callApi("mail_connect", $("mailAccount").value, $("mailPassword").value);
+    if (!result || result.ok === false) {
+      setError("mailError", result && result.error ? result.error : "메일 연결을 확인하지 못했습니다.");
+      return;
+    }
+    setMailPasswordSaved(true);
+    $("mailOn").checked = true;
+    if (result.account) $("mailAccount").value = String(result.account);
+    $("mailResult").textContent = "연결했습니다. 비밀번호를 Windows 자격 증명 관리자에 저장했습니다.";
+    updateDirtyState();
+  } catch (error) {
+    setError("mailError", errorMessage(error, "메일 연결을 확인하지 못했습니다."));
+  } finally {
+    $("mailPassword").value = "";
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function disconnectMail() {
+  const button = $("mailDisconnectYes");
+  setError("mailError", "");
+  $("mailResult").textContent = "";
+  button.disabled = true;
+  try {
+    const result = await callApi("mail_disconnect", $("mailAccount").value);
+    if (!result || result.ok === false) {
+      setError("mailError", result && result.error ? result.error : "메일 연결을 끊지 못했습니다.");
+      return;
+    }
+    setMailPasswordSaved(false);
+    $("mailOn").checked = false;
+    $("mailDisconnectConfirm").hidden = true;
+    $("mailResult").textContent = "연결을 끊고 저장된 비밀번호를 지웠습니다.";
+    updateDirtyState();
+  } catch (error) {
+    setError("mailError", errorMessage(error, "메일 연결을 끊지 못했습니다."));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function sendTestNotification() {
+  const button = $("notifyTest");
+  setError("notifyError", "");
+  $("notifyResult").textContent = "";
+  button.disabled = true;
+  try {
+    const result = await callApi("notify_test", $("notifySound").checked);
+    if (!result || result.ok === false) {
+      setError("notifyError", result && result.error ? result.error : "테스트 알림을 보내지 못했습니다.");
+      return;
+    }
+    $("notifyResult").textContent = "테스트 알림을 보냈습니다.";
+  } catch (error) {
+    setError("notifyError", errorMessage(error, "테스트 알림을 보내지 못했습니다."));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveSettings() {
+  const button = $("saveButton");
+  setError("footerError", "");
+  button.disabled = true;
+  try {
+    const result = await callApi("save", collectData());
+    if (!result || result.ok === false) {
+      setError("footerError", result && result.error ? result.error : "설정값을 저장하지 못했습니다.");
+      return;
+    }
+    savedSnapshot = currentSnapshot();
+    updateDirtyState();
+    toast("저장했습니다. " + (result.restarted
+      ? "쪽지·메일 감시에 바로 적용했습니다."
+      : "캘린더를 다시 켜면 적용됩니다."));
+  } catch (error) {
+    setError("footerError", errorMessage(error, "설정값을 저장하지 못했습니다."));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function openTestScreen() {
+  const button = $("openTestScreen");
+  setError("footerError", "");
+  button.disabled = true;
+  try {
+    const result = await callApi("open_test_screen");
+    if (!result || result.ok === false) {
+      setError("footerError", result && result.error ? result.error : "테스트 화면을 열지 못했습니다.");
+      return;
+    }
+    if (usingMock) toast("미리보기에서는 테스트 화면 열기 요청만 확인합니다.");
+  } catch (error) {
+    setError("footerError", errorMessage(error, "테스트 화면을 열지 못했습니다."));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function requestClose() {
+  setError("footerError", "");
+  try {
+    const result = await callApi("close");
+    if (result && result.ok === false) {
+      setError("footerError", result.error || "창을 닫지 못했습니다.");
+      return;
+    }
+    if (usingMock) toast("미리보기에서는 닫기 요청만 확인합니다.");
+  } catch (error) {
+    setError("footerError", errorMessage(error, "창을 닫지 못했습니다."));
+  }
+}
+
+function showCloseConfirm() {
+  lastFocusedBeforeDialog = document.activeElement;
+  $("closeConfirm").hidden = false;
+  $("closeCancel").focus();
+}
+
+function hideCloseConfirm() {
+  $("closeConfirm").hidden = true;
+  if (lastFocusedBeforeDialog && typeof lastFocusedBeforeDialog.focus === "function") {
+    lastFocusedBeforeDialog.focus();
+  }
+}
+
+function bindUI() {
+  if (uiBound) return;
+  uiBound = true;
+
+  const tabs = Array.from(document.querySelectorAll(".nav-tab"));
+  tabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => switchTab(tab.dataset.tab, false));
+    tab.addEventListener("keydown", (event) => {
+      const keys = ["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"];
+      if (!keys.includes(event.key)) return;
+      event.preventDefault();
+      let next = index;
+      if (event.key === "ArrowDown" || event.key === "ArrowRight") next = (index + 1) % tabs.length;
+      if (event.key === "ArrowUp" || event.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
+      if (event.key === "Home") next = 0;
+      if (event.key === "End") next = tabs.length - 1;
+      switchTab(tabs[next].dataset.tab, true);
+    });
+  });
+
+  MODEL_KEYS.forEach((key) => {
+    $(key + "Provider").addEventListener("change", () => {
+      $(key + "Model").value = "";
+      void refreshModelHints(key, $(key + "Provider").value);
+      updateModelWarnings();
+      updateDirtyState();
+    });
+  });
+
+  $("chatgptLogin").addEventListener("click", () => { void loginChatGPT(); });
+  $("chatgptLogout").addEventListener("click", () => { void logoutChatGPT(); });
+  $("claudeInstall").addEventListener("click", () => { void runClaudeAction("claude_install"); });
+  $("claudeLogin").addEventListener("click", () => { void runClaudeAction("claude_login"); });
+  $("claudeRefresh").addEventListener("click", () => { void manualClaudeRefresh(); });
+  $("pickLocal").addEventListener("click", () => { void pickFolder("localDir"); });
+  $("pickGdrive").addEventListener("click", () => { void pickFolder("gdriveDir"); });
+  $("mailConnect").addEventListener("click", () => { void connectMail(); });
+  $("mailDisconnect").addEventListener("click", () => {
+    $("mailDisconnectConfirm").hidden = false;
+    $("mailDisconnectYes").focus();
+  });
+  $("mailDisconnectNo").addEventListener("click", () => {
+    $("mailDisconnectConfirm").hidden = true;
+    $("mailDisconnect").focus();
+  });
+  $("mailDisconnectYes").addEventListener("click", () => { void disconnectMail(); });
+  $("notifyTest").addEventListener("click", () => { void sendTestNotification(); });
+  $("saveButton").addEventListener("click", () => { void saveSettings(); });
+  $("openTestScreen").addEventListener("click", () => { void openTestScreen(); });
+  $("closeButton").addEventListener("click", () => {
+    if (isDirty()) showCloseConfirm();
+    else void requestClose();
+  });
+  $("closeCancel").addEventListener("click", hideCloseConfirm);
+  $("closeAnyway").addEventListener("click", () => {
+    hideCloseConfirm();
+    void requestClose();
+  });
+  $("closeConfirm").addEventListener("click", (event) => {
+    if (event.target === $("closeConfirm")) hideCloseConfirm();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("closeConfirm").hidden) hideCloseConfirm();
+  });
+  $("content").addEventListener("input", updateDirtyState);
+  $("content").addEventListener("change", updateDirtyState);
+  window.addEventListener("beforeunload", () => {
+    stopChatGPTPolling();
+    stopClaudePolling();
+  });
+}
+
+async function loadSettings() {
+  const generation = ++loadGeneration;
+  loadingForm = true;
+  setError("loadError", "");
+  setError("footerError", "");
+  stopChatGPTPolling();
+  stopClaudePolling();
+  try {
+    const data = await callApi("load");
+    if (generation !== loadGeneration) return;
+    if (!data || typeof data !== "object") throw new Error("설정값이 올바르지 않습니다.");
+    settings = data;
+    document.body.classList.toggle("light", data.theme === "light");
+    populateForm(data);
+    savedSnapshot = currentSnapshot();
+    document.title = "설정";
+  } catch (error) {
+    if (generation !== loadGeneration) return;
+    settings = null;
+    setError("loadError", errorMessage(error, "설정값을 불러오지 못했습니다."));
+    return;
+  } finally {
+    if (generation === loadGeneration) loadingForm = false;
+  }
+
+  if (generation !== loadGeneration) return;
+  await Promise.all([
+    refreshChatGPTStatus(generation),
+    refreshClaudeStatus(false, generation),
+    loadUsage(generation)
+  ]);
+  if (generation === loadGeneration) updateModelWarnings();
+}
+
+async function adoptRealApi(realApi) {
+  if (!realApi || realApi === api || !usingMock) return;
+  api = realApi;
+  usingMock = false;
+  await loadSettings();
+}
+
+async function boot(realApi) {
+  if (bootStarted) return;
+  bootStarted = true;
+  usingMock = !realApi;
+  api = realApi || MockAPI();
+  bindUI();
+  await loadSettings();
+}
+
+function reportBootError(error) {
+  setError("loadError", errorMessage(error, "설정 화면을 시작하지 못했습니다."));
+}
+
+if (window.pywebview && window.pywebview.api) {
+  void boot(window.pywebview.api).catch(reportBootError);
+} else {
+  window.addEventListener("pywebviewready", () => {
+    if (!bootStarted) void boot(window.pywebview.api).catch(reportBootError);
+    else void adoptRealApi(window.pywebview.api).catch((error) => {
+      setError("loadError", errorMessage(error, "설정값을 다시 불러오지 못했습니다."));
+    });
+  }, { once: true });
+  // 일반 브라우저: 미리보기(MockAPI). 실제 창에서는 window.pywebview 가 먼저 생기므로 가짜 값을 잠깐이라도 보여 주지 않음
+  window.setTimeout(() => {
+    if (!bootStarted && !window.pywebview) void boot(null).catch(reportBootError);
+  }, 800);
+}
+</script>
+</body>
+</html>

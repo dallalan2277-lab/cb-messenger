@@ -168,6 +168,7 @@
     box-shadow: 0 10px 40px rgba(0,0,0,0.35);
   }
   body:not(.light) .dialog { background: rgb(28, 32, 40); }
+  body.light .dialog { background: rgb(250, 250, 252); }
   .dialog h2 { margin: 0 0 12px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
   .dialog h2 .tag { font-size: 11px; font-weight: 400; color: var(--sugg); border: 1px dashed var(--sugg); border-radius: 999px; padding: 1px 8px; }
   .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
@@ -194,6 +195,7 @@
     border-radius: 12px; padding: 8px; display: none; z-index: 9; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
   }
   body:not(.light) .menu { background: rgb(28, 32, 40); }
+  body.light .menu { background: rgb(250, 250, 252); }
   .menu { max-height: calc(100vh - 64px); overflow-y: auto; }
   .menu.on { display: block; }
   .menu .mlist { display: none; max-height: 240px; overflow-y: auto; margin: 2px 0 4px 8px; border-left: 2px solid var(--line); }
@@ -381,7 +383,7 @@ function MockAPI() {
     set_done: async (i, d) => { feedItems.find((y) => y.id === i).done = d; return { ok: true }; },
     status: async () => ({ messenger: "감시 중", mail: "2분마다 확인", mail_last_check: "17:40", messenger_error: "", mail_error: "", ai_last_error: "", ai_model: "chatgpt_plan", open_count: feedItems.filter((x) => !x.done).length }),
     check_mail_now: async () => ({ ok: true }),
-    open_settings: async () => ({ ok: true }),
+    open_settings: async () => ({ ok: true, inline: true }),
     restart_watch: async () => ({ ok: true }),
     models: async () => ({ current: mockModel ? `chatgpt_plan:${mockModel}` : "chatgpt_plan", provider: "chatgpt_plan", model: mockModel, error: "",
       options: [{ slug: "gpt-6.1-sol", display_name: "GPT-6.1 Sol" }, { slug: "gpt-6.1-terra", display_name: "GPT-6.1 Terra" },
@@ -654,7 +656,8 @@ function closeDlg() { $("scrim").classList.remove("on"); editing = null; }
 function applyOpacity(o) {
   const a = Math.max(0.3, Math.min(1, Number(o) || 0.92));
   const light = prefs.theme === "light";
-  document.documentElement.style.setProperty("--bg", light ? `rgba(250,250,252,${a})` : `rgba(18,22,30,${a})`);
+  // body 에 넣어야 함: 밝은 테마는 body.light 가 --bg 를 다시 정해서, html 에 넣은 값은 가려짐
+  document.body.style.setProperty("--bg", light ? `rgba(250,250,252,${a})` : `rgba(18,22,30,${a})`);
 }
 function menuLabels() {
   $("weekStart").textContent = `주 시작: ${prefs.week_start === 1 ? "월요일" : "일요일"} (바꾸기)`;
@@ -723,7 +726,7 @@ function bindUI() {
   else $("updateBtn").style.display = "none";
   $("exportIcs").onclick = async () => { const r = await api.export_ics(); toast(`${r.count}건을 저장했습니다: ${r.path}`); };
   $("hideBtn").onclick = () => api.win("hide");
-  $("openSettings").onclick = async () => { await api.open_settings(); toast("설정 창을 열었습니다. 저장한 뒤 '감시 다시 시작'을 누르세요."); };
+  $("openSettings").onclick = async () => { const r = await api.open_settings(); toast(r && r.inline === false ? "설정 창을 열었습니다. 저장한 뒤 '감시 다시 시작'을 누르세요." : "설정 창을 열었습니다."); $("menu").classList.remove("on"); };
   $("restartWatch").onclick = async () => { const r = await api.restart_watch(); toast(r.ok ? "새 설정으로 다시 시작했습니다." : "감시가 꺼져 있습니다 (6번 실행 파일로 켜세요)."); setTimeout(renderSide, 1500); };
   $("scrim").addEventListener("mousedown", (ev) => { if (ev.target.id === "scrim") closeDlg(); });
   $("scrim2").addEventListener("mousedown", (ev) => { if (ev.target.id === "scrim2") $("scrim2").classList.remove("on"); });

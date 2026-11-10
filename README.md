@@ -19,7 +19,7 @@
 
 ## 모델 · 토큰 관리 (OpenClaw 방식)
 
-테스트 화면의 **[모델 설정]** 또는 `.env` 에서 용도별로 모델을 따로 고릅니다.
+설정 화면(캘린더 ⚙ → 설정 열기)의 **[모델]** 탭 또는 `.env` 에서 용도별로 모델을 따로 고릅니다.
 
 | 설정 | `.env` 키 | 역할 | 권장 |
 |---|---|---|---|
@@ -31,7 +31,7 @@
 
 형식은 `제공자` 또는 `제공자:모델` 입니다. 예: `AI_ANALYZE=chatgpt_plan:gpt-5.6-luna`, `AI_FALLBACK=claude_cli:haiku`
 - ChatGPT 구독 모델 이름은 `python main.py chatgpt-models` 또는 [모델 설정] → [목록 불러오기]로 확인
-- 사용량 확인: 테스트 화면 **[사용량]** 또는 `python main.py usage` (모델별 호출 수·입출력 토큰). 분석 결과마다 어떤 모델이 답했는지도 표시됩니다.
+- 사용량 확인: 설정 화면 **[AI 연결]** 탭 아래 표 또는 `python main.py usage` (모델별 호출 수·입출력 토큰). 분석 결과마다 어떤 모델이 답했는지도 표시됩니다.
 
 ## 구조
 
@@ -44,7 +44,7 @@
 ```
 cb-messenger-ai/
 ├─ main.py                      명령줄 실행 (analyze / test / digest / watch / gui ...)
-├─ gui.py                       테스트 화면 (tkinter)
+├─ gui.py                       테스트 화면 (tkinter) — 설정은 app/desktop_calendar/settings.html 로 옮김
 ├─ app/
 │  ├─ config.py                 .env 설정 읽기
 │  ├─ models.py                 Message / Analysis / Event 데이터 구조
@@ -113,7 +113,7 @@ cb-messenger-ai/
 4. `3_샘플테스트.bat` 또는 `4_테스트화면열기.bat` 더블클릭
 
 ### A. ChatGPT 구독으로 쓰기 (추천)
-1. `2_ChatGPT로그인.bat` 더블클릭 (또는 테스트 화면의 **[ChatGPT 로그인]** 버튼)
+1. `2_ChatGPT로그인.bat` 더블클릭 (또는 설정 화면 **[AI 연결]** 탭의 **[로그인]** 버튼)
 2. 브라우저에서 ChatGPT 계정으로 로그인 → 권한 허용 → "로그인 완료" 확인
 3. `.env` 에서 `AI_PROVIDER=chatgpt_plan` (기본값)
 - Plus 또는 Pro 플랜이 필요합니다. 사용량은 ChatGPT 플랜의 사용 한도에서 차감되며, ChatGPT 설정에서 앱별 사용량을 관리할 수 있습니다.
@@ -121,8 +121,9 @@ cb-messenger-ai/
 - OpenAI는 이 기능을 **오픈소스·로컬 실행 앱**에 열어 두었습니다. 조건을 확실히 맞추려면 이 소스코드를 GitHub 에 공개 저장소로 올려 두세요 (`.env` 와 `data` 폴더는 `.gitignore` 로 제외됨).
 
 ### B. Claude 구독으로 쓰기
+0. 가장 쉬운 방법: 설정 화면 **[AI 연결]** 탭 → "Claude 구독" 칸의 **[Claude Code 설치]** → **[Claude 로그인]** 버튼 (상태가 초록색 "로그인됨"이 되면 끝). 아래 1·2번은 직접 할 때.
 1. PowerShell 에서 Claude Code 설치: `irm https://claude.ai/install.ps1 | iex` (자세한 설치 안내: https://docs.claude.com 의 Claude Code 설정 문서)
-2. 명령 프롬프트에서 `claude` 한 번 실행 → Pro/Max 구독 계정으로 로그인 → `/exit`
+2. 명령 프롬프트에서 `claude auth login` 실행 → Pro/Max 구독 계정으로 로그인 (`claude` 를 못 찾으면 `%USERPROFILE%\.local\bin\claude.exe auth login`)
 3. `.env` 에서 `AI_PROVIDER=claude_cli`
 - 정식 Claude Code 프로그램을 본인 PC에서 본인 구독으로 실행하는 방식입니다. 로그인 정보를 다른 사람과 공유하지 마세요.
 - 한 건에 몇 초~십수 초 걸립니다.
@@ -240,7 +241,7 @@ AI 가 쪽지에서 찾은 일정이 **바탕화면에 붙어 있는 캘린더**
 
 ## 쪽지 원문·요약 보관 (이 PC / 구글 드라이브)
 
-테스트 화면 **[모델 설정] → [저장] 탭** 또는 `.env` 에서 두 곳을 **따로** 켜고 끕니다.
+설정 화면 **[저장]** 탭 또는 `.env` 에서 두 곳을 **따로** 켜고 끕니다.
 
 | 저장 위치 | `.env` | 기본 | 내용 |
 |---|---|---|---|

@@ -29,7 +29,8 @@ AI 는 **GPT 와 Claude 둘 다** 쓸 수 있어야 함 (구독 또는 API 키).
 | 알림 규칙 (학교 업무만·긴급만·방해금지·미리보기 숨김·소리) | 완료 |
 | 원문·요약 보관 (이 PC / 구글 드라이브 동기화 폴더 따로, txt·md) | 완료 |
 | 바탕화면 캘린더 (월간·입력·AI 제안 확정/무시·받은 소식 탭·공휴일·크기 조절·두 모니터·트레이) | 화면은 브라우저로 확인 · **Windows 위젯 창 미확인** |
-| 설정 화면 (tkinter: 모델·저장·메일·알림·학교 정보 탭) | 코드 완료 · **화면 미확인** |
+| 설정 화면 (v0.8.0: 캘린더와 같은 모양의 pywebview 창 `settings.html` — AI 연결·모델·저장·메일·알림·학교 정보 탭) | 완료 |
+| Claude 로그인 버튼·상태 표시 (설정 화면 [AI 연결] 탭, 공식 `claude auth status/login` 만 실행) (v0.8.0) | 완료 |
 | 캘린더 ⚙ 메뉴에서 AI 모델 바로 고르기 (v0.7.0) | 완료 · 미리보기로 확인 |
 | 자동 업데이트 (GitHub Releases, SHA-256 확인, `packaging\release.bat` 로 배포) (v0.7.0) | 코드 완료 · **실제 업데이트 한 바퀴 미확인** |
 
@@ -38,7 +39,7 @@ AI 는 **GPT 와 Claude 둘 다** 쓸 수 있어야 함 (구독 또는 API 키).
 ## 구조
 ```
 main.py                     명령줄 진입점 (calendar, watch, mail-login, chatgpt-login, test, gui ...)
-gui.py                      설정·테스트 화면 (tkinter)
+gui.py                      테스트 화면 (tkinter). 안의 옛 설정 대화상자(SettingsDialog)는 남아 있지만 캘린더는 새 설정 화면을 씀
 app/
   config.py                 .env → Settings (dataclass, 필드마다 default_factory 로 env 읽음), save_env()
   models.py                 Message / Analysis / Event
@@ -53,6 +54,7 @@ app/
   llm/                      AI 제공자: base(LLMProvider), openai, claude, chatgpt_auth+chatgpt_plan, claude_cli, fake, factory
   collectors/               수집기: eztalk_parse(순수 파싱)·eztalk_collector, naver_mail·mail_content, manual, windows_notification(예비)
   desktop_calendar/         calendar.html(화면, MockAPI 내장) · api.py(CalendarAPI) · widget.py(pywebview 창) · holidays_kr.json
+                            settings.html(설정 화면, MockAPI 내장) · settings_api.py(SettingsAPI: 읽기·저장·로그인·메일 연결) · settings_window.py(창 띄우기)
   extensions/               archive.py(원문 보관), ics_export.py
 tests/                      pytest. 네트워크·API 키·Windows 없이 돌아감
 1_설치하기.bat … 8_메일연결.bat   사용자용 더블클릭 파일 (CRLF, UTF-8, chcp 65001)
@@ -77,6 +79,8 @@ app/paths.py                실행 위치·자료 위치. 개발: 저장소 폴�
 - 비밀번호·토큰은 로그·파일·커밋에 남기지 않음 (`.env`, `data/` 는 .gitignore).
 - AI 호출은 `create_provider(settings, spec)` / `build_pipeline(settings)` 경유. spec 형식 `제공자[:모델]` (예: `chatgpt_plan:gpt-5.6-luna`, `claude_cli:haiku`). 분석 로직에 특정 SDK 코드 넣지 않기.
 - 새 수집기는 `Collector` 를 상속해 `Message(source=..., external_id=...)` 를 내면 나머지 흐름이 그대로 동작.
+- 설정 항목을 추가하면 `config.Settings`, `settings_api.py`(load·save), `settings.html`(화면 + MockAPI), `tests/test_settings_api.py` 를 함께 수정. 화면에 공개되는 메서드는 `test_only_public_methods_are_exposed` 목록에도 추가 (pywebview 는 `_` 로 시작하지 않는 것을 모두 화면에 노출).
+- Claude 구독 상태·로그인은 `claude_cli_provider.claude_status()` / `open_claude_login()` 처럼 **공식 명령 실행만**. `~/.claude` 아래 로그인 파일을 읽는 코드 금지.
 - 분석 결과 형식을 바꾸면 `analyzer.SCHEMA`, `_normalize`, `models.Analysis`, `storage`(칸+마이그레이션), `calendar.html` 을 함께 수정.
 - DB 칸 추가는 `Storage._NEW_COLUMNS` 에 넣어 옛 DB 가 자동으로 업그레이드되게.
 - 사용자가 쓰는 파일(.env, data/ 아래 모든 것) 위치는 반드시 `app.paths`(ENV_PATH, DATA_DIR) 로. `Path(__file__)` 기준으로 쓰기 금지 (설치판에서는 프로그램 폴더에 쓰면 안 됨). 다시 띄울 때는 `self_command()`.
@@ -111,9 +115,10 @@ python main.py messenger-check --raw        :: 열린 쪽지 창 읽기 확인 (
 python main.py mail-login / mail-check      :: 네이버 메일 연결 / 한 번 확인
 python main.py chatgpt-login / chatgpt-models
 python main.py models / usage               :: 모델 설정 / 토큰 사용량
-python main.py gui                          :: 설정·테스트 화면
+python main.py settings                     :: 설정 창 (캘린더 ⚙ → 설정 열기 와 같은 화면)
+python main.py gui                          :: 테스트 화면 (메시지 붙여 넣어 분석해 보기)
 ```
-화면만 고칠 때: `app/desktop_calendar/calendar.html` 을 브라우저로 열면 예시 데이터(MockAPI)로 동작.
+화면만 고칠 때: `app/desktop_calendar/calendar.html` · `settings.html` 을 브라우저로 열면 예시 데이터(MockAPI)로 동작 (settings.html 은 `?theme=light`, `?claude=none`, `?claude=logout` 으로 상태를 바꿔 볼 수 있음).
 
 ## 남은 작업 (우선순위 순)
 1. **사용자 PC 에서 실제 확인·수정** (가장 먼저)
@@ -122,15 +127,11 @@ python main.py gui                          :: 설정·테스트 화면
    - 쪽지: `messenger-check --raw` 로 보낸 사람·본문 파싱, 알림 창→보기 창 합치기
    - 메일: 로그인, 한글 제목·본문 디코딩, 첫 연결 시 오늘 메일만 오는지
    - 캘린더 위젯: 투명 배경(`transparent=True`), 배율 125·150% 모니터에서 끌기·크기 조절 좌표, Win+D 뒤 다시 보이는지, 두 번째 모니터 이동, `api.win(action, *args)` 가변 인자 전달
-   - tkinter 설정 화면 모양
+   - ~~tkinter 설정 화면 모양~~ → v0.8.0 에서 설정 화면을 캘린더와 같은 웹 화면으로 새로 만듦
 2. **망분리 확인**: 학교 업무 PC 에서 외부 AI·네이버 IMAP 접속 가능한지. 안 되면 구조 재검토 필요.
 3. **정보보안 확인**: 학교/교육청 담당자에게 외부 AI 전송 가능 여부 (README 에 안내해 둠).
 4. **설치 파일(.exe)**: v0.6.1 에서 만듦 (`packaging\build.bat`). 2026-11-08 이 PC 에서 PyInstaller 빌드·cbm.exe 명령·캘린더/설정 창 실행 확인. 남은 것: 다른 PC 에서 설치·제거, 실제 ChatGPT 로그인을 설치판으로, 코드 서명 없음(SmartScreen 경고 → '추가 정보 → 실행').
 5. **캘린더 동기화 확장**: 확정 일정 → Google Calendar API 또는 Microsoft Graph. 등록 전 사용자 확인, 중복 방지 칸 추가.
-0. **다음 작업 (2026-11-09 사용자 요청, 다음 날 하기로)**
-   - 설정 창·캘린더에 **Claude 로그인 버튼** (ChatGPT 로그인 버튼처럼). Claude 구독은 공식 `claude` CLI 로그인만 허용 → 버튼은 `claude` 를 새 콘솔 창으로 띄워 사용자가 직접 로그인하게 하고, `claude -p` 시험 호출로 상태(설치 안 됨/로그인 안 됨/정상) 표시. 미설치면 설치 안내(설치는 `irm https://claude.ai/install.ps1 | iex`, PATH 에 `%USERPROFILE%\.local\bin` 추가 필요했음). 토큰 파일 직접 읽기 금지.
-   - **설정 창(tkinter) 디자인 개선**: 투박함 → 캘린더(calendar.html)와 색·글꼴·모서리 맞추기. tkinter 유지(ttk 테마) vs 설정 화면도 pywebview HTML 로 옮기기 중 결정 필요.
-   - **밝은 테마에서 배경 투명도가 안 먹음** (calendar.html, 어두운 테마는 됨) 버그.
 6. 다듬기: 오늘 브리핑 자동 알림(정해진 시각), 할 일 목록, 주간 통계, Lively Wallpaper 로 진짜 배경 표시(HTTP 어댑터), Claude 경로의 사고 수준.
 7. Project Monday 원본에도 '보안' 오판 버그 수정을 알려 주기 (사용자 선택).
 

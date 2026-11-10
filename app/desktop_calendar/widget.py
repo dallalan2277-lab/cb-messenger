@@ -351,6 +351,8 @@ def run(settings, with_watch: bool = False):
         try:
             if icon:
                 icon.stop()
+            from . import settings_window
+            settings_window.close_open()   # 설정 창이 열려 있으면 함께 닫음
         finally:
             window.destroy()
 

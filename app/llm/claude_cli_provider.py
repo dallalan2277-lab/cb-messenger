@@ -81,3 +81,79 @@ class ClaudeCLIProvider(LLMProvider):
                 raise LLMError("Claude Code 에 로그인돼 있지 않습니다. 명령 프롬프트에서 claude 를 한 번 실행해 로그인하세요.")
             raise LLMError(f"Claude Code 오류: {msg[:300]}")
         return str(out.get("result", ""))
+
+
+# ───────── 설정 화면용: 설치·로그인 상태 확인, 로그인 창 띄우기 ─────────
+# 공식 Claude Code 명령(`claude auth status` / `claude auth login`)만 씁니다.
+# 로그인 정보(토큰) 파일을 이 프로그램이 직접 읽거나 쓰지 않습니다 (Anthropic 약관).
+INSTALL_COMMAND = "irm https://claude.ai/install.ps1 | iex"   # Anthropic 공식 설치 명령 (Windows PowerShell)
+
+
+def _windows() -> bool:
+    return os.name == "nt"
+
+
+def _clean_env() -> dict:
+    env = dict(os.environ)
+    env.pop("ANTHROPIC_API_KEY", None)   # 구독 로그인 상태를 봐야 하므로 (complete() 와 같은 조건)
+    return env
+
+
+def claude_status(timeout: float = 20, run=subprocess.run) -> dict:
+    """{installed, logged_in, email, plan, error} — `claude auth status` 의 결과를 옮겨 적음."""
+    out = {"installed": False, "logged_in": False, "email": "", "plan": "", "error": ""}
+    exe = find_claude()
+    if not exe:
+        return out
+    out["installed"] = True
+    try:
+        p = run([exe, "auth", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=timeout, env=_clean_env(), stdin=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except subprocess.TimeoutExpired:
+        out["error"] = "Claude Code 가 응답하지 않습니다. 잠시 후 [다시 확인]을 눌러 보세요."
+        return out
+    except OSError as e:
+        out["error"] = f"Claude Code 를 실행하지 못했습니다: {e}"
+        return out
+    try:
+        data = json.loads(p.stdout or "")
+        if not isinstance(data, dict):
+            raise ValueError
+    except ValueError:
+        # 옛 버전(auth 명령 없음) 등 — 로그인 여부를 알 수 없음
+        out["error"] = "로그인 상태를 확인하지 못했습니다. Claude Code 를 최신 버전으로 설치해 보세요."
+        return out
+    out["logged_in"] = bool(data.get("loggedIn"))
+    if out["logged_in"]:
+        out["email"] = str(data.get("email") or "")[:200]
+        out["plan"] = str(data.get("subscriptionType") or "")[:40]
+    return out
+
+
+def open_claude_login(popen=subprocess.Popen) -> None:
+    """새 콘솔 창에서 `claude auth login` 을 띄움 — 로그인은 사용자가 그 창·브라우저에서 직접 함."""
+    if not _windows():
+        raise LLMError("Claude 로그인 창은 Windows 에서만 띄울 수 있습니다. 터미널에서 claude auth login 을 실행하세요.")
+    exe = find_claude()
+    if not exe:
+        raise LLMError("Claude Code 가 설치돼 있지 않습니다. 먼저 설치하세요.")
+    try:
+        popen([exe, "auth", "login"], env=_clean_env(),
+              creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+    except OSError as e:
+        raise LLMError(f"Claude 로그인 창을 열지 못했습니다: {e}") from e
+
+
+def open_claude_install(popen=subprocess.Popen) -> None:
+    """새 PowerShell 창에서 공식 설치 명령을 실행 — 진행 상황이 사용자에게 그대로 보임."""
+    if not _windows():
+        raise LLMError("자동 설치는 Windows 에서만 됩니다. https://claude.com/claude-code 의 안내를 따르세요.")
+    try:
+        popen(["powershell", "-NoProfile", "-NoExit", "-Command",
+               "Write-Host 'Claude Code 를 설치합니다. 파일이 커서 몇 분 걸릴 수 있습니다 (화면이 멈춘 것처럼 보여도 기다리세요).'; "
+               + INSTALL_COMMAND
+               + "; Write-Host ''; Write-Host '끝났습니다. 이 창을 닫고 설정 화면에서 [다시 확인]을 누르세요.'"],
+              creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+    except OSError as e:
+        raise LLMError(f"설치 창을 열지 못했습니다: {e}") from e

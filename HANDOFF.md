@@ -145,6 +145,18 @@
 - 수정: FallbackProvider 가 대체 모델을 나중에 다시 준비(설치 후 재시작 불필요), 캘린더 상태줄에 `ai_fallback_error` 경고, 분석 실패 이유 표시, `find_claude()` 가 `~/.local/bin/claude.exe`·npm 위치도 찾음, claude 실행 시 창 숨김(CREATE_NO_WINDOW), '로그인 안 됨' 안내 문구.
 - 남은 것: 사용자가 Claude Code 설치(`irm https://claude.ai/install.ps1 | iex`)·로그인 후 실제로 넘어가는지 확인.
 
+### 2-7. 설정 화면 새로 만들기 · Claude 로그인 버튼 · 밝은 테마 투명도 — 2026-11-10
+- **설정 화면**: tkinter 대화상자 대신 `app/desktop_calendar/settings.html`(캘린더와 같은 CSS 변수·버튼 모양, MockAPI 내장) + `settings_api.py`(SettingsAPI) + `settings_window.py`(pywebview 창).
+  - 캘린더 ⚙ → 설정 열기: 같은 프로그램 안에서 창을 하나 더 띄움(`webview.create_window` 를 시작 뒤 다른 스레드에서 불러도 됨 — 이 PC 에서 확인). 저장하면 `restart_watch()` 로 바로 적용. 이미 열려 있으면 그 창을 앞으로.
+  - 따로 열기: `python main.py settings` / 시작 메뉴 "설정" (이때는 저장 뒤 '감시 다시 시작' 필요). 옛 tkinter 화면은 `gui`(테스트 화면)로 남김.
+  - 창 제목 줄은 DWM 속성(20)으로 테마에 맞춤. 배율 125% 모니터에서 900x760 논리 크기로 정상 표시 확인.
+  - .env 에 쓰는 값은 모두 한 줄로 정리(줄바꿈으로 다른 설정 줄을 끼워 넣지 못하게), 모델 spec 은 제공자 목록·글자 종류 검사.
+  - 화면 파일은 Codex(gpt-5.6-sol)가 `settings_spec.tmp.md` 지시서대로 작성 → Claude 가 검토·수정(로그인 뒤 안내 문구 지우기, 실제 창에서 가짜 값 안 보이게, 여백·스크롤바).
+    Codex 플러그인에 긴 한국어 지시문을 직접 넘기면 따옴표 때문에 셸 오류가 남 → **지시문을 파일로 쓰고 "그 파일을 읽어라"고 짧게 호출**할 것.
+- **Claude 로그인**: [AI 연결] 탭. `claude auth status`(JSON: loggedIn, email, subscriptionType)로 상태, `claude auth login` 을 새 콘솔로 띄워 로그인, 미설치면 공식 설치 명령을 보이는 PowerShell 창으로 실행. 로그인 파일은 읽지 않음.
+- **밝은 테마 투명도**: `applyOpacity` 가 `--bg` 를 html 에 넣었는데 `body.light` 가 `--bg` 를 다시 정해 가려졌음 → body 에 넣도록 수정. 밝은 테마의 메뉴·대화상자는 불투명 배경 고정.
+- 남은 것: 설치판(v0.8.0)으로 빌드해 settings.html 이 포함되는지·시작 메뉴 "설정"이 새 화면을 여는지 확인, 실제 Claude 로그아웃 상태에서 [Claude 로그인] 버튼 한 바퀴.
+
 ## 3. 지켜야 할 설계 규칙
 
 0. **모델 선택은 항상 `create_provider(settings, spec)` / `build_pipeline(settings)` 경유**. spec 형식 `제공자[:모델]`.

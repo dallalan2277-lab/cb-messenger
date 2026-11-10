@@ -377,6 +377,11 @@ def cmd_startup(args):
     print("끄려면: python main.py startup --off")
 
 
+def cmd_settings(args):
+    from app.desktop_calendar.settings_window import run_standalone
+    run_standalone(get_settings())
+
+
 def cmd_gui(args):
     from gui import run_gui
     run_gui(args.provider)
@@ -438,6 +443,7 @@ def main(argv=None):
     st.set_defaults(func=cmd_startup)
     sub.add_parser("archive-sync", help="드라이브에 못 올린 기록 옮기기").set_defaults(func=cmd_archive_sync)
     sub.add_parser("gui", help="테스트 화면").set_defaults(func=cmd_gui)
+    sub.add_parser("settings", help="[Windows] 설정 창 (AI 연결·모델·저장·메일·알림·학교 정보)").set_defaults(func=cmd_settings)
     sub.add_parser("models", help="현재 모델 설정 보기").set_defaults(func=cmd_models)
     u = sub.add_parser("usage", help="AI 사용량(토큰) 보기")
     u.add_argument("--since", help="YYYY-MM-DD (기본: 이번 달 1일)")

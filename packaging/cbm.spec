@@ -11,6 +11,7 @@ ICON = os.path.join(SPECPATH, "app.ico")
 
 datas = [
     (os.path.join(ROOT, "app", "desktop_calendar", "calendar.html"), os.path.join("app", "desktop_calendar")),
+    (os.path.join(ROOT, "app", "desktop_calendar", "settings.html"), os.path.join("app", "desktop_calendar")),
     (os.path.join(ROOT, "app", "desktop_calendar", "holidays_kr.json"), os.path.join("app", "desktop_calendar")),
     (os.path.join(ROOT, "samples", "sample_messages.json"), "samples"),
     (os.path.join(ROOT, ".env.example"), "."),

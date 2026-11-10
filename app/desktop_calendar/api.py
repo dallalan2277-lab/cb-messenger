@@ -7,6 +7,7 @@ from __future__ import annotations
 import calendar as _cal
 import functools
 import json
+import logging
 import re
 import threading
 from datetime import date, datetime, timedelta
@@ -16,6 +17,7 @@ from .. import __version__
 from ..paths import ROOT, self_command
 from ..storage import Storage
 
+log = logging.getLogger(__name__)
 HERE = Path(__file__).resolve().parent
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -170,10 +172,31 @@ class CalendarAPI:
         return st
 
     def open_settings(self) -> dict:
-        """설정 창(모델·저장·메일·알림·학교 정보)을 따로 띄움"""
+        """설정 창(AI 연결·모델·저장·메일·알림·학교 정보)을 띄움.
+        캘린더 창 안에서 띄우면 저장하자마자 감시에 적용됨. 안 되면 따로 띄움(저장 뒤 '감시 다시 시작' 필요)."""
+        if self._host is not None:
+            try:
+                from . import settings_window
+                settings_window.open_window(self._prefs_path, on_saved=self._settings_saved,
+                                            usage_fn=self._usage_summary, in_calendar=True)
+                return {"ok": True, "inline": True}
+            except Exception as e:  # noqa: BLE001
+                log.warning("설정 창을 캘린더 안에서 띄우지 못해 따로 띄웁니다: %s", e)
         import subprocess
-        subprocess.Popen(self_command("gui"), cwd=str(ROOT))
-        return {"ok": True}
+        subprocess.Popen(self_command("settings"), cwd=str(ROOT))
+        return {"ok": True, "inline": False}
+
+    def _settings_saved(self) -> dict:
+        """설정 창에서 저장했을 때: 감시를 새 설정으로 다시 시작하고 화면을 다시 그림"""
+        r = self.restart_watch()
+        host = self._host
+        if host is not None and hasattr(host, "refresh"):
+            host.refresh()
+        return r
+
+    @_locked
+    def _usage_summary(self, since: str) -> list[dict]:
+        return self._storage.usage_summary(since)
 
     def restart_watch(self) -> dict:
         """설정을 바꾼 뒤 쪽지·메일 감시를 새 설정으로 다시 시작"""
