@@ -177,6 +177,15 @@
   **Codex 교차 검토는 아직 안 받음** — 한도가 풀리면 `review --scope working-tree --model gpt-6-astra`(학교 PC) 또는 커밋 범위로 받을 것.
 - 남은 것: 실제 학교 엑셀·구글 캘린더 .ics 로 한 번 넣어 보기.
 
+### 2-10. AI '자세히' 정리 · 다시 분석 · 일정↔원문 — 2026-11-10
+- 사용자: '요약이 너무 간략하다'. summary(1~2문장)는 목록·알림용으로 그대로 두고 **details**(문자열 배열 3~6줄) 를 분석 형식에 추가.
+  - 함께 바꾼 곳: `analyzer.SYSTEM_PROMPT`([자세히 details] 절)·`SCHEMA`(required 포함)·`_normalize`, `models.Analysis.details`, `storage`(analyses.details 칸 + _NEW_COLUMNS, add_analysis, get_message), `api.item`, `calendar.html`.
+  - 지어낸 숫자 거르기: `clean_details()` — 원문이나 AI 가 이미 바꿔 적은 마감·일정 날짜에 없는 숫자가 든 줄은 뺌(인용 확인처럼 엄격하지 않은 가벼운 안전장치).
+  - 실제 AI(claude_cli:opus, 가상 쪽지)로 확인: 요청·기간·장소·제출·양식·문의 6줄이 원문대로 나옴.
+- 받은 소식 상세 화면: '자세히' 목록, [다시 분석](`CalendarAPI.reanalyze` → `Pipeline.reanalyze`: 새 결과가 나온 뒤에만 예전 분석을 지움, 알림 없음, 같은 일정은 다시 제안 안 함. 감시와 다른 DB 연결로 실행), 분석 모델 표시, 캘린더 일정 누르면 그 달로 가서 일정 창 열기.
+- 일정 창: AI 가 만든 일정이면 원래 쪽지 위에 [원문 자세히 보기 ›] → 받은 소식 상세 화면.
+- 예전 분석에는 details 가 없음 → 화면에 '[다시 분석]으로 만들 수 있다' 안내. 한꺼번에 다시 분석하는 기능은 만들지 않음(AI 사용량).
+
 ## 3. 지켜야 할 설계 규칙
 
 0. **모델 선택은 항상 `create_provider(settings, spec)` / `build_pipeline(settings)` 경유**. spec 형식 `제공자[:모델]`.

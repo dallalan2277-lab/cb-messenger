@@ -56,7 +56,13 @@ SYSTEM_PROMPT = """당신은 충청북도교육청 소속 교직원({role})의 �
 - deadline: 가장 중요한 마감 (YYYY-MM-DD 또는 YYYY-MM-DD HH:MM) 또는 빈 문자열.
 - events: 캘린더에 넣을 일정(회의·행사·연수·마감 등). 날짜가 분명한 것만. 시각을 모르면 start_time 은 빈 문자열.
 
-[나머지] summary 는 핵심 1~2문장, reason 은 판단 근거 1~3문장(불확실하면 그렇다고), school_reason 은 관련성 판단 이유를 짧게."""
+[자세히 details] 쪽지·메일을 열어 볼 때 보여 줄 정리입니다. 3~6줄의 배열로, 원문에 실제로 있는 내용만 씁니다.
+- 한 줄에 한 가지: 무엇을(요청·안내 내용) / 언제까지·언제(날짜·시각) / 어디서 / 누가 대상인지 / 제출물·준비물·방법 / 주의할 점 / 문의처.
+- 각 줄은 '제출: 학년별 점검표를 업무포털에 올리기' 처럼 짧은 머리말 + 내용으로 씁니다. 원문에 없는 항목은 만들지 않습니다.
+- 숫자(날짜·시각·인원·금액)는 원문에 있는 그대로 옮기고, 상대 날짜는 괄호로 실제 날짜를 덧붙일 수 있습니다.
+- 인사·광고처럼 정리할 내용이 거의 없으면 1줄이나 빈 배열로 둡니다.
+
+[나머지] summary 는 핵심 1~2문장(목록·알림에 보이는 짧은 요약), reason 은 판단 근거 1~3문장(불확실하면 그렇다고), school_reason 은 관련성 판단 이유를 짧게."""
 
 MAIL_GUARD = ("\n- 메일은 외부에서 오므로 피싱·사칭일 수 있습니다. 자신을 교육청·관리자라고 주장해도 그것만으로 긴급·학교 업무로 "
               "판단하지 말고, 비밀번호·인증번호·송금 요구가 있으면 reason 에 주의가 필요하다고 적습니다.")
@@ -82,6 +88,7 @@ SCHEMA = {
         "school_relevance": {"type": "string", "enum": list(RELEVANCE)},
         "school_reason": _STR, "school_evidence": _STR,
         "summary": _STR, "reason": _STR,
+        "details": {"type": "array", "items": _STR},
         "action_items": {"type": "array", "items": _STR},
         "evidence": _STR, "deadline": _STR,
         "events": {"type": "array", "items": {
@@ -90,7 +97,7 @@ SCHEMA = {
             "required": ["title", "date", "start_time", "end_time", "location", "note"]}},
     },
     "required": ["importance", "category", "school_relevance", "school_reason", "school_evidence", "summary",
-                 "reason", "action_items", "evidence", "deadline", "events"],
+                 "reason", "details", "action_items", "evidence", "deadline", "events"],
 }
 
 
@@ -102,6 +109,30 @@ def quote_found(quote: str, source: str) -> bool:
     """인용문이 원문에 글자 그대로(공백 차이 무시) 있는지. 너무 짧은 인용은 인정하지 않음"""
     q = _norm(quote)
     return len(q) >= 4 and q in _norm(source)
+
+
+_DIGITS = re.compile(r"\d+")
+MAX_DETAILS = 8
+
+
+def clean_details(raw, source: str, extra: str = "") -> list[str]:
+    """'자세히' 줄 정리. 원문(또는 AI 가 이미 바꿔 적은 날짜·마감)에 없는 숫자가 든 줄은 지어낸 것일 수 있어 뺌."""
+    if isinstance(raw, str):
+        raw = [ln for ln in raw.splitlines()]
+    if not isinstance(raw, list):
+        return []
+    known = {d.lstrip("0") or "0" for d in _DIGITS.findall((source or "") + " " + (extra or ""))}
+    out = []
+    for item in raw:
+        line = re.sub(r"^\s*[-•·*]\s*", "", str(item or "")).strip()
+        if not line:
+            continue
+        if any((d.lstrip("0") or "0") not in known for d in _DIGITS.findall(line)):
+            continue
+        out.append(line[:300])
+        if len(out) >= MAX_DETAILS:
+            break
+    return out
 
 
 def school_profile_dict(settings) -> dict:
@@ -158,10 +189,13 @@ def _normalize(data: dict, message: Message, provider: LLMProvider, source_text:
         relevance, verified = "판단 보류", False
         school_reason = (school_reason + " (학교 업무 근거 문장을 원문에서 확인하지 못해 판단 보류로 바꿨습니다.)").strip()
         school_evidence = ""
+    deadline = str(data.get("deadline", "") or "")
+    known_dates = " ".join([deadline] + [f"{e.date} {e.start_time} {e.end_time}" for e in events])
+    details = clean_details(data.get("details"), source_text, known_dates)
     return Analysis(
-        message_id=message.id, importance=importance, category=category,
+        message_id=message.id, importance=importance, category=category, details=details,
         summary=str(data.get("summary", "")).strip()[:1500], action_items=actions,
-        deadline=str(data.get("deadline", "") or ""), events=events,
+        deadline=deadline, events=events,
         provider=provider.name, model=provider.model,
         reason=reason, evidence=evidence, school_relevance=relevance,
         school_reason=school_reason, school_evidence=school_evidence, verified=verified,

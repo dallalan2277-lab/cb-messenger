@@ -124,6 +124,18 @@ class Pipeline:
                 n += 1
         return n
 
+    def reanalyze(self, message_id: int) -> Analysis:
+        """저장된 쪽지·메일을 지금 설정의 AI 로 다시 분석 (예전 분석은 새 결과가 나온 뒤에만 지움).
+        알림은 다시 보내지 않고, 새로 찾은 일정은 지금처럼 '제안'으로 올림(같은 일정이 있으면 건너뜀)."""
+        m = self.storage.message_obj(message_id)
+        if m is None:
+            raise ValueError("메시지를 찾을 수 없습니다.")
+        a = self.analyzer.analyze(m, text_for_ai=self.text_for_ai(m))
+        new_id = self.storage.add_analysis(a)
+        self.storage.delete_older_analyses(m.id, new_id)
+        self._suggest_events(m, a)
+        return a
+
     def retry_failed(self) -> int:
         n = 0
         for m in self.storage.unanalyzed_messages():

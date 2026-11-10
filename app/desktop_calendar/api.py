@@ -132,7 +132,7 @@ class CalendarAPI:
         m = self._storage.get_message(int(message_id))
         if not m:
             return None
-        return {"sender": m["sender"], "body": m["body"], "received_at": m["received_at"],
+        return {"sender": m["sender"], "body": m["body"], "received_at": m["received_at"], "source": m.get("source") or "",
                 "summary": m.get("summary") or "", "importance": m.get("importance") or ""}
 
     # ---------- 받은 소식 (쪽지·메일 통합 목록) ----------
@@ -157,10 +157,41 @@ class CalendarAPI:
                 "reason", "evidence", "deadline", "school_relevance", "school_reason", "school_evidence", "verified")
         out = {k: m.get(k) for k in keys}
         out["action_items"] = json.loads(m.get("action_items") or "[]")
+        try:
+            out["details"] = [str(x) for x in json.loads(m.get("details") or "[]")]
+        except (TypeError, ValueError):
+            out["details"] = []
+        out["ai_model"] = f"{m.get('ai_provider') or ''}:{m.get('ai_model') or ''}".strip(":")
         out["done"] = bool(out["done"])
         out["events"] = [_public(e) for e in self._storage.calendar_events("0000-01-01", "9999-12-31", include_dismissed=False)
                          if e.get("message_id") == int(message_id)]
         return out
+
+    def reanalyze(self, message_id: int) -> dict:
+        """쪽지·메일 한 건을 지금 AI 설정으로 다시 분석 ('자세히' 가 없는 예전 분석 보강용).
+        감시와 따로 새 연결(build_pipeline)로 돌려서, 감시 중인 AI 줄과 DB 연결을 같이 쓰지 않음."""
+        from ..config import get_settings
+        from ..pipeline import build_pipeline
+        if not getattr(self, "_reanalyze_lock", None):
+            self._reanalyze_lock = threading.Lock()
+        if not self._reanalyze_lock.acquire(blocking=False):
+            return {"ok": False, "error": "다른 분석이 진행 중입니다. 잠시 후 다시 눌러 주세요."}
+        try:
+            pipe = build_pipeline(get_settings(reload=True), notify_levels=())
+            try:
+                a = pipe.reanalyze(int(message_id))
+            finally:
+                pipe.storage.close()
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        except Exception as e:  # noqa: BLE001  (AI 한도·로그인 등)
+            return {"ok": False, "error": f"다시 분석하지 못했습니다: {e}"[:400]}
+        finally:
+            self._reanalyze_lock.release()
+        host = self._host
+        if host is not None and hasattr(host, "refresh"):
+            host.refresh()
+        return {"ok": True, "model": f"{a.provider}:{a.model}"}
 
     @_locked
     def set_done(self, message_id: int, done: bool = True) -> dict:

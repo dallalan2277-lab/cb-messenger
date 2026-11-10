@@ -88,7 +88,7 @@ class Storage:
         "analyses": [("reason", "TEXT DEFAULT ''"), ("evidence", "TEXT DEFAULT ''"),
                      ("school_relevance", "TEXT DEFAULT '판단 보류'"), ("school_reason", "TEXT DEFAULT ''"),
                      ("school_evidence", "TEXT DEFAULT ''"), ("verified", "INTEGER DEFAULT 1"),
-                     ("notified", "INTEGER DEFAULT 0")],
+                     ("notified", "INTEGER DEFAULT 0"), ("details", "TEXT DEFAULT '[]'")],
         "calendar_events": [("import_batch", "TEXT DEFAULT ''")],   # 파일에서 가져온 일정 묶음 (되돌리기용)
     }
 
@@ -159,15 +159,25 @@ class Storage:
         cur = self.conn.execute(
             "INSERT INTO analyses(message_id, importance, category, summary, action_items, "
             "deadline, events, provider, model, reason, evidence, school_relevance, school_reason, "
-            "school_evidence, verified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "school_evidence, verified, details) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (a.message_id, a.importance, a.category, a.summary,
              json.dumps(a.action_items, ensure_ascii=False), a.deadline,
              json.dumps([e.__dict__ for e in a.events], ensure_ascii=False),
              a.provider, a.model, a.reason, a.evidence, a.school_relevance, a.school_reason,
-             a.school_evidence, int(a.verified)),
+             a.school_evidence, int(a.verified), json.dumps(a.details or [], ensure_ascii=False)),
         )
         self.conn.commit()
         return cur.lastrowid
+
+    def delete_older_analyses(self, message_id: int, keep_id: int) -> int:
+        """다시 분석한 뒤 예전 분석 결과를 지움 (새 결과 keep_id 만 남김)"""
+        cur = self.conn.execute("DELETE FROM analyses WHERE message_id = ? AND id != ?", (message_id, keep_id))
+        self.conn.commit()
+        return cur.rowcount
+
+    def message_obj(self, message_id: int):
+        r = self.conn.execute("SELECT * FROM messages WHERE id = ?", (int(message_id),)).fetchone()
+        return self._row_to_msg(r) if r else None
 
     def recent(self, since: str | None = None, limit: int = 100) -> list[tuple[Message, Analysis]]:
         """최근 분석 결과. since 는 'YYYY-MM-DD' 또는 'YYYY-MM-DDTHH:MM:SS'."""
@@ -275,7 +285,8 @@ class Storage:
     def get_message(self, message_id: int) -> dict | None:
         r = self.conn.execute(
             "SELECT m.*, a.summary, a.importance, a.category, a.reason, a.evidence, a.action_items, a.deadline, "
-            "a.school_relevance, a.school_reason, a.school_evidence, a.verified "
+            "a.school_relevance, a.school_reason, a.school_evidence, a.verified, a.details, "
+            "a.provider AS ai_provider, a.model AS ai_model "
             "FROM messages m LEFT JOIN analyses a ON a.message_id=m.id "
             "WHERE m.id=? ORDER BY a.id DESC LIMIT 1", (message_id,)).fetchone()
         return dict(r) if r else None

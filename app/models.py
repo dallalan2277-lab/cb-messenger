@@ -52,6 +52,7 @@ class Analysis:
     school_reason: str = ""
     school_evidence: str = ""
     verified: bool = True          # False = AI 답 일부를 원문 근거가 없어 고침
+    details: list[str] = field(default_factory=list)   # 자세히: 무엇·언제·어디·대상·준비물·주의·문의 (3~6줄)
 
     def to_dict(self) -> dict:
         return asdict(self)
