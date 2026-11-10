@@ -56,12 +56,20 @@ def parse_version(s: str) -> tuple[int, ...]:
         raise UpdateError("버전 정보를 확인할 수 없습니다.") from exc
 
 
+def _is_prerelease(s: str) -> bool:
+    """'0.9.0-beta.1' 처럼 '-' 뒤에 꼬리표가 붙은 시험판인지 (+빌드 정보는 상관없음)"""
+    return "-" in str(s or "").strip().split("+", 1)[0]
+
+
 def is_newer(remote: str, current: str) -> bool:
     remote_parts, current_parts = parse_version(remote), parse_version(current)
     length = max(len(remote_parts), len(current_parts))
-    return (remote_parts + (0,) * (length - len(remote_parts))) > (
-        current_parts + (0,) * (length - len(current_parts))
-    )
+    r = remote_parts + (0,) * (length - len(remote_parts))
+    c = current_parts + (0,) * (length - len(current_parts))
+    if r != c:
+        return r > c
+    # 숫자가 같으면: 시험판(0.9.0-beta.1)을 쓰는 중에 정식판(0.9.0)이 나오면 새 버전으로 봄
+    return _is_prerelease(current) and not _is_prerelease(remote)
 
 
 def _verify():
