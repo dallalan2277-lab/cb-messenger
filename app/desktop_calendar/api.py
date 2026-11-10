@@ -46,6 +46,7 @@ DEFAULT_PREFS = {
     "week_start": 0,         # 0 = 일요일, 1 = 월요일
     "show_suggested": True,
     "theme": "dark",         # dark | light
+    "last_import": None,     # 마지막으로 파일에서 가져온 묶음 {batch, name, count, at} — 되돌리기용
 }
 
 
@@ -379,6 +380,90 @@ class CalendarAPI:
     def confirm_all(self) -> dict:
         n = sum(1 for e in self.suggestions() if self._storage.update_calendar_event(e["id"], status="confirmed"))
         return {"ok": True, "count": n}
+
+    # ---------- 다른 캘린더 파일에서 일정 가져오기 ----------
+    _IMPORT_TYPES = ("일정 파일 (*.ics;*.xlsx;*.csv;*.tsv;*.txt)", "모든 파일 (*.*)")
+
+    def import_pick(self) -> dict:
+        """파일 고르기 창 → {path} (취소하면 빈 값)"""
+        host = self._host
+        window = getattr(host, "window", None) if host else None
+        if window is None:
+            return {"path": ""}
+        try:
+            import webview
+            got = window.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=False, file_types=self._IMPORT_TYPES)
+        except Exception as e:  # noqa: BLE001
+            return {"path": "", "error": f"파일 고르기 창을 열지 못했습니다: {e}"}
+        return {"path": str(got[0]) if got else ""}
+
+    def import_preview(self, path: str, mapping: dict | None = None) -> dict:
+        """파일을 읽어 넣을 일정 목록을 미리 보여 줌 (아직 저장 안 함).
+        mapping: {칸 종류: 몇 번째 칸} — 표 파일에서 어느 칸이 날짜·제목인지 바꿀 때"""
+        import secrets
+        from ..extensions.calendar_import import FIELD_LABELS, ImportError_, parse_file
+        try:
+            clean = {k: int(v) for k, v in (mapping or {}).items() if k in FIELD_LABELS and v not in (None, "", -1)}
+            res = parse_file(path, clean or None)
+        except ImportError_ as e:
+            return {"ok": False, "error": str(e)}
+        except (OSError, ValueError, TypeError) as e:
+            return {"ok": False, "error": f"파일을 읽지 못했습니다: {e}"}
+        events = res["events"]
+        have = set()
+        if events:
+            with self._lock:
+                have = self._storage.existing_event_keys(min(e["date"] for e in events),
+                                                         max(e["date"] for e in events))
+        seen, rows = set(), []
+        for i, e in enumerate(events):
+            key = (e["date"], e["title"], e["start_time"])
+            rows.append({**e, "idx": i, "dup": key in have or key in seen})
+            seen.add(key)
+        token = secrets.token_hex(8)
+        self._import_cache = {"token": token, "events": events, "name": res["name"]}
+        return {"ok": True, "token": token, "name": res["name"], "kind": res["kind"], "events": rows,
+                "total": len(rows), "dup_count": sum(r["dup"] for r in rows), "warnings": res["warnings"],
+                "columns": res["columns"], "mapping": res["mapping"], "field_labels": FIELD_LABELS}
+
+    def import_apply(self, token: str, indexes: list | None = None) -> dict:
+        """미리 본 일정 중 고른 것(indexes, 비우면 전부)을 확정 일정으로 넣음"""
+        import secrets
+        cache = getattr(self, "_import_cache", None)
+        if not cache or cache.get("token") != token:
+            return {"ok": False, "error": "미리보기가 지나갔습니다. 파일을 다시 골라 주세요."}
+        events = cache["events"]
+        if indexes is not None:
+            pick = sorted({int(i) for i in indexes if str(i).isdigit() and int(i) < len(events)})
+            events = [events[i] for i in pick]
+        if not events:
+            return {"ok": False, "error": "넣을 일정을 하나 이상 고르세요."}
+        batch = "imp-" + datetime.now().strftime("%Y%m%d%H%M%S") + "-" + secrets.token_hex(3)
+        with self._lock:
+            added, skipped = self._storage.import_calendar_events(events, batch)
+        self._import_cache = None
+        if added:
+            self.set_prefs({"last_import": {"batch": batch, "name": cache["name"], "count": added,
+                                            "at": datetime.now().strftime("%Y-%m-%d %H:%M")}})
+        host = self._host
+        if host is not None and hasattr(host, "refresh"):
+            host.refresh()
+        return {"ok": True, "added": added, "skipped": skipped, "batch": batch if added else ""}
+
+    def import_undo(self, batch: str = "") -> dict:
+        """가져온 일정 묶음을 지움 (비우면 마지막으로 가져온 것)"""
+        last = self.get_prefs().get("last_import") or {}
+        batch = str(batch or last.get("batch") or "")
+        if not batch:
+            return {"ok": False, "error": "되돌릴 가져오기가 없습니다."}
+        with self._lock:
+            removed = self._storage.delete_import_batch(batch)
+        if last.get("batch") == batch:
+            self.set_prefs({"last_import": None})
+        host = self._host
+        if host is not None and hasattr(host, "refresh"):
+            host.refresh()
+        return {"ok": True, "removed": removed}
 
     # ---------- 창 조작 (host 가 있을 때만) ----------
     def win(self, action: str, *args):

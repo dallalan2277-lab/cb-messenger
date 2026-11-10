@@ -32,6 +32,7 @@ AI 는 **GPT 와 Claude 둘 다** 쓸 수 있어야 함 (구독 또는 API 키).
 | 설정 화면 (v0.8.0: 캘린더와 같은 모양의 pywebview 창 `settings.html` — AI 연결·모델·저장·메일·알림·학교 정보 탭) | 완료 |
 | Claude 로그인 버튼·상태 표시 (설정 화면 [AI 연결] 탭, 공식 `claude auth status/login` 만 실행) (v0.8.0) | 완료 |
 | 캘린더 ⚙ 메뉴에서 AI 모델 바로 고르기 (v0.7.0) | 완료 · 미리보기로 확인 |
+| 다른 캘린더 파일에서 일정 가져오기 (.ics·엑셀·csv·txt, 미리보기·칸 맞추기·중복 건너뜀·되돌리기) (v0.8.1) | 완료 · 미리보기로 확인 |
 | 자동 업데이트 (GitHub Releases, SHA-256 확인, `packaging\release.bat` 로 배포) (v0.7.0) | 코드 완료 · **실제 업데이트 한 바퀴 미확인** |
 
 **가장 큰 빈칸: 사용자 PC(Windows)에서 아직 한 번도 실행해 보지 않았음.** 다음 작업은 대부분 실제 환경 확인과 수정.
@@ -55,7 +56,7 @@ app/
   collectors/               수집기: eztalk_parse(순수 파싱)·eztalk_collector, naver_mail·mail_content, manual, windows_notification(예비)
   desktop_calendar/         calendar.html(화면, MockAPI 내장) · api.py(CalendarAPI) · widget.py(pywebview 창) · holidays_kr.json
                             settings.html(설정 화면, MockAPI 내장) · settings_api.py(SettingsAPI: 읽기·저장·로그인·메일 연결) · settings_window.py(창 띄우기)
-  extensions/               archive.py(원문 보관), ics_export.py
+  extensions/               archive.py(원문 보관), ics_export.py, calendar_import.py(일정 파일 읽기: ics·xlsx(zip XML 직접)·csv·txt·주간 달력)
 tests/                      pytest. 네트워크·API 키·Windows 없이 돌아감
 1_설치하기.bat … 8_메일연결.bat   사용자용 더블클릭 파일 (CRLF, UTF-8, chcp 65001)
 packaging/                  설치 파일 만들기: build.bat → cbm.spec(PyInstaller onedir, CBMessengerAI.exe 창 없음 + cbm.exe 콘솔) → installer.iss(Inno Setup, 관리자 권한 불필요, %LOCALAPPDATA%\Programs\CBMessengerAI)

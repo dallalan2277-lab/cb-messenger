@@ -89,6 +89,7 @@ class Storage:
                      ("school_relevance", "TEXT DEFAULT '판단 보류'"), ("school_reason", "TEXT DEFAULT ''"),
                      ("school_evidence", "TEXT DEFAULT ''"), ("verified", "INTEGER DEFAULT 1"),
                      ("notified", "INTEGER DEFAULT 0")],
+        "calendar_events": [("import_batch", "TEXT DEFAULT ''")],   # 파일에서 가져온 일정 묶음 (되돌리기용)
     }
 
     def _migrate(self):
@@ -215,6 +216,38 @@ class Storage:
             (title, date, start_time, end_time, location, note, status, origin, message_id))
         self.conn.commit()
         return cur.lastrowid
+
+    # ---- 파일에서 일정 가져오기 ----
+    def import_calendar_events(self, events: list[dict], batch: str) -> tuple[int, int]:
+        """확정 일정으로 한꺼번에 넣음. 같은 날·같은 제목·같은 시작 시각이 이미 있으면 건너뜀.
+        (넣은 수, 건너뛴 수). 한 번에 처리해서 중간에 실패하면 하나도 안 들어감."""
+        added = skipped = 0
+        with self.conn:
+            for e in events:
+                key = (e["date"], e["title"], e.get("start_time", ""))
+                if self.conn.execute("SELECT 1 FROM calendar_events WHERE date=? AND title=? AND start_time=? "
+                                     "AND status != 'dismissed'", key).fetchone():
+                    skipped += 1
+                    continue
+                self.conn.execute(
+                    "INSERT INTO calendar_events(title, date, start_time, end_time, location, note, status, origin, "
+                    "import_batch) VALUES (?,?,?,?,?,?,'confirmed','import',?)",
+                    (e["title"], e["date"], e.get("start_time", ""), e.get("end_time", ""),
+                     e.get("location", ""), e.get("note", ""), batch))
+                added += 1
+        return added, skipped
+
+    def existing_event_keys(self, start: str, end: str) -> set:
+        rows = self.conn.execute("SELECT date, title, start_time FROM calendar_events WHERE date BETWEEN ? AND ? "
+                                 "AND status != 'dismissed'", (start, end)).fetchall()
+        return {(r["date"], r["title"], r["start_time"] or "") for r in rows}
+
+    def delete_import_batch(self, batch: str) -> int:
+        if not batch:
+            return 0
+        cur = self.conn.execute("DELETE FROM calendar_events WHERE import_batch = ? AND origin = 'import'", (batch,))
+        self.conn.commit()
+        return cur.rowcount
 
     def update_calendar_event(self, event_id: int, **fields) -> bool:
         sets = {k: v for k, v in fields.items() if k in self.CAL_FIELDS}

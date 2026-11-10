@@ -190,6 +190,35 @@
   .actions .btn.okc { color: var(--ok); border-color: var(--ok); }
   .err { color: var(--danger); font-size: 12px; min-height: 16px; }
 
+  /* ---------- 일정 가져오기 ---------- */
+  .dialog.wide { width: min(720px, 96%); display: flex; flex-direction: column; max-height: 94%; overflow: hidden; }
+  .imp-name { font-size: 12px; font-weight: 400; color: var(--dim); overflow-wrap: anywhere; }
+  .imp-sum { font-size: 13px; margin-bottom: 6px; }
+  .imp-warn { color: var(--sugg); font-size: 12px; margin: 0 0 6px; padding-left: 16px; }
+  .imp-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; margin: 4px 0 8px; }
+  .imp-map label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--dim); }
+  .imp-map select { padding: 4px 6px; font-size: 12px; }
+  .imp-tools { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; font-size: 12px; color: var(--dim); flex-wrap: wrap; }
+  .imp-tools .btn { padding: 3px 8px; font-size: 12px; }
+  .imp-table-wrap { flex: 1; min-height: 80px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .imp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .imp-table th { position: sticky; top: 0; background: var(--panel); backdrop-filter: blur(6px); text-align: left; color: var(--dim); font-weight: 600; }
+  body:not(.light) .imp-table th { background: rgb(34, 38, 47); }
+  body.light .imp-table th { background: rgb(240, 241, 244); }
+  .imp-table th, .imp-table td { padding: 5px 7px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .imp-table td.c { width: 26px; text-align: center; }
+  .imp-table td.d { white-space: nowrap; width: 1%; }
+  .imp-table td.t { white-space: nowrap; width: 1%; color: var(--dim); }
+  .imp-table tr.dup td { opacity: 0.5; }
+  .imp-table .have { font-size: 10px; color: var(--sugg); border: 1px solid var(--sugg); border-radius: 999px; padding: 0 5px; margin-left: 4px; white-space: nowrap; }
+  .imp-table input[type="checkbox"] { width: 14px; height: 14px; padding: 0; margin: 0; accent-color: var(--accent); }
+  .imp-more { font-size: 12px; color: var(--dim); padding: 6px 8px; }
+  .imp-undo { position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%); z-index: 21; display: none;
+    background: rgba(0,0,0,0.8); color: #fff; border-radius: 999px; padding: 5px 6px 5px 14px; font-size: 12px; align-items: center; gap: 8px; }
+  .imp-undo.on { display: flex; }
+  .imp-undo button { background: transparent; color: #8ab4f8; border: 1px solid rgba(255,255,255,0.3); border-radius: 999px; padding: 3px 10px; font: inherit; cursor: pointer; }
+  .menu .mi.sub { font-size: 12px; color: var(--dim); }
+
   .menu {
     position: absolute; top: 48px; right: 12px; width: 260px; background: var(--bg); border: 1px solid var(--line);
     border-radius: 12px; padding: 8px; display: none; z-index: 9; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
@@ -287,6 +316,8 @@
     <button class="mi" id="restartWatch">바꾼 설정으로 감시 다시 시작</button>
     <div class="sec">기타</div>
     <button class="mi" id="updateBtn">업데이트 확인 (현재 v…)</button>
+    <button class="mi" id="importBtn">다른 캘린더에서 일정 가져오기 (.ics · 엑셀 · csv · txt)</button>
+    <button class="mi sub" id="importUndoBtn" hidden></button>
     <button class="mi" id="exportIcs">확정 일정 .ics 내보내기</button>
     <button class="mi" id="hideBtn">캘린더 숨기기 (트레이 아이콘에서 다시 열기)</button>
   </div>
@@ -314,6 +345,7 @@
   <div class="grip w" data-dir="w"></div><div class="grip sw" data-dir="sw"></div>
   <div class="grip se" data-dir="se" title="끌어서 크기 조절"></div>
   <div class="toast" id="toast"></div>
+  <div class="imp-undo" id="impUndoBar"><span id="impUndoText"></span><button id="impUndoNow">되돌리기</button></div>
 </div>
 
 <script>
@@ -389,7 +421,50 @@ function MockAPI() {
       options: [{ slug: "gpt-6.1-sol", display_name: "GPT-6.1 Sol" }, { slug: "gpt-6.1-terra", display_name: "GPT-6.1 Terra" },
                 { slug: "gpt-6-astra", display_name: "GPT-6 Astra" }, { slug: "gpt-5.6-luna", display_name: "GPT-5.6 Luna" }] }),
     set_model: async (s) => { mockModel = s || ""; return { ok: true, spec: s ? `chatgpt_plan:${s}` : "chatgpt_plan", restarted: true }; },
+    // 일정 가져오기 (미리보기용 가짜 파일)
+    import_pick: async () => ({ path: "C:\\예시\\학사일정.xlsx" }),
+    import_preview: async (path, mapping) => {
+      const nm = new Date(t.getFullYear(), t.getMonth() + 1, 1);
+      const next = (d) => ds(new Date(nm.getFullYear(), nm.getMonth(), d));
+      const jan = `${t.getFullYear() + 1}-01-02`;
+      mockImport = [
+        { date: add(2), title: "교내 수학 경시대회", start_time: "13:30", end_time: "15:00", location: "강당", note: "" },
+        { date: add(1), title: "학부모 상담", start_time: "14:00", end_time: "14:30", location: "교실", note: "" },
+        { date: add(4), title: "학년 협의회", start_time: "15:00", end_time: "", location: "2층 회의실", note: "" },
+        { date: add(6), title: "현장체험학습", start_time: "", end_time: "", location: "", note: "1·2학년" },
+        { date: add(7), title: "현장체험학습", start_time: "", end_time: "", location: "", note: "1·2학년" },
+        { date: add(1), title: "생활기록부 점검", start_time: "", end_time: "", location: "", note: "" },
+        { date: next(3), title: "교직원 연수", start_time: "16:00", end_time: "17:00", location: "시청각실", note: "" },
+        { date: next(10), title: "기말고사", start_time: "", end_time: "", location: "", note: "" },
+        { date: next(11), title: "기말고사", start_time: "", end_time: "", location: "", note: "" },
+        { date: jan, title: "겨울방학 방과후학교 시작", start_time: "09:00", end_time: "", location: "", note: "" },
+      ];
+      const have = new Set(evs.filter((e) => e.status !== "dismissed").map((e) => `${e.date}|${e.title}|${e.start_time || ""}`));
+      const rows = mockImport.map((e, i) => ({ ...e, idx: i, dup: have.has(`${e.date}|${e.title}|${e.start_time}`) }));
+      return { ok: true, token: "mock" + Date.now(), name: "학사일정.xlsx", kind: "table", total: rows.length,
+        dup_count: rows.filter((r) => r.dup).length, warnings: ["날짜를 읽지 못한 줄 1개는 건너뜁니다."],
+        columns: ["날짜", "행사", "시간", "장소"], mapping: mapping || { date: 0, title: 1, start_time: 2, location: 3 },
+        field_labels: { date: "날짜", title: "제목", start_time: "시작 시각", end_time: "끝 시각", location: "장소", note: "메모" }, events: rows };
+    },
+    import_apply: async (token, idxs) => {
+      const batch = "mock-" + Date.now(); let added = 0, skipped = 0;
+      (idxs || mockImport.map((_, i) => i)).forEach((i) => {
+        const e = mockImport[i]; if (!e) return;
+        if (evs.some((x) => x.status !== "dismissed" && x.date === e.date && x.title === e.title && (x.start_time || "") === e.start_time)) { skipped++; return; }
+        evs.push({ ...e, id: ++id, status: "confirmed", origin: "import", message_id: null, sender: "", _batch: batch }); added++;
+      });
+      if (added) p = { ...p, last_import: { batch, name: "학사일정.xlsx", count: added, at: "" } };
+      return { ok: true, added, skipped, batch: added ? batch : "" };
+    },
+    import_undo: async (batch) => {
+      const b = batch || (p.last_import && p.last_import.batch);
+      if (!b) return { ok: false, error: "되돌릴 가져오기가 없습니다." };
+      const before = evs.length; evs = evs.filter((e) => e._batch !== b);
+      if (p.last_import && p.last_import.batch === b) p = { ...p, last_import: null };
+      return { ok: true, removed: before - evs.length };
+    },
   };
+  let mockImport = [];
   let mockModel = "";
   return self;
 }
@@ -421,6 +496,7 @@ async function checkForUpdateSilently() {
 function openUpdateDialog(info) {
   const version = versionText(info.latest);
   const notes = info.notes || "업데이트 내용이 없습니다.";
+  $("dialog2").classList.remove("wide");
   $("dialog2").innerHTML = `<h2>새 버전 ${esc(version)} 설치</h2>
     <div class="orig">${esc(notes)}</div>
     <div class="quote">설치하는 동안 캘린더가 잠시 꺼졌다가 다시 켜집니다. 일정·설정은 그대로 남습니다.</div>
@@ -457,6 +533,139 @@ async function checkOrOpenUpdate() {
   } else {
     toast(`최신 버전입니다 (${versionText(result.latest || result.current)})`);
   }
+}
+
+/* ===================== 다른 캘린더에서 일정 가져오기 ===================== */
+const IMP_SHOW = 300;            // 미리보기 표에 그리는 최대 줄 수 (나머지는 '이미 있음'이 아니면 함께 넣음)
+let imp = null;                  // { path, res, checked: Set(idx) }
+let lastImportDone = null;       // 방금 넣은 묶음 {batch, name, count}
+
+function closeImport() { $("scrim2").classList.remove("on"); $("dialog2").classList.remove("wide"); imp = null; }
+
+async function startImport() {
+  let pick;
+  try { pick = await api.import_pick(); } catch (ex) { toast(String(ex.message || ex)); return; }
+  if (pick && pick.error) toast(pick.error);
+  if (!pick || !pick.path) return;
+  await loadImportPreview(pick.path, null);
+}
+
+async function loadImportPreview(path, mapping) {
+  const d = $("dialog2");
+  d.classList.add("wide");
+  if (!imp) { d.innerHTML = `<h2>일정 가져오기</h2><div class="imp-sum">파일을 읽는 중…</div>`; $("scrim2").classList.add("on"); }
+  let res;
+  try { res = await api.import_preview(path, mapping); } catch (ex) { res = { ok: false, error: String(ex.message || ex) }; }
+  if (!res || !res.ok) {
+    d.innerHTML = `<h2>일정 가져오기</h2><div class="err">${esc((res && res.error) || "파일을 읽지 못했습니다.")}</div>
+      <div class="actions"><button class="btn" id="impClose">닫기</button></div>`;
+    $("impClose").onclick = closeImport;
+    $("scrim2").classList.add("on");
+    imp = null;
+    return;
+  }
+  imp = { path, res, checked: new Set(res.events.filter((e) => !e.dup).map((e) => e.idx)) };
+  drawImport();
+}
+
+function impTime(e) {
+  if (!e.start_time) return "종일";
+  return e.end_time ? `${e.start_time}~${e.end_time}` : e.start_time;
+}
+
+function impCount() {
+  const { res, checked } = imp;
+  const hidden = res.events.slice(IMP_SHOW).filter((e) => !e.dup).length;   // 표에 안 그린 줄은 '이미 있음'만 빼고 포함
+  return checked.size + hidden;
+}
+
+function drawImport() {
+  const { res, checked } = imp;
+  const fields = ["date", "title", "start_time", "end_time", "location", "note"];
+  const mapUi = res.kind === "table" && res.columns && res.columns.length ? `
+    <details ${res.events.length ? "" : "open"}><summary class="imp-tools" style="cursor:pointer">칸 맞추기 — 날짜·제목을 잘못 알아봤으면 여기서 고르세요</summary>
+    <div class="imp-map">${fields.map((f) => `<label>${esc(res.field_labels[f] || f)}${f === "date" || f === "title" ? " *" : ""}
+      <select data-f="${f}"><option value="">(없음)</option>${res.columns.map((c, i) =>
+        `<option value="${i}" ${res.mapping[f] === i ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>`).join("")}</div></details>` : "";
+  const rows = res.events.slice(0, IMP_SHOW).map((e) => `<tr class="${e.dup ? "dup" : ""}">
+      <td class="c"><input type="checkbox" data-i="${e.idx}" ${checked.has(e.idx) ? "checked" : ""} aria-label="넣기"></td>
+      <td class="d">${esc(fmtDate(e.date))}${e.date.slice(0, 4) !== String(new Date().getFullYear()) ? ` <span style="color:var(--dim)">${esc(e.date.slice(0, 4))}</span>` : ""}</td>
+      <td class="t">${esc(impTime(e))}</td>
+      <td>${esc(e.title)}${e.dup ? '<span class="have">이미 있음</span>' : ""}${e.note ? `<div style="color:var(--dim);font-size:11px">${esc(e.note.split("\n")[0])}</div>` : ""}</td>
+      <td>${esc(e.location || "")}</td></tr>`).join("");
+  const more = res.events.length > IMP_SHOW
+    ? `<div class="imp-more">… 외 ${res.events.length - IMP_SHOW}건 (이미 있는 것만 빼고 모두 함께 들어갑니다 — 체크는 위 ${IMP_SHOW}건만 바꿀 수 있습니다)</div>` : "";
+  const n = impCount();
+  $("dialog2").innerHTML = `<h2>일정 가져오기 <span class="imp-name">${esc(res.name)}</span></h2>
+    <div class="imp-sum">일정 <b>${res.total}</b>건을 찾았습니다.${res.dup_count ? ` 이미 캘린더에 있는 ${res.dup_count}건은 빼 두었습니다.` : ""}</div>
+    ${res.warnings.length ? `<ul class="imp-warn">${res.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
+    ${mapUi}
+    ${res.events.length ? `<div class="imp-tools"><button class="btn" id="impAll">모두 선택</button><button class="btn" id="impNone">모두 해제</button>
+      <span>체크한 일정만 '확정 일정'으로 들어갑니다.</span></div>
+    <div class="imp-table-wrap"><table class="imp-table"><thead><tr><th></th><th>날짜</th><th>시간</th><th>제목</th><th>장소</th></tr></thead>
+      <tbody>${rows}</tbody></table>${more}</div>` : ""}
+    <div class="err" id="impErr"></div>
+    <div class="actions"><button class="btn primary" id="impApply" ${n ? "" : "disabled"}>선택한 ${n}건 넣기</button>
+      <button class="btn" id="impClose">닫기</button></div>`;
+  $("impClose").onclick = closeImport;
+  $("impApply").onclick = applyImport;
+  const sync = () => { const k = impCount(); const b = $("impApply"); b.textContent = `선택한 ${k}건 넣기`; b.disabled = !k; };
+  $("dialog2").querySelectorAll("input[data-i]").forEach((cb) => cb.onchange = () => {
+    const i = Number(cb.dataset.i); if (cb.checked) checked.add(i); else checked.delete(i); sync(); });
+  if ($("impAll")) $("impAll").onclick = () => { res.events.slice(0, IMP_SHOW).forEach((e) => checked.add(e.idx)); drawImport(); };
+  if ($("impNone")) $("impNone").onclick = () => { checked.clear(); drawImport(); };
+  $("dialog2").querySelectorAll("select[data-f]").forEach((sel) => sel.onchange = () => {
+    const mapping = {};
+    $("dialog2").querySelectorAll("select[data-f]").forEach((s) => { if (s.value !== "") mapping[s.dataset.f] = Number(s.value); });
+    loadImportPreview(imp.path, mapping);
+  });
+  $("scrim2").classList.add("on");
+}
+
+async function applyImport() {
+  const { res, checked } = imp;
+  const idxs = [...checked, ...res.events.slice(IMP_SHOW).filter((e) => !e.dup).map((e) => e.idx)];
+  const b = $("impApply"); b.disabled = true; b.textContent = "넣는 중…";
+  let r;
+  try { r = await api.import_apply(res.token, idxs); } catch (ex) { r = { ok: false, error: String(ex.message || ex) }; }
+  if (!r || !r.ok) { $("impErr").textContent = (r && r.error) || "넣지 못했습니다."; b.disabled = false; b.textContent = `선택한 ${impCount()}건 넣기`; return; }
+  const name = res.name;
+  closeImport();
+  prefs = await api.get_prefs(); menuLabels();
+  await render(); renderSide();
+  const msg = `${r.added}건을 넣었습니다.` + (r.skipped ? ` 이미 있던 ${r.skipped}건은 건너뛰었습니다.` : "");
+  if (r.added && r.batch) {
+    lastImportDone = { batch: r.batch, name, count: r.added };
+    $("impUndoText").textContent = msg;
+    $("impUndoBar").classList.add("on");
+    clearTimeout(applyImport._t); applyImport._t = setTimeout(() => $("impUndoBar").classList.remove("on"), 8000);
+  } else {
+    toast(msg);
+  }
+}
+
+function confirmUndoImport(info) {
+  if (!info || !info.batch) { toast("되돌릴 가져오기가 없습니다."); return; }
+  const d = $("dialog2");
+  d.classList.remove("wide");
+  imp = null;
+  d.innerHTML = `<h2>가져온 일정 되돌리기</h2>
+    <div class="imp-sum">'${esc(info.name || "파일")}'에서 가져온 일정 ${Number(info.count) || 0}건을 지울까요?<br>
+    <span style="color:var(--dim);font-size:12px">가져온 뒤 직접 고친 일정도 함께 지워집니다. 직접 넣은 일정은 그대로 남습니다.</span></div>
+    <div class="err" id="undoErr"></div>
+    <div class="actions"><button class="btn danger" id="undoYes">지우기</button><button class="btn" id="undoNo">취소</button></div>`;
+  $("undoNo").onclick = () => $("scrim2").classList.remove("on");
+  $("undoYes").onclick = async () => {
+    let r;
+    try { r = await api.import_undo(info.batch); } catch (ex) { r = { ok: false, error: String(ex.message || ex) }; }
+    if (!r || !r.ok) { $("undoErr").textContent = (r && r.error) || "지우지 못했습니다."; return; }
+    $("scrim2").classList.remove("on");
+    if (lastImportDone && lastImportDone.batch === info.batch) lastImportDone = null;
+    prefs = await api.get_prefs(); menuLabels();
+    await render(); renderSide();
+    toast(`${r.removed}건을 지웠습니다.`);
+  };
+  $("scrim2").classList.add("on");
 }
 
 let renderSeq = 0;
@@ -666,6 +875,9 @@ function menuLabels() {
   $("opacity").value = Math.round((prefs.opacity || 0.92) * 100);
   document.body.classList.toggle("light", prefs.theme === "light");
   applyOpacity(prefs.opacity);
+  const li = prefs.last_import;
+  $("importUndoBtn").hidden = !(li && li.batch);
+  if (li && li.batch) $("importUndoBtn").textContent = `↩ 마지막 가져오기 되돌리기 (${li.name || "파일"}, ${li.count || 0}건)`;
 }
 async function setPref(c) { prefs = await api.set_prefs(c); menuLabels(); render(); }
 
@@ -724,12 +936,15 @@ function bindUI() {
   $("theme").onclick = () => setPref({ theme: prefs.theme === "light" ? "dark" : "light" });
   if (typeof api.update_check === "function") $("updateBtn").onclick = checkOrOpenUpdate;
   else $("updateBtn").style.display = "none";
+  $("importBtn").onclick = () => { $("menu").classList.remove("on"); startImport(); };
+  $("importUndoBtn").onclick = () => { $("menu").classList.remove("on"); confirmUndoImport(prefs.last_import); };
+  $("impUndoNow").onclick = () => { $("impUndoBar").classList.remove("on"); confirmUndoImport(lastImportDone); };
   $("exportIcs").onclick = async () => { const r = await api.export_ics(); toast(`${r.count}건을 저장했습니다: ${r.path}`); };
   $("hideBtn").onclick = () => api.win("hide");
   $("openSettings").onclick = async () => { const r = await api.open_settings(); toast(r && r.inline === false ? "설정 창을 열었습니다. 저장한 뒤 '감시 다시 시작'을 누르세요." : "설정 창을 열었습니다."); $("menu").classList.remove("on"); };
   $("restartWatch").onclick = async () => { const r = await api.restart_watch(); toast(r.ok ? "새 설정으로 다시 시작했습니다." : "감시가 꺼져 있습니다 (6번 실행 파일로 켜세요)."); setTimeout(renderSide, 1500); };
   $("scrim").addEventListener("mousedown", (ev) => { if (ev.target.id === "scrim") closeDlg(); });
-  $("scrim2").addEventListener("mousedown", (ev) => { if (ev.target.id === "scrim2") $("scrim2").classList.remove("on"); });
+  $("scrim2").addEventListener("mousedown", (ev) => { if (ev.target.id === "scrim2") { $("scrim2").classList.remove("on"); $("dialog2").classList.remove("wide"); imp = null; } });
   document.querySelectorAll(".tab").forEach((t) => t.onclick = () => {
     sideTab = t.dataset.tab; document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === t));
     $("paneSched").classList.toggle("hidden", sideTab !== "sched"); $("paneFeed").classList.toggle("hidden", sideTab !== "feed"); renderSide(); });

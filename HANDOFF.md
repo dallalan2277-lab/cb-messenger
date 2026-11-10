@@ -166,6 +166,17 @@
 - 고침 2 (`eztalk_parse.sent_time` / `is_reopened_old`): **보기 창**에 적힌 보낸 시각이 감시를 켠 때보다 10분 넘게 이르면 다시 열어 본 옛 쪽지로 보고 건너뜀. 알림 창은 언제나 새 쪽지. 시각을 못 읽으면 새 쪽지로 처리.
 - 사용자 PC 확인 필요: 실제 보기 창의 보낸 시각 글자 형식(`messenger-check --raw` 로 볼 수 있음)이 `sent_time` 이 읽는 형식인지. 보기 창의 첫 시각 모양 글자를 보낸 시각으로 쓰므로, 머리글보다 본문이 먼저 읽히는 창이면 오판 가능.
 
+### 2-9. 다른 캘린더 파일에서 일정 가져오기 — 2026-11-10
+- `app/extensions/calendar_import.py`: `parse_file(path, mapping)` → {kind: ics|table|weekly|text, events, warnings, columns, mapping}. 엑셀은 openpyxl 없이 zip 안 XML 을 직접 읽음(설치판 부품 추가 없음). 옛 .xls 는 안내만.
+  - 표: 머리글 글자(날짜·행사명·시간·장소·비고 등)로 칸을 짐작, 머리글이 없으면 날짜가 가장 많은 칸·가장 긴 글 칸. 화면에서 칸을 바꾸면 mapping 으로 다시 읽음.
+  - 주간 달력: 어제(11-09) 일회용 `import_calendar.py`(git 제외)의 규칙을 옮김. 시각에 오전·오후가 없고 1~6시면 오후로 봄(학교 일정).
+  - 기간 일정('11.20~11.22', ics 종일 여러 날)은 하루씩 나눔(31일 넘으면 첫날만 + 메모). ics 반복 일정은 첫 번째만 + 경고.
+- 저장: `calendar_events.import_batch` 칸 추가(_NEW_COLUMNS), origin='import', status='confirmed'. 같은 날짜·제목·시작 시각이 있으면 건너뜀. 한 묶음은 한 트랜잭션.
+- API(CalendarAPI): `import_pick`(파일 고르기) → `import_preview(path, mapping)`(token·dup 표시) → `import_apply(token, indexes)` → `import_undo(batch)`. 마지막 묶음은 prefs.last_import.
+- 화면(calendar.html): Codex 에 맡겼으나 ChatGPT 사용 한도로 중단(2026-11-10 12:41 까지) → Claude 가 직접 작성. 미리보기·480x360 창·실제 pywebview 창에서 가져오기→넣기→되돌리기 확인.
+  **Codex 교차 검토는 아직 안 받음** — 한도가 풀리면 `review --scope working-tree --model gpt-6-astra`(학교 PC) 또는 커밋 범위로 받을 것.
+- 남은 것: 실제 학교 엑셀·구글 캘린더 .ics 로 한 번 넣어 보기.
+
 ## 3. 지켜야 할 설계 규칙
 
 0. **모델 선택은 항상 `create_provider(settings, spec)` / `build_pipeline(settings)` 경유**. spec 형식 `제공자[:모델]`.
