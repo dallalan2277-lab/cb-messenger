@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import re
 import time
+from datetime import datetime, timedelta
 
 _ZERO = dict.fromkeys(map(ord, "﻿​‌‍⁠"), None)  # 보이지 않는 글자
 TIME_RE = re.compile(r"\d{1,2}\s*(?::|시)\s*\d{1,2}")
@@ -158,6 +159,45 @@ def _finish(ev):
     ev["key"] = hashlib.sha1((ev["sender"] + "|" + body[:40]).encode("utf-8")).hexdigest()[:16]
     ev["ts"] = time.time()
     return ev
+
+
+_SENT_RE = re.compile(
+    r"(?:(?P<y>\d{4})\s*[./년-]\s*)?(?:(?P<mo>\d{1,2})\s*[./월-]\s*(?P<d>\d{1,2})\s*일?\.?\s*(?:\([^)]*\))?\s*)?"
+    r"(?P<ap>오전|오후|AM|PM|am|pm)?\s*(?P<h>\d{1,2})\s*(?::|시)\s*(?P<mi>\d{1,2})")
+
+
+def sent_time(text, now=None):
+    """쪽지 창에 적힌 보낸 시각 글자 → datetime (모르면 None).
+    예: '2026.11.09 15:25', '11/09 오후 3:25', '11월 9일 15시 25분', '오후 3:25'(날짜 없으면 오늘, 미래면 어제)"""
+    m = _SENT_RE.search(text or "")
+    if not m:
+        return None
+    now = now or datetime.now()
+    try:
+        h, mi = int(m["h"]), int(m["mi"])
+        if m["ap"] in ("오후", "PM", "pm") and h < 12:
+            h += 12
+        elif m["ap"] in ("오전", "AM", "am") and h == 12:
+            h = 0
+        if m["mo"]:
+            year = int(m["y"]) if m["y"] else now.year
+            dt = datetime(year, int(m["mo"]), int(m["d"]), h, mi)
+            if not m["y"] and dt > now + timedelta(days=1):   # 연도 없이 12월 쪽지를 1월에 연 경우
+                dt = dt.replace(year=year - 1)
+            return dt
+        dt = now.replace(hour=h, minute=mi, second=0, microsecond=0)
+        return dt - timedelta(days=1) if dt > now + timedelta(minutes=5) else dt
+    except ValueError:   # 25시·13월 같은 잘못된 값
+        return None
+
+
+def is_reopened_old(ev, watch_started, grace_min=10, now=None):
+    """감시를 켜기 전에 보낸 쪽지를 보기 창으로 다시 연 것인지.
+    알림 창(새 쪽지가 왔을 때 뜨는 창)은 언제나 새 쪽지로 봄. 보낸 시각을 못 읽으면 새 쪽지로 봄."""
+    if ev.get("source") != "view":
+        return False
+    dt = sent_time(ev.get("time", ""), now)
+    return bool(dt and dt < datetime.fromtimestamp(watch_started) - timedelta(minutes=grace_min))
 
 
 def _stem(body):

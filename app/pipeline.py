@@ -48,11 +48,26 @@ class Pipeline:
     def text_for_ai(self, m: Message) -> str:
         return redact(m.body, self.s.redact_names) if self.s.redact_enabled else m.body
 
+    def _seen_before(self, m: Message) -> bool:
+        """쪽지는 다시 열어 보기만 해도 창이 떠서 수집기가 새 쪽지로 읽음 → 이미 저장된 것과 같으면 건너뜀.
+        (처음엔 알림 창의 잘린 본문만 저장됐다면 더 긴 본문으로 보충만 하고 AI 는 다시 부르지 않음)"""
+        if m.source != "eztalk":
+            return False
+        old = self.storage.find_similar_message(m.source, m.sender, m.body)
+        if not old:
+            return False
+        if len(self.storage.body_key(m.body)) > len(self.storage.body_key(old["body"])):
+            self.storage.update_message_body(old["id"], m.body)
+        log.info("예전에 받은 쪽지라 건너뜀 (message_id=%s)", old["id"])
+        return True
+
     def handle(self, m: Message) -> Analysis | None:
         """새 메시지 1건 처리. 중복이거나 필터에 걸리면 None."""
         if not self._allowed(m):
             log.info("필터로 제외: %s", m.sender)
             return None
+        if self._seen_before(m):
+            return None  # 예전에 받은 쪽지를 메신저에서 다시 열어 본 것
         if self.storage.add_message(m) is None:
             return None  # 이미 처리한 메시지
         if self._archive_on(m):

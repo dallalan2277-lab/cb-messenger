@@ -17,7 +17,7 @@ from typing import Callable, Iterable
 
 from ..models import Message
 from .base import Collector, OnMessage
-from .eztalk_parse import Batch, parse_alarm, parse_view, tidy_list
+from .eztalk_parse import Batch, is_reopened_old, parse_alarm, parse_view, tidy_list
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +65,9 @@ class EztalkCollector(Collector):
         self.vfail: dict[int, int] = {}
         self.vsig: dict[int, tuple] = {}   # 보기 창: 같은 창에서 다음 쪽지를 열면 내용만 바뀜 → 2초마다 확인
         self.sig: dict[int, tuple] = {}    # 알림 창: 떠 있는 동안 내용이 바뀌면 새 쪽지
-        self.stats = {"polls": 0, "events": 0, "last_error": "", "messenger_seen_ts": 0.0, "classes": set()}
+        self.stats = {"polls": 0, "events": 0, "last_error": "", "messenger_seen_ts": 0.0, "classes": set(),
+                      "old_skipped": 0}
+        self.started = time.time()   # 이보다 먼저 보낸 쪽지를 보기 창으로 다시 열면 새 쪽지로 치지 않음
 
     # ---------- Windows API ----------
     def _api(self):
@@ -207,6 +209,10 @@ class EztalkCollector(Collector):
         try:
             for ev in self._poll():
                 self.stats["events"] += 1
+                if is_reopened_old(ev, self.started):
+                    self.stats["old_skipped"] += 1   # 감시 전에 받은 쪽지를 다시 열어 본 것 → 저장·분석 안 함
+                    log.info("감시를 켜기 전에 받은 쪽지를 다시 열어 봐서 건너뜀")
+                    continue
                 self.batch.add(ev)
         except Exception as e:  # 한 번 실패해도 계속 감시
             self.stats["last_error"] = repr(e)[:200]

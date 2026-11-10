@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from pathlib import Path
 
@@ -115,6 +116,35 @@ class Storage:
             return None
         m.id = cur.lastrowid
         return m.id
+
+    # ---- 다시 열어 본 옛 쪽지 알아보기 ----
+    SIMILAR_MIN_CHARS = 15     # 이보다 짧은 본문("넵", "감사합니다")은 진짜로 또 올 수 있어 기간 제한 없이 비교하지 않음
+
+    @staticmethod
+    def body_key(body: str) -> str:
+        """비교용 본문: [제목] 줄·공백·끝의 말줄임표를 없앰 (알림 창은 본문이 잘려서 '…' 로 끝남)"""
+        lines = [ln for ln in (body or "").splitlines() if not ln.startswith("[제목] ")]
+        return re.sub(r"\s+", "", "".join(lines)).rstrip("….·")
+
+    def find_similar_message(self, source: str, sender: str, body: str, limit: int = 300) -> dict | None:
+        """같은 곳·같은 보낸 사람의 저장된 메시지 중 본문이 같거나 한쪽이 다른 쪽의 앞부분인 것 (최근 것부터).
+        예전 쪽지를 메신저에서 다시 열었을 때 새 쪽지로 또 분석하지 않으려고 씀."""
+        key = self.body_key(body)
+        if len(key) < self.SIMILAR_MIN_CHARS:
+            return None
+        rows = self.conn.execute(
+            "SELECT id, body FROM messages WHERE source = ? AND sender = ? ORDER BY id DESC LIMIT ?",
+            (source, sender, limit)).fetchall()
+        for r in rows:
+            old = self.body_key(r["body"])
+            if len(old) >= self.SIMILAR_MIN_CHARS and (old.startswith(key) or key.startswith(old)):
+                return {"id": r["id"], "body": r["body"]}
+        return None
+
+    def update_message_body(self, message_id: int, body: str) -> bool:
+        cur = self.conn.execute("UPDATE messages SET body = ? WHERE id = ?", (body, int(message_id)))
+        self.conn.commit()
+        return cur.rowcount > 0
 
     def unanalyzed_messages(self, limit: int = 50) -> list[Message]:
         rows = self.conn.execute(
