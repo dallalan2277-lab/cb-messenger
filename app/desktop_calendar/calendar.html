@@ -217,7 +217,10 @@
     background: rgba(0,0,0,0.8); color: #fff; border-radius: 999px; padding: 5px 6px 5px 14px; font-size: 12px; align-items: center; gap: 8px; }
   .imp-undo.on { display: flex; }
   .imp-undo button { background: transparent; color: #8ab4f8; border: 1px solid rgba(255,255,255,0.3); border-radius: 999px; padding: 3px 10px; font: inherit; cursor: pointer; }
-  .menu .mi.sub { font-size: 12px; color: var(--dim); }
+  .menu [hidden] { display: none !important; }        /* 숨긴 항목이 빈칸으로 남지 않게 */
+  .menu button.mi .md { display: block; font-size: 11px; color: var(--faint); margin-top: 1px; line-height: 1.35; }
+  .menu button.mi.undo { color: var(--sugg); }
+  .menu button.mi.undo .md { color: var(--faint); }
 
   .menu {
     position: absolute; top: 48px; right: 12px; width: 260px; background: var(--bg); border: 1px solid var(--line);
@@ -312,14 +315,15 @@
     <div class="sec">메일 · 알림 · AI</div>
     <button class="mi" id="modelBtn">AI 모델: … ▾</button>
     <div class="mlist" id="modelList"></div>
-    <button class="mi" id="openSettings">설정 열기 (메일 연결 · 알림 · 학교 정보 · 모델)</button>
-    <button class="mi" id="restartWatch">바꾼 설정으로 감시 다시 시작</button>
-    <div class="sec">기타</div>
-    <button class="mi" id="updateBtn">업데이트 확인 (현재 v…)</button>
-    <button class="mi" id="importBtn">다른 캘린더에서 일정 가져오기 (.ics · 엑셀 · csv · txt)</button>
-    <button class="mi sub" id="importUndoBtn" hidden></button>
-    <button class="mi" id="exportIcs">확정 일정 .ics 내보내기</button>
-    <button class="mi" id="hideBtn">캘린더 숨기기 (트레이 아이콘에서 다시 열기)</button>
+    <button class="mi" id="openSettings">설정 열기<span class="md">메일 연결 · 알림 · 학교 정보 · 모델</span></button>
+    <button class="mi" id="restartWatch">감시 다시 시작<span class="md">바꾼 설정을 쪽지·메일 감시에 적용</span></button>
+    <div class="sec">일정</div>
+    <button class="mi" id="importBtn">일정 가져오기<span class="md">다른 캘린더 파일 (.ics · 엑셀 · csv · txt)</span></button>
+    <button class="mi undo" id="importUndoBtn" hidden></button>
+    <button class="mi" id="exportIcs">일정 내보내기<span class="md">확정 일정을 .ics 파일로 저장</span></button>
+    <div class="sec">프로그램</div>
+    <button class="mi" id="updateBtn">업데이트 확인<span class="md">현재 v…</span></button>
+    <button class="mi" id="hideBtn">캘린더 숨기기<span class="md">트레이 아이콘에서 다시 열 수 있어요</span></button>
   </div>
 
   <div class="scrim" id="scrim">
@@ -482,9 +486,9 @@ function applyUpdateStatus(result) {
   const r = result || {};
   updateInfo = r.available ? r : null;
   $("menuBtn").classList.toggle("update-available", !!r.available);
-  $("updateBtn").textContent = r.available
-    ? `⬆ 새 버전 ${versionText(r.latest)} 설치하기`
-    : `업데이트 확인 (현재 ${versionText(r.current)})`;
+  $("updateBtn").innerHTML = r.available
+    ? `⬆ 새 버전 설치하기<span class="md">${esc(versionText(r.current))} → ${esc(versionText(r.latest))}</span>`
+    : `업데이트 확인<span class="md">현재 ${esc(versionText(r.current))}</span>`;
 }
 async function checkForUpdateSilently() {
   if (!api || typeof api.update_check !== "function") {
@@ -877,7 +881,7 @@ function menuLabels() {
   applyOpacity(prefs.opacity);
   const li = prefs.last_import;
   $("importUndoBtn").hidden = !(li && li.batch);
-  if (li && li.batch) $("importUndoBtn").textContent = `↩ 마지막 가져오기 되돌리기 (${li.name || "파일"}, ${li.count || 0}건)`;
+  if (li && li.batch) $("importUndoBtn").innerHTML = `↩ 방금 가져온 일정 되돌리기<span class="md">${esc(li.name || "파일")} · ${Number(li.count) || 0}건</span>`;
 }
 async function setPref(c) { prefs = await api.set_prefs(c); menuLabels(); render(); }
 
