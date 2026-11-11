@@ -282,6 +282,14 @@ class Host:
             self.window.destroy()
         return True
 
+    def settings_changed(self):
+        """설정 창에서 저장한 뒤: 화면이 메모 기능 상태 등을 다시 읽음"""
+        if self.window:
+            try:
+                self.window.evaluate_js("window.calendarSettingsChanged && window.calendarSettingsChanged()")
+            except Exception:
+                pass
+
     def refresh(self):
         if self.window:
             try:

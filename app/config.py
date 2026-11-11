@@ -37,6 +37,11 @@ def _f(key: str, default: str = ""):
     return field(default_factory=lambda: _env(key, default))
 
 
+def _memo_read_mode() -> str:
+    value = _env("MEMO_READ_MODE", "ocr").strip().lower()
+    return value if value in ("ocr", "image") else "ocr"
+
+
 REASONING_LEVELS = ("default", "low", "medium", "high")
 
 
@@ -92,6 +97,10 @@ class Settings:
     # ---- 바탕화면 캘린더 ----
     calendar_auto_suggest: bool = field(default_factory=lambda: _bool("CALENDAR_AUTO_SUGGEST", True))  # AI 일정 → 캘린더 '제안'
     calendar_auto_confirm: bool = field(default_factory=lambda: _bool("CALENDAR_AUTO_CONFIRM", False))  # 제안 없이 바로 확정
+
+    # ---- 메모 ----
+    memo_enabled: bool = field(default_factory=lambda: _bool("MEMO_ENABLED", True))
+    memo_read_mode: str = field(default_factory=_memo_read_mode)       # ocr | image
 
     # ---- 학교 정보 (AI 의 학교 업무 판단에 참고, 모두 선택) ----
     school_name: str = _f("SCHOOL_NAME", "")

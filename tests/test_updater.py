@@ -102,6 +102,10 @@ def test_parse_version_invalid(value):
         ("0.7.0", "0.7", False),
         ("0.7.0-beta", "0.7.0", False),
         ("0.6.9", "0.7.0", False),
+        ("v0.9.0", "0.9.0-beta.1", True),        # 시험판을 쓰다가 정식판이 나오면 업데이트
+        ("v0.8.3", "0.9.0-beta.1", False),       # 시험판보다 낮은 정식판은 아님
+        ("0.9.0-beta.2", "0.9.0-beta.1", False),  # 시험판끼리는 숫자만 봄 (시험판은 자동 배포 안 함)
+        ("v0.9.1", "0.9.0-beta.1", True),
     ],
 )
 def test_is_newer(remote, current, expected):

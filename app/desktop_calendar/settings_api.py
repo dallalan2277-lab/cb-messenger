@@ -100,6 +100,8 @@ class SettingsAPI:
                         "gdrive_hint": gdrive_hint, "gdrive_redact": s.archive_gdrive_redact,
                         "format": s.archive_format if s.archive_format in ("txt", "md") else "txt",
                         "summary_on": s.archive_include_summary},
+            "memo": {"enabled": s.memo_enabled,
+                     "read_mode": s.memo_read_mode if s.memo_read_mode in ("ocr", "image") else "ocr"},
             "mail": {"on": s.mail_enabled, "account": s.mail_account,
                      "interval": interval if interval in MAIL_INTERVALS else "2",
                      "password_saved": self._mail_saved(s.mail_account)},
@@ -146,7 +148,7 @@ class SettingsAPI:
         from ..notify_policy import validate
         d = data if isinstance(data, dict) else {}
         models, skip = d.get("models") or {}, d.get("skip") or {}
-        arc, mail = d.get("archive") or {}, d.get("mail") or {}
+        arc, memo, mail = d.get("archive") or {}, d.get("memo") or {}, d.get("mail") or {}
         noti, school = d.get("notify") or {}, d.get("school") or {}
         try:
             analyze = self._spec(models.get("analyze"))
@@ -179,6 +181,7 @@ class SettingsAPI:
             min_chars = 0
         reasoning = str(models.get("reasoning") or "default")
         fmt = str(arc.get("format") or "txt")
+        memo_read_mode = str(memo.get("read_mode") or "ocr").strip().lower()
         updates = {
             "AI_ANALYZE": analyze, "AI_DIGEST": digest, "AI_FALLBACK": fallback,
             "AI_REASONING": reasoning if reasoning in REASONING_LEVELS else "default",
@@ -189,6 +192,8 @@ class SettingsAPI:
             "ARCHIVE_GDRIVE_REDACT": _b(arc.get("gdrive_redact")),
             "ARCHIVE_FORMAT": fmt if fmt in ("txt", "md") else "txt",
             "ARCHIVE_SUMMARY": _b(arc.get("summary_on")),
+            "MEMO_ENABLED": _b(memo.get("enabled", True)),
+            "MEMO_READ_MODE": memo_read_mode if memo_read_mode in ("ocr", "image") else "ocr",
             "MAIL_ENABLED": _b(mail.get("on")), "MAIL_ACCOUNT": account, "MAIL_INTERVAL_MIN": interval,
             "NOTIFY_ENABLED": _b(noti.get("on")), "NOTIFY_SCOPE": scope,
             "NOTIFY_HIGH_ONLY": _b(noti.get("high_only")),
@@ -323,13 +328,15 @@ class SettingsAPI:
     def usage(self) -> dict:
         from ..llm.factory import PROVIDER_LABELS
         since = datetime.now().strftime("%Y-%m-01")
+        purpose_labels = {"analyze": "분석", "digest": "브리핑", "memo": "메모"}
         rows = []
         try:
             raw = self._usage_fn(since) if self._usage_fn else []
         except Exception:  # noqa: BLE001
             raw = []
         for r in raw:
-            rows.append({"purpose": "분석" if r.get("purpose") == "analyze" else "브리핑",
+            purpose = str(r.get("purpose") or "")
+            rows.append({"purpose": purpose_labels.get(purpose, purpose),
                          "provider": PROVIDER_LABELS.get(r.get("provider"), str(r.get("provider") or "")),
                          "model": str(r.get("model") or ""), "calls": int(r.get("calls") or 0),
                          "inp": int(r.get("inp") or 0), "outp": int(r.get("outp") or 0)})

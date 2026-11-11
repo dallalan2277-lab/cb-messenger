@@ -377,6 +377,21 @@ def cmd_startup(args):
     print("끄려면: python main.py startup --off")
 
 
+def cmd_ocr_check(args):
+    """[Windows] 이미지 한 장의 글자를 이 PC 의 글자 인식으로 읽어 보여 줌 (저장·AI 없음)"""
+    from app import ocr
+    ok, why = ocr.available()
+    print("글자 인식 사용 가능:", "예" if ok else f"아니오 — {why}")
+    if ok and args.image:
+        try:
+            print("--- 읽은 글자 ---")
+            print(ocr.recognize_file(args.image))
+        except ocr.OcrError as e:
+            print("읽지 못했습니다:", e)
+            return 1
+    return 0 if ok else 1
+
+
 def cmd_settings(args):
     from app.desktop_calendar.settings_window import run_standalone
     run_standalone(get_settings())
@@ -443,6 +458,9 @@ def main(argv=None):
     st.set_defaults(func=cmd_startup)
     sub.add_parser("archive-sync", help="드라이브에 못 올린 기록 옮기기").set_defaults(func=cmd_archive_sync)
     sub.add_parser("gui", help="테스트 화면").set_defaults(func=cmd_gui)
+    oc = sub.add_parser("ocr-check", help="[Windows] 이미지 글자 인식 확인 (저장·AI 없음)")
+    oc.add_argument("image", nargs="?", default="", help="읽어 볼 이미지 파일")
+    oc.set_defaults(func=cmd_ocr_check)
     sub.add_parser("settings", help="[Windows] 설정 창 (AI 연결·모델·저장·메일·알림·학교 정보)").set_defaults(func=cmd_settings)
     sub.add_parser("models", help="현재 모델 설정 보기").set_defaults(func=cmd_models)
     u = sub.add_parser("usage", help="AI 사용량(토큰) 보기")

@@ -191,6 +191,18 @@
 - `MY_NAMES`(설정 화면 학교 정보 탭 '메신저에 표시되는 내 이름', 쉼표 여러 개) + `Pipeline.is_from_me`: 쪽지(eztalk)만, 공백·끝의 '선생님/님' 을 뺀 이름이 **정확히** 같을 때만 저장·분석·알림 안 함. EXCLUDE_SENDERS(일부 일치)와 별개.
 - 창의 '보낸 쪽지' 표시로 거르는 방법은 실제 창 글자를 확인하지 못해 넣지 않음 (받은 쪽지를 잘못 거를 위험). 필요하면 보낸 쪽지를 연 채로 `messenger-check --raw` 로 확인 뒤 추가.
 
+### 2-12. 메모 기능 (브랜치 feature/memo) — 2026-11-10
+- 동료 제안: 캡처를 캘린더에 붙여 넣으면 AI 가 정리한 메모가 되고, 그 메모를 일정으로. 사용자 결정: 캘린더 옆 '메모' 탭 / 읽는 방식 선택(이 PC 글자 인식 = 기본·권장, 캡처를 AI 에 그대로) / 종류는 AI 가 고르고 사람이 수정 / 캡처 이미지 보관 / 되돌리기 대비.
+- 되돌리기 대비: 브랜치에서 작업, 새 표(memos)·새 칸(calendar_events.memo_id)·새 폴더(data/메모)만 추가, 설정 MEMO_ENABLED 로 끄면 탭이 사라짐, v0.8.3 태그·설치 파일 그대로.
+- 확인된 사실 (2026-11-10, 학교 PC): Windows.Media.Ocr 한국어 인식기가 기본으로 있음(winrt 패키지는 win11toast 와 함께 이미 설치). ChatGPT 구독(/v1/responses 의 input_image)·Claude 구독(claude -p --input-format stream-json 의 image 블록) 모두 이미지 입력 동작.
+- 구현: `app/ocr.py`, `app/memo.py`(MEMO_PROMPT·MEMO_SCHEMA·organize), `LLMProvider.complete_json_image`(chatgpt_plan·claude_cli·Fallback), storage memos CRUD, CalendarAPI memo_* (계약은 memo_spec_common.tmp.md — git 제외), calendar.html 메모 탭, 설정 화면 메모 켜기·기본 읽는 방식.
+  GPT(Codex gpt-5.6-sol) 두 개가 뒷단·화면을 동시에 작성하다 ChatGPT 사용 한도(18:44 까지)로 마무리 직전 멈춤 → Claude 가 검토·테스트·실제 창 확인 후 다듬음. 두 작업을 같은 순간에 시작하면 Codex 플러그인 브로커가 충돌함 → 몇 초 띄워서 시작할 것.
+- `clean_details`: '오후 3시'→'15:00' 같은 24시간 표기와 ':00'·':30' 분을 지어낸 숫자로 보지 않게 고침.
+- 시험판: `__version__ = "0.9.0-beta.2"` (updater.is_newer 가 '같은 번호의 정식판 > 시험판' 으로 보게 고침 → 정식 v0.9.0 이 나오면 시험판에서도 업데이트가 뜸). GitHub 배포 안 함, 이 PC 에만 설치 파일.
+  빌드된 프로그램에서 `cbm.exe ocr-check <이미지>` 로 글자 인식 동작 확인. beta.2: 펼친 목록(select option)이 흰 바탕+흐린 글자로 보이던 문제(color-scheme 없음) 수정.
+- GPT 가 남긴 `.agent-pytest-api-review/`, `.tmp-pytest-root/` 폴더는 권한 문제로 못 지움 (.git/info/exclude 에 넣음, 동작 영향 없음).
+- 남은 것: 사용자 실사용 의견, GPT 교차 검토(ChatGPT 한도 풀린 뒤 — `review --base main --model gpt-6-astra`), 확인 후 main 에 합쳐 v0.9.0 배포.
+
 ### 2-13. 쪽지 본문 대신 보낸 사람 소속 줄이 저장되던 문제 — 2026-11-11
 - 증상: 원문 보기에 '- 312(교실) / 070-… / 담당 / 1-2담임' 같은 줄만 있음 (2026-11-10~11 에 5건쯤). AI 요약도 그 줄만 보고 함.
 - `messenger-check --raw` 로 확인한 실제 보기 창(TFrmViewNote) 글 순서: 받은쪽지 · 제목 · '보낸사람 :' · 이름 · **소속 줄** · '- 소속 줄' · 시각(11월06일16시57분) · 받는사람·인원·이름들 · ※「정보통신망…」 안내문 · **본문 덩어리** · 줄별 조각.

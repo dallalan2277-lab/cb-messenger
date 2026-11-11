@@ -53,6 +53,25 @@ CREATE TABLE IF NOT EXISTS calendar_events (
 );
 CREATE INDEX IF NOT EXISTS ix_cal_date ON calendar_events(date);
 
+CREATE TABLE IF NOT EXISTS memos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT DEFAULT (datetime('now', 'localtime')),
+    updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+    title TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT '기타',
+    kind_by_user INTEGER DEFAULT 0,
+    read_mode TEXT NOT NULL DEFAULT 'ocr',
+    source_text TEXT DEFAULT '',
+    image_path TEXT DEFAULT '',
+    summary TEXT DEFAULT '',
+    details TEXT DEFAULT '[]',
+    items TEXT DEFAULT '[]',
+    action_items TEXT DEFAULT '[]',
+    provider TEXT DEFAULT '',
+    model TEXT DEFAULT '',
+    status TEXT DEFAULT 'ok'
+);
+
 CREATE TABLE IF NOT EXISTS mail_cursor (
     account TEXT PRIMARY KEY,
     uidvalidity INTEGER NOT NULL,
@@ -63,7 +82,7 @@ CREATE TABLE IF NOT EXISTS mail_cursor (
 
 CREATE TABLE IF NOT EXISTS usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    purpose TEXT NOT NULL,          -- analyze | digest
+    purpose TEXT NOT NULL,          -- analyze | digest | memo
     provider TEXT NOT NULL,
     model TEXT,
     input_tokens INTEGER DEFAULT 0,
@@ -89,7 +108,8 @@ class Storage:
                      ("school_relevance", "TEXT DEFAULT '판단 보류'"), ("school_reason", "TEXT DEFAULT ''"),
                      ("school_evidence", "TEXT DEFAULT ''"), ("verified", "INTEGER DEFAULT 1"),
                      ("notified", "INTEGER DEFAULT 0"), ("details", "TEXT DEFAULT '[]'")],
-        "calendar_events": [("import_batch", "TEXT DEFAULT ''")],   # 파일에서 가져온 일정 묶음 (되돌리기용)
+        "calendar_events": [("import_batch", "TEXT DEFAULT ''"),   # 파일에서 가져온 일정 묶음 (되돌리기용)
+                            ("memo_id", "INTEGER REFERENCES memos(id) ON DELETE SET NULL")],
     }
 
     def _migrate(self):
@@ -212,20 +232,93 @@ class Storage:
 
     def add_calendar_event(self, *, title: str, date: str, start_time: str = "", end_time: str = "",
                            location: str = "", note: str = "", status: str = "confirmed",
-                           origin: str = "manual", message_id: int | None = None) -> int | None:
-        """일정 추가. AI 제안은 같은 날·같은 제목·같은 시작 시각이 이미 있으면 건너뜀(None)."""
-        if origin == "ai":
+                           origin: str = "manual", message_id: int | None = None,
+                           memo_id: int | None = None) -> int | None:
+        """Schedule an event; generated suggestions with the same key are skipped."""
+        if origin in ("ai", "memo"):
             dup = self.conn.execute(
                 "SELECT id FROM calendar_events WHERE date=? AND title=? AND start_time=?",
                 (date, title, start_time)).fetchone()
             if dup:
                 return None
         cur = self.conn.execute(
-            "INSERT INTO calendar_events(title, date, start_time, end_time, location, note, status, origin, message_id) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
-            (title, date, start_time, end_time, location, note, status, origin, message_id))
+            "INSERT INTO calendar_events(title, date, start_time, end_time, location, note, status, origin, "
+            "message_id, memo_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (title, date, start_time, end_time, location, note, status, origin, message_id, memo_id))
         self.conn.commit()
         return cur.lastrowid
+
+    # ---- memos ----
+    MEMO_FIELDS = ("title", "kind", "kind_by_user", "read_mode", "source_text", "image_path",
+                   "summary", "details", "items", "action_items", "provider", "model", "status")
+    MEMO_JSON_FIELDS = frozenset(("details", "items", "action_items"))
+
+    @classmethod
+    def _memo_values(cls, fields: dict) -> dict:
+        values = {key: value for key, value in fields.items() if key in cls.MEMO_FIELDS}
+        for key in cls.MEMO_JSON_FIELDS & values.keys():
+            value = values[key]
+            if not isinstance(value, str):
+                values[key] = json.dumps(value if isinstance(value, list) else [], ensure_ascii=False)
+        if "kind_by_user" in values:
+            values["kind_by_user"] = int(bool(values["kind_by_user"]))
+        return values
+
+    @classmethod
+    def _memo_row(cls, row: sqlite3.Row) -> dict:
+        memo = dict(row)
+        for key in cls.MEMO_JSON_FIELDS:
+            try:
+                value = json.loads(memo.get(key) or "[]")
+            except (TypeError, ValueError):
+                value = []
+            memo[key] = value if isinstance(value, list) else []
+        memo["kind_by_user"] = bool(memo.get("kind_by_user"))
+        return memo
+
+    def add_memo(self, **fields) -> int:
+        values = self._memo_values(fields)
+        if values:
+            columns = ", ".join(values)
+            marks = ", ".join("?" for _ in values)
+            cur = self.conn.execute(
+                f"INSERT INTO memos({columns}) VALUES ({marks})", tuple(values.values()))
+        else:
+            cur = self.conn.execute("INSERT INTO memos DEFAULT VALUES")
+        self.conn.commit()
+        return cur.lastrowid
+
+    def update_memo(self, memo_id: int, **fields) -> bool:
+        values = self._memo_values(fields)
+        if not values:
+            return False
+        assignments = ", ".join(f"{key}=?" for key in values)
+        cur = self.conn.execute(
+            f"UPDATE memos SET {assignments}, updated_at=datetime('now','localtime') WHERE id=?",
+            (*values.values(), int(memo_id)))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def get_memo(self, memo_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM memos WHERE id=?", (int(memo_id),)).fetchone()
+        return self._memo_row(row) if row else None
+
+    def list_memos(self, limit: int = 100) -> list[dict]:
+        safe_limit = max(0, min(int(limit), 1000))
+        rows = self.conn.execute(
+            "SELECT m.*, COUNT(e.id) AS event_count FROM memos m "
+            "LEFT JOIN calendar_events e ON e.memo_id=m.id "
+            "GROUP BY m.id ORDER BY m.id DESC LIMIT ?", (safe_limit,)).fetchall()
+        return [self._memo_row(row) for row in rows]
+
+    def delete_memo(self, memo_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM memos WHERE id=?", (int(memo_id),)).fetchone()
+        if not row:
+            return None
+        with self.conn:
+            self.conn.execute("UPDATE calendar_events SET memo_id=NULL WHERE memo_id=?", (int(memo_id),))
+            self.conn.execute("DELETE FROM memos WHERE id=?", (int(memo_id),))
+        return self._memo_row(row)
 
     # ---- 파일에서 일정 가져오기 ----
     def import_calendar_events(self, events: list[dict], batch: str) -> tuple[int, int]:
@@ -258,6 +351,12 @@ class Storage:
         cur = self.conn.execute("DELETE FROM calendar_events WHERE import_batch = ? AND origin = 'import'", (batch,))
         self.conn.commit()
         return cur.rowcount
+
+    def find_calendar_event(self, date: str, title: str, start_time: str = "") -> dict | None:
+        """같은 날·제목·시작 시각 일정 (무시한 제안 포함, 가장 최근 것)"""
+        r = self.conn.execute("SELECT * FROM calendar_events WHERE date=? AND title=? AND start_time=? "
+                              "ORDER BY id DESC LIMIT 1", (date, title, start_time or "")).fetchone()
+        return dict(r) if r else None
 
     def update_calendar_event(self, event_id: int, **fields) -> bool:
         sets = {k: v for k, v in fields.items() if k in self.CAL_FIELDS}

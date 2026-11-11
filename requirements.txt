@@ -13,7 +13,7 @@ winsdk>=1.0.0b10 ; sys_platform == "win32"
 win11toast>=0.35 ; sys_platform == "win32"
 pywebview>=5.0 ; sys_platform == "win32"        # 바탕화면 캘린더 창 (Windows 11 내장 WebView2 사용)
 pystray>=0.19 ; sys_platform == "win32"         # 캘린더 트레이 아이콘
-pillow>=10 ; sys_platform == "win32"
+pillow>=10
 
 # 개발/테스트
 pytest>=8

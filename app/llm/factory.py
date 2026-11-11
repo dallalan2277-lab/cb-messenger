@@ -85,6 +85,15 @@ class FallbackProvider(LLMProvider):
     def complete_json(self, system: str, user: str, max_tokens: int = 1500, schema: dict | None = None) -> dict:
         return self._call("complete_json", system, user, max_tokens, schema=schema)
 
+    @property
+    def supports_images(self) -> bool:
+        return bool(self.primary.supports_images
+                    or (self.fallback is not None and self.fallback.supports_images))
+
+    def complete_json_image(self, system: str, user: str, image_bytes: bytes,
+                            mime: str, schema: dict | None = None) -> dict:
+        return self._call("complete_json_image", system, user, image_bytes, mime, schema=schema)
+
     def _call(self, method, *args, **kw):
         try:
             out = getattr(self.primary, method)(*args, **kw)
@@ -94,6 +103,10 @@ class FallbackProvider(LLMProvider):
             if fb is None:
                 log.warning("주 모델(%s) 실패, 대체 모델을 쓸 수 없음: %s", self.primary.label, self.fallback_error)
                 raise LLMError(f"{e} (대체 모델도 쓸 수 없음: {self.fallback_error})") from e
+            if method == "complete_json_image" and not fb.supports_images:
+                log.warning("주 모델(%s) 이미지 호출 실패, 대체 모델(%s)은 이미지 미지원: %s",
+                            self.primary.label, fb.label, e)
+                raise
             log.warning("주 모델(%s) 실패 → 대체 모델(%s) 사용: %s", self.primary.label, fb.label, e)
             out = getattr(fb, method)(*args, **kw)
             self.used = fb
