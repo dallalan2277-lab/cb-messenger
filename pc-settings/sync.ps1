@@ -1,6 +1,7 @@
 # Sync per-PC settings from this repo into the current user's profile.
 #   1) ~/.claude/CLAUDE.md : block between markers <- pc-settings/claude-global.md
 #   2) ~/.codex/config.toml: top-level model + model_reasoning_effort = "ultra"
+#   3) ~/.codex/AGENTS.md  : block between markers <- pc-settings/codex-global.md
 # Runs at Claude Code session start (.claude/settings.json) and from 9_*.bat.
 # Writes only when something differs. Keeps a one-time .bak before the first change.
 # This file is ASCII only (Windows PowerShell 5.1 reads BOM-less files as ANSI).
@@ -19,42 +20,46 @@ function Backup-Once([string]$path) {
     }
 }
 
-# ---------- 1) Claude global CLAUDE.md ----------
-try {
-    $src = Join-Path $PSScriptRoot 'claude-global.md'
-    $block = Normalize ([IO.File]::ReadAllText($src, $utf8))
-    $begin = '<!-- cb-messenger-ai pc-settings BEGIN: auto-synced from the repo file pc-settings/claude-global.md. Edit that file, not this block. -->'
-    $end = '<!-- cb-messenger-ai pc-settings END -->'
-    $managed = "$begin`n$block`n$end"
+# ---------- shared: copy a repo file into a marked block of a profile file ----------
+function Sync-Block([string]$srcName, [string]$dir, [string]$fileName, [string]$label) {
+    try {
+        $src = Join-Path $PSScriptRoot $srcName
+        $block = Normalize ([IO.File]::ReadAllText($src, $utf8))
+        $begin = "<!-- cb-messenger-ai pc-settings BEGIN: auto-synced from the repo file pc-settings/$srcName. Edit that file, not this block. -->"
+        $end = '<!-- cb-messenger-ai pc-settings END -->'
+        $managed = "$begin`n$block`n$end"
 
-    $claudeDir = Join-Path $env:USERPROFILE '.claude'
-    $target = Join-Path $claudeDir 'CLAUDE.md'
-    if (-not (Test-Path -LiteralPath $claudeDir)) { New-Item -ItemType Directory -Path $claudeDir | Out-Null }
+        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+        $target = Join-Path $dir $fileName
 
-    $old = ''
-    if (Test-Path -LiteralPath $target) { $old = Normalize ([IO.File]::ReadAllText($target, $utf8)) }
+        $old = ''
+        if (Test-Path -LiteralPath $target) { $old = Normalize ([IO.File]::ReadAllText($target, $utf8)) }
 
-    $bi = $old.IndexOf($begin); $ei = $old.IndexOf($end)
-    if ($bi -ge 0 -and $ei -gt $bi) {
-        # Replace only the managed block; keep anything the user wrote around it.
-        $new = $old.Substring(0, $bi) + $managed + $old.Substring($ei + $end.Length)
-    } elseif ($old -eq '' -or $old -eq $block) {
-        $new = $managed
-    } else {
-        # Unmarked file with different content: keep it below, after a backup.
-        $new = $managed + "`n`n" + $old
-        $warnings.Add("~/.claude/CLAUDE.md had other content; kept it below the synced block (backup: CLAUDE.md.bak).")
+        $bi = $old.IndexOf($begin); $ei = $old.IndexOf($end)
+        if ($bi -ge 0 -and $ei -gt $bi) {
+            # Replace only the managed block; keep anything the user wrote around it.
+            $new = $old.Substring(0, $bi) + $managed + $old.Substring($ei + $end.Length)
+        } elseif ($old -eq '' -or $old -eq $block) {
+            $new = $managed
+        } else {
+            # Unmarked file with different content: keep it below, after a backup.
+            $new = $managed + "`n`n" + $old
+            $warnings.Add("$label had other content; kept it below the synced block (backup: $fileName.bak).")
+        }
+        $new = (Normalize $new) + "`n"
+
+        if ((Normalize $new) -ne $old) {
+            Backup-Once $target
+            [IO.File]::WriteAllText($target, ($new -replace "`n", "`r`n"), $utf8)
+            $changes.Add("$label updated from pc-settings/$srcName")
+        }
+    } catch {
+        $warnings.Add("$label sync failed: $($_.Exception.Message)")
     }
-    $new = (Normalize $new) + "`n"
-
-    if ((Normalize $new) -ne $old) {
-        Backup-Once $target
-        [IO.File]::WriteAllText($target, ($new -replace "`n", "`r`n"), $utf8)
-        $changes.Add('~/.claude/CLAUDE.md updated from pc-settings/claude-global.md')
-    }
-} catch {
-    $warnings.Add("CLAUDE.md sync failed: $($_.Exception.Message)")
 }
+
+# ---------- 1) Claude global CLAUDE.md ----------
+Sync-Block 'claude-global.md' (Join-Path $env:USERPROFILE '.claude') 'CLAUDE.md' '~/.claude/CLAUDE.md'
 
 # ---------- 2) Codex config.toml ----------
 try {
@@ -106,6 +111,12 @@ try {
     }
 } catch {
     $warnings.Add("Codex config sync failed: $($_.Exception.Message)")
+}
+
+# ---------- 3) Codex global AGENTS.md ----------
+# Codex reads ~/.codex/AGENTS.md for every session (Desktop, CLI, and calls from Claude Code).
+if (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.codex')) {
+    Sync-Block 'codex-global.md' (Join-Path $env:USERPROFILE '.codex') 'AGENTS.md' '~/.codex/AGENTS.md'
 }
 
 # ---------- report ----------

@@ -97,7 +97,8 @@ app/paths.py                실행 위치·자료 위치. 개발: 저장소 폴�
 ## Codex(GPT) 위임 기준 (이 프로젝트)
 공통 규칙(Claude 총괄, 범위 분명한 구현·테스트·버그 조사는 `codex:codex-rescue` 위임, 결과 직접 검토 후 통합, 큰 변경 후 `/codex:review`)은
 사용자 설정 `~/.claude/CLAUDE.md` 에 있음. 그 파일은 GitHub 로 안 옮겨지므로, 다른 PC 에서는 아래만으로도 판단할 수 있게 적어 둠.
-전역 규칙의 원본은 저장소의 `pc-settings/claude-global.md`. `pc-settings/sync.ps1`(= `9_PC설정맞추기.bat`)이 그것을 `~/.claude/CLAUDE.md` 의 표시 구역에 넣고, `~/.codex/config.toml` 맨 위를 `gpt-6.1-sol`(못 쓰는 계정은 `gpt-6-astra`) + `ultra` 로 맞춤. 자세한 것은 `docs/다른PC_설정.md`.
+전역 규칙의 원본은 저장소의 `pc-settings/claude-global.md`. `pc-settings/sync.ps1`(= `9_PC설정맞추기.bat`)이 그것을 `~/.claude/CLAUDE.md` 의 표시 구역에 넣고, `~/.codex/config.toml` 맨 위를 `gpt-6.1-sol`(못 쓰는 계정은 `gpt-6-astra`) + `ultra` 로 맞추고, `pc-settings/codex-global.md` 를 `~/.codex/AGENTS.md`(Codex 전역 규칙) 표시 구역에 넣음. 자세한 것은 `docs/다른PC_설정.md`.
+- 저장소 맨 위 `AGENTS.md` 는 Codex 용 짧은 안내(이 문서를 읽으라는 것 + 꼭 지킬 것 요약). 이 문서의 규칙을 크게 바꾸면 `AGENTS.md` 요약도 맞출 것. Codex 공통 규칙을 바꿀 때는 `pc-settings/codex-global.md` 를 고치고 sync 실행 후 커밋.
 - `.claude/settings.json` 의 SessionStart hook 이 Claude Code 시작 때 sync 를 자동 실행. `[pc-settings]` 로 시작하는 줄이 보이면 바뀐 내용을 사용자에게 쉬운 말로 알리고, 앱 재시작이 필요하면 안내할 것.
 - 규칙을 바꿀 때는 `pc-settings/claude-global.md` 를 고치고 sync 를 실행한 뒤 커밋 (`~/.claude/CLAUDE.md` 를 직접 고치면 다음 동기화 때 덮어써짐).
 - 새 PC 에서 config 에 ultra 가 없으면 Codex 가 low 로 돎 → `9_PC설정맞추기.bat` 실행을 안내할 것.
