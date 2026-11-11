@@ -5,6 +5,7 @@ import logging
 import re
 
 from .analyzer import Analyzer
+from .event_match import classify
 from .config import Settings
 from .llm.factory import create_provider, parse_spec
 from .models import Analysis, Message
@@ -98,6 +99,7 @@ class Pipeline:
             self.storage.add_analysis(a)
             if self._archive_on(m):
                 self.archiver.save_analysis(m, a)
+            self._check_cancellation(m)
             return a
         try:
             a = self.analyzer.analyze(m, text_for_ai=self.text_for_ai(m))
@@ -124,19 +126,31 @@ class Pipeline:
             del self.notified[:-50]
         return ok
 
+    def _check_cancellation(self, m: Message) -> dict | None:
+        """'○일 ○○ 취소' 쪽지면 그 일정에 '취소된 것 같아요' 묻기 제안 (이 PC 안에서 원문 비교만, AI 안 씀)"""
+        if not self.s.calendar_auto_suggest or not m.id:
+            return None
+        return self.storage.detect_cancellation(message_id=m.id, text=m.body, ref_date=(m.received_at or "")[:10])
+
     def _suggest_events(self, m: Message, a: Analysis) -> int:
-        """AI 가 뽑은 일정을 바탕화면 캘린더에 '제안'(또는 바로 확정)으로 올림"""
+        """AI 가 뽑은 일정을 바탕화면 캘린더에 '제안'(또는 바로 확정)으로 올림.
+        취소 안내를 먼저 확인해서, 취소된 그 일정을 AI 가 또 일정으로 뽑았으면 제안하지 않음."""
         if not self.s.calendar_auto_suggest:
             return 0
+        cancel = self._check_cancellation(m)
+        cancelled = self.storage.get_calendar_event(cancel["dup_of"]) if cancel else None
         n = 0
         status = "confirmed" if self.s.calendar_auto_confirm else "suggested"
         for e in a.events:
             if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", e.date or ""):
                 continue
+            if cancelled and classify(vars(e), cancelled)[0] == "same":   # 시각이 다른 오후 일정 등은 그대로 제안
+                continue
             note = e.note or a.summary
             result = self.storage.suggest_event(title=e.title, date=e.date, start_time=e.start_time,
                                                 end_time=e.end_time, location=e.location, note=note,
-                                                status=status, origin="ai", message_id=m.id)
+                                                status=status, origin="ai", message_id=m.id,
+                                                source_text=m.body, source_date=(m.received_at or "")[:10])
             if result["action"] in ("created", "asked"):
                 n += 1
         return n

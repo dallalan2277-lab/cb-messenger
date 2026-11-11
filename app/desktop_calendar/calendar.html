@@ -309,6 +309,7 @@
   .grip.sw { left: 0; bottom: 0; width: 18px; height: 18px; cursor: nesw-resize; }
   .toast { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(0,0,0,0.75); color: #fff; padding: 7px 14px; border-radius: 999px; font-size: 12px; display: none; z-index: 20; }
   .toast.on { display: block; }
+  .toast button { margin-left: 10px; background: none; border: 1px solid rgba(255,255,255,0.6); color: #fff; border-radius: 999px; padding: 1px 9px; font-size: 11px; cursor: pointer; }
 
   @media (max-width: 600px) {
     .top { gap: 4px; padding: 7px 7px 6px; }
@@ -466,6 +467,7 @@ function MockAPI() {
     { id: 6, title: "교내 와이파이 점검", date: add(2), start_time: "12:30", end_time: "13:20", location: "", note: "", status: "confirmed", origin: "ai", message_id: 4, sender: "정보부" },
     { id: 7, title: "체육대회 준비 회의", date: add(1), start_time: "16:00", end_time: "", location: "체육관", note: "", status: "confirmed", origin: "manual", message_id: null, sender: "" },
     { id: 8, title: "생활기록부 점검", date: add(1), start_time: "", end_time: "", location: "", note: "", status: "confirmed", origin: "manual", message_id: null, sender: "" },
+    { id: 10, title: "(취소?) 체육대회 준비 회의", date: add(1), start_time: "16:00", end_time: "", location: "", note: "취소 안내로 보여요", status: "suggested", origin: "ai", message_id: 7, sender: "체육부", dup_of: 7, dup_kind: "cancel" },
     { id: 9, title: "학업성적관리위원회 개최", date: add(3), start_time: "16:00", end_time: "", location: "교무실", note: "시각 변경 안내", status: "suggested", origin: "ai", message_id: 5, sender: "교무부장", dup_of: 1 },
   ];
   const hol = { "2026-11-11": "", "2026-12-25": "성탄절", "2027-01-01": "신정" };
@@ -536,12 +538,18 @@ function MockAPI() {
     resolve_duplicate: async (i, act) => {
       const e = evs.find((x) => x.id === i); const o = e && evs.find((x) => x.id === e.dup_of);
       if (!e || !o) return { ok: false, error: "기존 일정을 찾을 수 없어요." };
+      if (e.dup_kind === "cancel") {
+        if (act === "cancel_event") { const prev = o.status; o.status = "dismissed"; evs = evs.filter((x) => x.id !== i); return { ok: true, event_id: o.id, prev_status: prev }; }
+        if (act === "keep") { e.status = "dismissed"; return { ok: true, event_id: i }; }
+        return { ok: false, error: "취소 안내는 일정 취소 또는 그대로 두기를 골라 주세요." };
+      }
       if (act === "replace") { ["title", "date", "start_time", "end_time", "location"].forEach((k) => { if (e[k]) o[k] = e[k]; });
         if (o.status === "dismissed") o.status = "confirmed"; evs = evs.filter((x) => x.id !== i); return { ok: true, event_id: o.id }; }
       if (act === "separate") { e.dup_of = null; e.status = "confirmed"; return { ok: true, event_id: i }; }
       if (act === "ignore") { e.status = "dismissed"; return { ok: true, event_id: i }; }
       return { ok: false, error: "처리 방법을 확인해 주세요." };
     },
+    restore_event: async (i, st) => { const o = evs.find((x) => x.id === i); if (!o || o.status !== "dismissed") return { ok: false }; o.status = st; return { ok: true }; },
     event_sources: async (i) => i === 1 ? [
       { kind: "message", ref_id: 1, relation: "origin", sender: "교무부장", received_at: ds(t) + "T08:45:00" },
       { kind: "message", ref_id: 6, relation: "same", sender: "교무부장", received_at: ds(t) + "T10:12:00" }] : [],
@@ -550,7 +558,9 @@ function MockAPI() {
     add: async (d) => { evs.push({ ...d, id: ++id, status: "confirmed", origin: "manual", sender: "" }); return { ok: true, id }; },
     update: async (i, d) => { Object.assign(evs.find((e) => e.id === i), d); return { ok: true }; },
     delete: async (i) => { evs = evs.filter((e) => e.id !== i); return { ok: true }; },
-    confirm: async (i) => { const e = evs.find((x) => x.id === i); e.status = "confirmed"; e.dup_of = null; return { ok: true }; },
+    confirm: async (i) => { const e = evs.find((x) => x.id === i);
+      if (e.dup_kind === "cancel") return { ok: false, error: "취소 안내는 [일정 취소] 또는 [그대로 두기]로 골라 주세요." };
+      e.status = "confirmed"; e.dup_of = null; return { ok: true }; },
     dismiss: async (i) => { evs.find((e) => e.id === i).status = "dismissed"; return { ok: true }; },
     confirm_all: async () => { let n = 0, skipped = 0; evs.forEach((e) => { if (e.status !== "suggested") return;
       if (e.dup_of && evs.some((x) => x.id === e.dup_of)) { skipped++; return; } e.status = "confirmed"; n++; }); return { ok: true, count: n, skipped }; },
@@ -922,12 +932,19 @@ function dupNoteHtml(e) {
   const part = (label, a, b) => (b && a !== b) ? `<span class="chg">${label} ${esc(a || "없음")} → ${esc(b)}</span>` : "";
   const changes = [part("날짜", fmtDate(o.date), fmtDate(e.date)), part("시각", o.start_time, e.start_time),
     part("장소", o.location, e.location)].filter(Boolean);   // 제목은 말만 바뀐 경우가 많아 비교하지 않음
-  return `<div class="dupnote"><b>기존 일정과 같은 일 같아요</b>${o.status === "dismissed" ? " (전에 무시한 일정)" : ""}<br>
+  if (e.dup_kind === "cancel") return `<div class="dupnote"><b>이 일정이 취소된 것 같아요</b><br>
+    대상: ${fmtDate(o.date)} ${o.start_time || "종일"} ${esc(o.title)}${o.location ? " · " + esc(o.location) : ""}<br>
+    [일정 취소]를 누르면 달력에서 빠져요. 바로 뒤에 [되돌리기]로 되살릴 수 있어요.</div>`;
+  const head = e.dup_kind === "change" ? "날짜가 바뀐 것 같아요" : "기존 일정과 같은 일 같아요";
+  return `<div class="dupnote"><b>${head}</b>${o.status === "dismissed" ? " (전에 무시한 일정)" : ""}<br>
     기존: ${fmtDate(o.date)} ${o.start_time || "종일"} ${esc(o.title)}${o.location ? " · " + esc(o.location) : ""}
     ${changes.length ? "<br>바뀐 것: " + changes.join(", ") : "<br>새로 알게 된 내용이 있어요."}</div>`;
 }
 const DUP_ACTS = `<button class="btn okc" data-act="replace" title="기존 일정을 이 내용으로 고칩니다">바꾸기</button><button class="btn" data-act="separate" title="다른 일로 보고 따로 넣습니다">따로 등록</button><button class="btn ghost" data-act="ignore" title="이 제안을 버립니다 (기존 일정은 그대로)">무시</button>`;
-const DUP_DONE = { replace: "기존 일정을 새 내용으로 바꿨습니다.", separate: "따로 등록했습니다.", ignore: "제안을 무시했습니다. 기존 일정은 그대로예요." };
+const CANCEL_ACTS = `<button class="btn danger" data-act="cancel_event" title="대상 일정을 달력에서 뺍니다 (되살릴 수 있게 '무시'로)">일정 취소</button><button class="btn ghost" data-act="keep" title="안내를 버리고 일정은 그대로 둡니다">그대로 두기</button>`;
+const dupActs = (e) => e.dup_kind === "cancel" ? CANCEL_ACTS : DUP_ACTS;
+const DUP_DONE = { replace: "기존 일정을 새 내용으로 바꿨습니다.", separate: "따로 등록했습니다.", ignore: "제안을 무시했습니다. 기존 일정은 그대로예요.",
+  cancel_event: "일정을 취소해 달력에서 뺐습니다.", keep: "일정을 그대로 두었습니다." };
 
 function itemHtml(e, withActs) {
   const dup = withActs && e.dup_of && e.dup;
@@ -936,14 +953,26 @@ function itemHtml(e, withActs) {
     <div class="what">${esc(e.title)}</div>
     ${e.sender ? `<div class="from">쪽지: ${esc(e.sender)}</div>` : ""}
     ${dup ? dupNoteHtml(e) : ""}
-    ${withActs ? `<div class="acts">${dup ? DUP_ACTS : `<button class="btn okc" data-act="confirm">확정</button><button class="btn" data-act="edit">고치기</button><button class="btn ghost" data-act="dismiss">무시</button>`}</div>` : ""}
+    ${withActs ? `<div class="acts">${dup ? dupActs(e) : `<button class="btn okc" data-act="confirm">확정</button><button class="btn" data-act="edit">고치기</button><button class="btn ghost" data-act="dismiss">무시</button>`}</div>` : ""}
   </div>`;
 }
 
 async function resolveDup(e, act) {
   const r = await api.resolve_duplicate(e.id, act);
-  toast(r && r.ok ? DUP_DONE[act] : ((r && r.error) || "처리하지 못했습니다."));
+  if (r && r.ok && act === "cancel_event" && r.prev_status) {
+    // [일정 취소]는 6초 동안 되돌릴 수 있게
+    toastUndo(DUP_DONE[act], async () => { await api.restore_event(r.event_id, r.prev_status); toast("일정을 되살렸습니다."); render(); });
+  } else {
+    toast(r && r.ok ? DUP_DONE[act] : ((r && r.error) || "처리하지 못했습니다."));
+  }
   render();
+}
+
+function toastUndo(msg, undo) {
+  const t = $("toast"); t.textContent = msg;
+  const b = document.createElement("button"); b.textContent = "되돌리기";
+  b.onclick = () => { t.classList.remove("on"); undo(); };
+  t.appendChild(b); t.classList.add("on"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("on"), 6000);
 }
 
 let sideTab = "sched", feedF = "open", feedS = "";
@@ -1395,13 +1424,15 @@ async function openEdit(e) {
   const sug = e.status === "suggested";
   const dup = sug && e.dup_of && e.dup;
   if (dup) $("origBox").insertAdjacentHTML("afterbegin", dupNoteHtml(e));
-  $("dlgActions").innerHTML = (dup ? DUP_ACTS.replace(/data-act="(\w+)"/g, 'id="aDup_$1"') :
+  $("dlgActions").innerHTML = (dup ? dupActs(e).replace(/data-act="(\w+)"/g, 'id="aDup_$1"') :
     (sug ? `<button class="btn okc" id="aConfirm">확정</button>` : `<button class="btn primary" id="aSave">저장</button>`) +
     (sug ? `<button class="btn" id="aDismiss">무시</button>` : "")) +
     `<div class="spacer"></div><button class="btn danger" id="aDel">삭제</button><button class="btn" id="aClose">닫기</button>`;
   if (dup) {
-    Object.keys(DUP_DONE).forEach((act) => $("aDup_" + act).onclick = async () => {
-      if (await save(true)) { closeDlg(); resolveDup(e, act); } });
+    Object.keys(DUP_DONE).forEach((act) => { const b = $("aDup_" + act); if (!b) return;
+      b.onclick = async () => {
+        if (e.dup_kind === "cancel") { closeDlg(); return resolveDup(e, act); }   // 취소 안내는 고칠 내용이 없음
+        if (await save(true)) { closeDlg(); resolveDup(e, act); } }; });
   } else if (sug) {
     $("aConfirm").onclick = async () => { if (await save(true)) { await api.confirm(e.id); toast("확정했습니다."); render(); } };
     $("aDismiss").onclick = async () => { await api.dismiss(e.id); closeDlg(); toast("제안을 무시했습니다."); render(); };

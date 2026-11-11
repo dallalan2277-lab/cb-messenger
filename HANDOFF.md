@@ -225,6 +225,8 @@
 - A2a 완료: `Storage.suggest_event`(AI·메모 일정 제안의 새 입구: created/linked/asked/skipped, 한 트랜잭션) · `resolve_duplicate`(replace/separate/ignore) · 새 표 `event_sources`(일정↔원문 여러 개) · 새 칸 `calendar_events.dup_of`(ON DELETE SET NULL). Terra 작성, Sol 검토 3건 반영(같은 원문 속 오전·오후 회의, 묻는 중인 제안에 새 시각 채우기, add_message 실패 뒤 열린 트랜잭션 rollback). **아직 pipeline·화면은 옛 add_calendar_event 를 씀** → 다음 A2b(진입 경로 5곳 + confirm_all).
 - A2b 완료: pipeline `_suggest_events`(reanalyze 포함)·메모 정리·메모 다시 정리가 `suggest_event` 사용, `memo_to_event` 는 `Storage.add_event_from_user`(같은 일 1개면 그 일정 확정, 아니면 새로 확정 + 비슷한 AI 제안에 dup_of), `confirm_all` 은 dup_of 제안 건너뜀, `confirm` 은 dup_of 제안을 '따로 등록', API `resolve_duplicate`·`event_sources`, `_public` 에 dup_of. **화면(calendar.html)은 아직 dup_of 를 모름** → 다음 A2c(묻기 3버튼·관련 원문·MockAPI).
 - A2c 완료: 화면 — 묻기 제안에 '기존 일정과 같은 일 같아요' + 기존 일정·바뀐 것(날짜·시각·장소, 제목은 말만 바뀌는 경우가 많아 비교 안 함) + [바꾸기][따로 등록][무시], 일정 창에 '관련 원문 N건 더'(누르면 그 쪽지·메모로), 모두 확정 때 남겨 둔 건수 안내. `CalendarAPI.suggestions` 가 묻기 제안에 기존 일정(`dup`)을 붙여 줌. MockAPI 에 예시(id 9). 브라우저 미리보기로 확인. **Windows 실제 창·실제 쪽지로는 미확인.** 다음: A2d(날짜 바뀐 변경·취소 공지) 또는 beta.1 배포.
+- A2d 완료: 날짜 바뀐 공지('19일에서 20일로 연기' — 옛 날짜→새 날짜를 잇는 말이 있을 때만) → 그 일정에 '날짜가 바뀐 것 같아요' 묻기(`dup_kind='change'`), 취소 공지('20일 ○○ 취소' — 일정 이름 30글자 안에 취소 표현, '신청 취소·취소하지 않·취소 시' 제외, 후보 1개일 때만) → '(취소?) …' 묻기(`dup_kind='cancel'`, [일정 취소][그대로 두기], 취소는 지우지 않고 dismissed + 6초 [되돌리기]). 원문은 이 PC 안에서 비교만. `event_match.date_mentions`(연도·앞 날짜 문맥, '3.5시간·1~2일·3일간' 제외). Terra 작성, Sol 검토 7건 중 6건 반영.
+  - 알려진 한계(기각): 0.9.0 으로 되돌리면 '(취소?) …' 묻기 제안이 보통 제안으로 보이고 '모두 확정'에 확정될 수 있음 (자료 손실 없음, 막으려면 별도 표가 필요해 보류).
 - A2 때 주의: 시각 없는 새 일정은 같은 날 오전·오후 같은 이름 회의 둘 다 same 으로 나옴 → 후보가 2개 이상이면 자동으로 묶지 말고 묻기.
 
 ## 3. 지켜야 할 설계 규칙

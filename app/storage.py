@@ -9,7 +9,8 @@ import sqlite3
 from pathlib import Path
 
 from .models import Analysis, Event, Message
-from .event_match import best_matches, classify
+from .event_match import (best_matches, cancel_positions, classify, dates_in_text, has_any, moved_dates, title_key,
+                          CHANGE_WORDS, CANCEL_WORDS, _compact, _text)
 
 log = logging.getLogger(__name__)
 
@@ -186,7 +187,8 @@ class Storage:
                      ("notified", "INTEGER DEFAULT 0"), ("details", "TEXT DEFAULT '[]'")],
         "calendar_events": [("import_batch", "TEXT DEFAULT ''"),   # 파일에서 가져온 일정 묶음 (되돌리기용)
                             ("memo_id", "INTEGER REFERENCES memos(id) ON DELETE SET NULL"),
-                            ("dup_of", "INTEGER REFERENCES calendar_events(id) ON DELETE SET NULL")],
+                            ("dup_of", "INTEGER REFERENCES calendar_events(id) ON DELETE SET NULL"),
+                            ("dup_kind", "TEXT DEFAULT ''")],
     }
 
     def _migrate(self):
@@ -335,7 +337,8 @@ class Storage:
     def suggest_event(self, *, title: str, date: str, start_time: str = "", end_time: str = "",
                       location: str = "", note: str = "", status: str = "suggested",
                       origin: str = "ai", message_id: int | None = None,
-                      memo_id: int | None = None) -> dict:
+                      memo_id: int | None = None, source_text: str = "",
+                      source_date: str = "") -> dict:
         new = dict(title=title, date=date, start_time=start_time, end_time=end_time, location=location)
         source = (("message", message_id) if message_id is not None else
                   ("memo", memo_id) if memo_id is not None else None)
@@ -387,17 +390,99 @@ class Storage:
                     return {"action": "linked", "event_id": old["id"]}
 
             dup_of = matches[0][0]["id"] if matches else None
+            dup_kind = ""
+            if not matches and source_text and has_any(source_text, CHANGE_WORDS):
+                # '19일에서 20일로' 처럼 옛 날짜 → 새 날짜로 잇는 표현이 있을 때만 (날짜 둘이 따로 나온 것은 아님)
+                pairs = moved_dates(source_text, source_date or date)
+                candidates = []
+                for old_date in sorted({a for a, b in pairs if b == date}):
+                    for old_row in self.conn.execute(
+                            "SELECT * FROM calendar_events WHERE date=? AND status IN ('suggested','confirmed') "
+                            "AND dup_of IS NULL ORDER BY id", (old_date,)):
+                        old = dict(old_row)
+                        adjusted = {**new, "date": old_date, "start_time": "", "location": ""}
+                        if classify(adjusted, {**old, "start_time": "", "location": ""})[0] in ("same", "maybe"):
+                            candidates.append(old["id"])
+                if len(candidates) == 1:
+                    dup_of, dup_kind = candidates[0], "change"
             cur = self.conn.execute(
                 "INSERT INTO calendar_events(title, date, start_time, end_time, location, note, status, origin, "
-                "message_id, memo_id, dup_of) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "message_id, memo_id, dup_of, dup_kind) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (title, date, start_time, end_time, location, note,
-                 "suggested" if matches else status, origin, message_id, memo_id, dup_of))
+                 "suggested" if dup_of is not None else status, origin, message_id, memo_id, dup_of, dup_kind))
             event_id = cur.lastrowid
             link(event_id, "origin")
-            if matches:
+            if dup_of is not None:
                 return {"action": "asked", "event_id": event_id, "dup_of": dup_of,
-                        "candidates": [match[0]["id"] for match in matches]}
+                        "candidates": [match[0]["id"] for match in matches] if matches else [dup_of]}
             return {"action": "created", "event_id": event_id}
+
+    def restore_event(self, event_id: int, status: str) -> bool:
+        """[일정 취소]를 되돌림: 무시(dismissed)로 돌렸던 일정을 이전 상태(제안·확정)로"""
+        if status not in ("suggested", "confirmed"):
+            return False
+        cur = self.conn.execute("UPDATE calendar_events SET status=?, updated_at=datetime('now','localtime') "
+                                "WHERE id=? AND status='dismissed'", (status, int(event_id)))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def get_calendar_event(self, event_id) -> dict | None:
+        if event_id is None:
+            return None
+        r = self.conn.execute("SELECT * FROM calendar_events WHERE id=?", (int(event_id),)).fetchone()
+        return dict(r) if r else None
+
+    def detect_cancellation(self, *, message_id: int, text: str, ref_date: str) -> dict | None:
+        if not has_any(text, CANCEL_WORDS):
+            return None
+        dates = dates_in_text(text, ref_date)
+        if not dates:
+            return None
+        body = _compact(_text(text))
+        cancels = cancel_positions(body)   # '신청 취소'·'취소하지 않습니다' 등은 빠져 있음
+        if not cancels:
+            return None
+
+        def near_cancel(key):
+            # 일정 이름 바로 뒤(또는 앞) 30글자 안에 취소 표현이 있어야 그 일정의 취소로 봄
+            start = body.find(key)
+            while start >= 0:
+                end = start + len(key)
+                if any(end - 5 <= c <= end + 30 or start - 30 <= c < start for c in cancels):
+                    return True
+                start = body.find(key, start + 1)
+            return False
+
+        if self.conn.in_transaction:
+            self.conn.commit()
+        with self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            rows = self.conn.execute(
+                "SELECT * FROM calendar_events e WHERE status IN ('suggested','confirmed') "
+                "AND dup_of IS NULL AND NOT EXISTS (SELECT 1 FROM event_sources s "
+                "WHERE s.event_id=e.id AND s.kind='message' AND s.ref_id=?)", (message_id,))
+            candidates = [row for row in rows if row["date"] in dates
+                          and len(title_key(row["title"])) >= 3 and near_cancel(title_key(row["title"]))]
+            if len(candidates) != 1:
+                return None
+            old = candidates[0]
+            existing = self.conn.execute(
+                "SELECT id FROM calendar_events WHERE dup_of=? AND dup_kind='cancel' ORDER BY id LIMIT 1",
+                (old["id"],)).fetchone()
+            if existing:
+                event_id = existing["id"]
+                action = "linked"
+            else:
+                cur = self.conn.execute(
+                    "INSERT INTO calendar_events(title,date,start_time,status,origin,message_id,dup_of,dup_kind,note) "
+                    "VALUES (?,?,?,'suggested','ai',?,?,'cancel',?)",
+                    (f"(취소?) {old['title']}", old["date"], old["start_time"], message_id, old["id"],
+                     "취소 안내로 보여요"))
+                event_id = cur.lastrowid
+                action = "asked"
+            self.conn.execute("INSERT OR IGNORE INTO event_sources(event_id,kind,ref_id,relation) "
+                              "VALUES (?,'message',?,'origin')", (event_id, message_id))
+            return {"action": action, "event_id": event_id, "dup_of": old["id"]}
 
     def add_event_from_user(self, event: dict, *, memo_id: int) -> dict:
         """메모에서 직접 넣은 일정과 관련 제안을 한 트랜잭션으로 처리한다."""
@@ -452,6 +537,21 @@ class Storage:
             original = row["dup_of"]
             if not self.conn.execute("SELECT 1 FROM calendar_events WHERE id=?", (original,)).fetchone():
                 return {"ok": False, "error": "기존 일정을 찾을 수 없어요."}
+            if row["dup_kind"] == "cancel":
+                if action == "cancel_event":
+                    prev = self.conn.execute("SELECT status FROM calendar_events WHERE id=?", (original,)).fetchone()[0]
+                    self.conn.execute("UPDATE calendar_events SET status='dismissed', "
+                                      "updated_at=datetime('now','localtime') WHERE id=?", (original,))
+                    self.conn.execute("INSERT OR IGNORE INTO event_sources(event_id, kind, ref_id, relation) "
+                                      "SELECT ?, kind, ref_id, 'change' FROM event_sources WHERE event_id=?",
+                                      (original, event_id))
+                    self.conn.execute("DELETE FROM calendar_events WHERE id=?", (event_id,))
+                    return {"ok": True, "event_id": original, "prev_status": prev}   # 화면의 [되돌리기]용
+                if action == "keep":
+                    self.conn.execute("UPDATE calendar_events SET status='dismissed', "
+                                      "updated_at=datetime('now','localtime') WHERE id=?", (event_id,))
+                    return {"ok": True, "event_id": event_id}
+                return {"ok": False, "error": "취소 안내는 일정 취소 또는 그대로 두기를 골라 주세요."}
             if action == "replace":
                 fields = {key: row[key] for key in ("title", "date", "start_time", "end_time", "location")
                           if row[key]}

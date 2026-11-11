@@ -1,6 +1,7 @@
 ﻿"""일정 제목과 시각을 비교하는 독립적인 중복 후보 판정기."""
 
 from collections import Counter
+from datetime import date
 import re
 import unicodedata
 
@@ -138,3 +139,107 @@ def best_matches(new, olds):
         if kind != "different":
             matches.append((old, kind, score, reason))
     return sorted(matches, key=lambda match: match[2], reverse=True)
+
+
+CHANGE_WORDS = ("변경", "연기", "순연", "앞당", "바뀌", "조정")
+# '변동 없습니다'·'문제 없습니다' 같은 말을 취소로 잡지 않게 좁게 둠 (그래도 묻기만 함)
+CANCEL_WORDS = ("취소", "열리지 않", "진행하지 않", "개최하지 않", "실시하지 않")
+
+
+def has_any(text, words):
+    return any(word in (text or "") for word in words)
+
+
+_DATE_PATTERN = re.compile(
+    r"(?<![\d./:~\-])(?:"
+    r"(?P<ky>\d{4})\s*년\s*(?P<kym>\d{1,2})\s*월\s*(?P<kyd>\d{1,2})\s*일"
+    r"|(?P<year>\d{4})[-./](?P<ym>\d{1,2})[-./](?P<yd>\d{1,2})(?:\.(?!\d))?(?![\d/:]|\.\d)"
+    r"|(?P<km>\d{1,2})\s*월\s*(?P<kd>\d{1,2})\s*일"
+    r"|(?P<nm>\d{1,2})[/.](?P<nd>\d{1,2})(?:\.(?!\d))?(?![\d/.:])(?!\s*(?:시간|분|배|%|퍼센트|점|개|명|원|km|kg|cm|mm))"
+    r"|(?P<day>\d{1,2})\s*일(?!\s*(?:간|동안|이내|이상|이하|정도|째|소요|씩))"
+    r")(?!\d)"
+)
+
+
+def _nearest_year(month, day, reference):
+    best = None
+    for year in (reference.year - 1, reference.year, reference.year + 1):
+        try:
+            value = date(year, month, day)
+        except ValueError:
+            continue
+        if best is None or abs((value - reference).days) < abs((best - reference).days):
+            best = value
+    return best
+
+
+def date_mentions(text: str, ref_date: str) -> list[tuple[str, int, int]]:
+    """본문 속 날짜 (YYYY-MM-DD, 시작 위치, 끝 위치) 를 나온 순서대로.
+    - 연도가 없으면 기준일과 가장 가까운 해. 'YYYY년 M월 D일'·'YYYY-MM-DD' 는 그 해.
+    - 월 없이 'D일' 만 있으면 앞에 나온 날짜의 달(없으면 기준일의 달), 앞 날짜보다 작으면 다음 달 ('31일에서 1일로').
+    - '3.5시간'·'1~2일'·'3일간' 같은 시간·기간은 날짜로 보지 않음."""
+    try:
+        reference = date.fromisoformat(ref_date)
+    except (ValueError, TypeError):
+        return []
+    out, last = [], None
+    for match in _DATE_PATTERN.finditer(text or ""):
+        g = match.groupdict()
+        value = None
+        try:
+            if g["ky"]:
+                value = date(int(g["ky"]), int(g["kym"]), int(g["kyd"]))
+            elif g["year"]:
+                value = date(int(g["year"]), int(g["ym"]), int(g["yd"]))
+            elif g["km"] or g["nm"]:
+                month, day = int(g["km"] or g["nm"]), int(g["kd"] or g["nd"])
+                value = date(last.year, month, day) if last and last.month <= month else _nearest_year(month, day, reference)
+            else:
+                day = int(g["day"])
+                base = last or reference
+                year, month = base.year, base.month
+                if last and day < last.day:
+                    year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+                value = date(year, month, day) if last else _nearest_year(month, day, reference)
+        except ValueError:
+            value = None
+        if value is not None:
+            out.append((value.isoformat(), match.start(), match.end()))
+            last = value
+    return out
+
+
+def dates_in_text(text: str, ref_date: str) -> set[str]:
+    """본문의 날짜 집합 (date_mentions 참고)."""
+    return {iso for iso, _, _ in date_mentions(text, ref_date)}
+
+
+_MOVE_LINK = re.compile(r"(에서|→|->|⇒|➝|부터)")
+
+
+def moved_dates(text: str, ref_date: str) -> set[tuple[str, str]]:
+    """'19일에서 20일로', '11/19 → 11/20' 처럼 앞 날짜에서 뒤 날짜로 옮긴다는 짝 (옛 날짜, 새 날짜)."""
+    found = set()
+    mentions = date_mentions(text, ref_date)
+    for (a, _, a_end), (b, b_start, _) in zip(mentions, mentions[1:]):
+        between = (text or "")[a_end:b_start]
+        if a != b and len(between) <= 15 and _MOVE_LINK.search(between):
+            found.add((a, b))
+    return found
+
+
+# 취소처럼 보이지만 취소가 아닌 말 (신청 취소, 취소하지 않음 등) — 미리 지우고 봄
+_NOT_CANCEL = re.compile(r"신청\s*취소|취소\s*신청|취소\s*시|취소\s*하지\s*않|취소\s*되지\s*않|취소\s*없|취소\s*문의|취소\s*가능")
+
+
+def cancel_positions(compact_text: str) -> list[int]:
+    """공백을 없앤 본문에서 취소 표현의 위치들 (취소가 아닌 말은 뺌)"""
+    cleaned = _NOT_CANCEL.sub(lambda m: "#" * len(m.group(0)), compact_text or "")
+    out = []
+    for word in CANCEL_WORDS:
+        w = word.replace(" ", "")
+        start = cleaned.find(w)
+        while start >= 0:
+            out.append(start)
+            start = cleaned.find(w, start + 1)
+    return out

@@ -649,6 +649,8 @@ class CalendarAPI:
                     status="suggested",
                     origin="memo",
                     memo_id=memo_id,
+                    source_text=text,
+                    source_date=(self._storage.get_memo(memo_id).get("created_at") or "")[:10],
                 )
         self._memo_refresh()
         return {"ok": True, "error": "", "memo": self.memo_get(memo_id)}
@@ -818,6 +820,8 @@ class CalendarAPI:
                     status="suggested",
                     origin="memo",
                     memo_id=memo_id,
+                    source_text=text,
+                    source_date=(row.get("created_at") or "")[:10],
                 )
         self._memo_refresh()
         return {"ok": True, "error": "", "memo": self.memo_get(memo_id)}
@@ -889,7 +893,9 @@ class CalendarAPI:
     @_locked
     def confirm(self, event_id: int) -> dict:
         event_id = int(event_id)
-        row = self._storage.conn.execute("SELECT dup_of FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        row = self._storage.conn.execute("SELECT dup_of, dup_kind FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        if row and row["dup_kind"] == "cancel":
+            return {"ok": False, "error": "취소 안내는 [일정 취소] 또는 [그대로 두기]로 골라 주세요."}
         if row and row["dup_of"] is not None:
             return self._storage.resolve_duplicate(event_id, "separate")
         return {"ok": self._storage.update_calendar_event(event_id, status="confirmed")}
@@ -897,6 +903,10 @@ class CalendarAPI:
     @_locked
     def resolve_duplicate(self, event_id: int, action: str) -> dict:
         return self._storage.resolve_duplicate(int(event_id), action)
+
+    @_locked
+    def restore_event(self, event_id: int, status: str = "confirmed") -> dict:
+        return {"ok": self._storage.restore_event(int(event_id), str(status or ""))}
 
     @_locked
     def event_sources(self, event_id: int) -> list[dict]:
@@ -1027,7 +1037,7 @@ class CalendarAPI:
 
 def _public(e: dict) -> dict:
     keys = ("id", "title", "date", "start_time", "end_time", "location", "note", "status", "origin", "message_id",
-            "memo_id", "dup_of")
+            "memo_id", "dup_of", "dup_kind")
     out = {k: e.get(k) for k in keys}
     out["sender"] = e.get("msg_sender") or ""
     return out
