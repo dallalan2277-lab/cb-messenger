@@ -9,6 +9,7 @@ import sqlite3
 from pathlib import Path
 
 from .models import Analysis, Event, Message
+from .event_match import best_matches, classify
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +57,16 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     updated_at TEXT DEFAULT (datetime('now', 'localtime'))
 );
 CREATE INDEX IF NOT EXISTS ix_cal_date ON calendar_events(date);
+
+CREATE TABLE IF NOT EXISTS event_sources (
+    event_id INTEGER NOT NULL REFERENCES calendar_events(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    ref_id INTEGER NOT NULL,
+    relation TEXT NOT NULL DEFAULT 'same',
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY(event_id, kind, ref_id)
+);
+CREATE INDEX IF NOT EXISTS ix_event_sources_ref ON event_sources(kind, ref_id);
 
 CREATE TABLE IF NOT EXISTS memos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -174,7 +185,8 @@ class Storage:
                      ("school_evidence", "TEXT DEFAULT ''"), ("verified", "INTEGER DEFAULT 1"),
                      ("notified", "INTEGER DEFAULT 0"), ("details", "TEXT DEFAULT '[]'")],
         "calendar_events": [("import_batch", "TEXT DEFAULT ''"),   # 파일에서 가져온 일정 묶음 (되돌리기용)
-                            ("memo_id", "INTEGER REFERENCES memos(id) ON DELETE SET NULL")],
+                            ("memo_id", "INTEGER REFERENCES memos(id) ON DELETE SET NULL"),
+                            ("dup_of", "INTEGER REFERENCES calendar_events(id) ON DELETE SET NULL")],
     }
 
     def _migrate(self):
@@ -183,6 +195,12 @@ class Storage:
             for name, decl in cols:
                 if name not in have:
                     self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+        # 처음 원문(message_id·memo_id)을 원문 연결 표에도 채움. 매번 실행해서
+        # 0.9.0 으로 되돌렸던 동안 생긴 일정도 다시 시험판을 열 때 채워짐 (이미 있으면 그대로)
+        for kind, col in (("message", "message_id"), ("memo", "memo_id")):
+            self.conn.execute(
+                "INSERT OR IGNORE INTO event_sources(event_id, kind, ref_id, relation) "
+                f"SELECT id, '{kind}', {col}, 'origin' FROM calendar_events WHERE {col} IS NOT NULL")
         self.conn.commit()
 
     def close(self):
@@ -199,6 +217,7 @@ class Storage:
             )
             self.conn.commit()
         except sqlite3.IntegrityError:
+            self.conn.rollback()   # 실패한 INSERT 의 트랜잭션을 닫아 둠 (다음 BEGIN IMMEDIATE 가 막히지 않게)
             return None
         m.id = cur.lastrowid
         return m.id
@@ -313,6 +332,125 @@ class Storage:
         self.conn.commit()
         return cur.lastrowid
 
+    def suggest_event(self, *, title: str, date: str, start_time: str = "", end_time: str = "",
+                      location: str = "", note: str = "", status: str = "suggested",
+                      origin: str = "ai", message_id: int | None = None,
+                      memo_id: int | None = None) -> dict:
+        new = dict(title=title, date=date, start_time=start_time, end_time=end_time, location=location)
+        source = (("message", message_id) if message_id is not None else
+                  ("memo", memo_id) if memo_id is not None else None)
+
+        def link(event_id, relation):
+            if source is not None:
+                self.conn.execute("INSERT OR IGNORE INTO event_sources(event_id, kind, ref_id, relation) "
+                                  "VALUES (?, ?, ?, ?)", (event_id, *source, relation))
+
+        if self.conn.in_transaction:
+            self.conn.commit()   # 이 연결에 남은 작업이 있으면 먼저 확정 (중첩 BEGIN 오류·남의 작업 되돌리기 방지)
+        with self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            if source is not None:
+                rows = self.conn.execute(
+                    "SELECT e.* FROM calendar_events e JOIN event_sources s ON s.event_id=e.id "
+                    "WHERE s.kind=? AND s.ref_id=? AND e.date=? ORDER BY e.id", (*source, date))
+                for row in rows:
+                    # 같은 원문의 '같은 일'만 건너뜀 (한 쪽지에 09시·15시 회의가 둘 다 있으면 둘째는 묻기로)
+                    if classify(new, dict(row))[0] == "same":
+                        return {"action": "skipped", "event_id": row["id"]}
+
+            rows = [dict(row) for row in self.conn.execute(
+                "SELECT * FROM calendar_events WHERE date=? ORDER BY id", (date,))]
+            matches = best_matches(new, [row for row in rows if row["dup_of"] is None])
+            for row in rows:
+                if row["dup_of"] is not None and classify(new, row)[0] == "same":
+                    # 묻는 중인 제안에 붙일 때도 새로 알게 된 시각·장소는 채움 (나중에 [바꾸기]에 반영되게)
+                    fill = {key: new[key] for key in ("start_time", "end_time", "location")
+                            if not row[key] and new[key]}
+                    if fill and row["status"] == "suggested":
+                        self.conn.execute("UPDATE calendar_events SET " + ", ".join(k + "=?" for k in fill) +
+                                          ", updated_at=datetime('now','localtime') WHERE id=?",
+                                          (*fill.values(), row["id"]))
+                    link(row["id"], "same")
+                    return {"action": "linked", "event_id": row["id"]}
+
+            if len(matches) == 1 and matches[0][1] == "same":
+                old = matches[0][0]
+                fill = {key: new[key] for key in ("start_time", "end_time", "location")
+                        if not old[key] and new[key]}
+                if old["status"] != "confirmed" or not fill:
+                    if old["status"] == "suggested" and fill:
+                        assignments = ", ".join(key + "=?" for key in fill)
+                        self.conn.execute("UPDATE calendar_events SET " + assignments +
+                                          ", updated_at=datetime('now','localtime') WHERE id=?",
+                                          (*fill.values(), old["id"]))
+                    link(old["id"], "same")
+                    return {"action": "linked", "event_id": old["id"]}
+
+            dup_of = matches[0][0]["id"] if matches else None
+            cur = self.conn.execute(
+                "INSERT INTO calendar_events(title, date, start_time, end_time, location, note, status, origin, "
+                "message_id, memo_id, dup_of) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (title, date, start_time, end_time, location, note,
+                 "suggested" if matches else status, origin, message_id, memo_id, dup_of))
+            event_id = cur.lastrowid
+            link(event_id, "origin")
+            if matches:
+                return {"action": "asked", "event_id": event_id, "dup_of": dup_of,
+                        "candidates": [match[0]["id"] for match in matches]}
+            return {"action": "created", "event_id": event_id}
+
+    def resolve_duplicate(self, event_id: int, action: str) -> dict:
+        if self.conn.in_transaction:
+            self.conn.commit()   # 이 연결에 남은 작업이 있으면 먼저 확정 (중첩 BEGIN 오류·남의 작업 되돌리기 방지)
+        with self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            row = self.conn.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+            if not row or row["dup_of"] is None:
+                return {"ok": False, "error": "확인할 중복 제안을 찾을 수 없어요."}
+            original = row["dup_of"]
+            if not self.conn.execute("SELECT 1 FROM calendar_events WHERE id=?", (original,)).fetchone():
+                return {"ok": False, "error": "기존 일정을 찾을 수 없어요."}
+            if action == "replace":
+                fields = {key: row[key] for key in ("title", "date", "start_time", "end_time", "location")
+                          if row[key]}
+                old_status = self.conn.execute("SELECT status FROM calendar_events WHERE id=?",
+                                               (original,)).fetchone()[0]
+                if old_status == "dismissed":
+                    fields["status"] = "confirmed"   # 무시했던 일정이라도 사람이 [바꾸기]를 눌렀으면 살림
+                assignments = ", ".join(key + "=?" for key in fields) or "id=id"
+                self.conn.execute("UPDATE calendar_events SET " + assignments +
+                                  ", updated_at=datetime('now','localtime') WHERE id=?",
+                                  (*fields.values(), original))
+                self.conn.execute("INSERT OR IGNORE INTO event_sources(event_id, kind, ref_id, relation) "
+                                  "SELECT ?, kind, ref_id, 'change' FROM event_sources WHERE event_id=?",
+                                  (original, event_id))
+                self.conn.execute("DELETE FROM calendar_events WHERE id=?", (event_id,))
+                return {"ok": True, "event_id": original}
+            if action == "separate":
+                self.conn.execute("UPDATE calendar_events SET dup_of=NULL, status='confirmed', "
+                                  "updated_at=datetime('now','localtime') WHERE id=?", (event_id,))
+            elif action == "ignore":
+                self.conn.execute("UPDATE calendar_events SET status='dismissed', "
+                                  "updated_at=datetime('now','localtime') WHERE id=?", (event_id,))
+                self.conn.execute("INSERT OR IGNORE INTO event_sources(event_id, kind, ref_id, relation) "
+                                  "SELECT ?, kind, ref_id, 'ignored' FROM event_sources WHERE event_id=?",
+                                  (original, event_id))
+            else:
+                return {"ok": False, "error": "처리 방법을 확인해 주세요."}
+            return {"ok": True, "event_id": event_id}
+
+    def event_sources(self, event_id: int) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT s.kind, s.ref_id, s.relation, s.created_at, m.sender, m.received_at, m.subject "
+            "FROM event_sources s LEFT JOIN messages m ON s.kind='message' AND m.id=s.ref_id "
+            "LEFT JOIN memos n ON s.kind='memo' AND n.id=s.ref_id "
+            "WHERE s.event_id=? AND (m.id IS NOT NULL OR n.id IS NOT NULL) ORDER BY s.rowid", (event_id,))
+        return [dict(row) for row in rows]
+
+    def events_for_source(self, kind: str, ref_id: int) -> list[int]:
+        return [row[0] for row in self.conn.execute(
+            "SELECT event_id FROM event_sources WHERE kind=? AND ref_id=? ORDER BY event_id", (kind, ref_id))]
+
     # ---- memos ----
     MEMO_FIELDS = ("title", "kind", "kind_by_user", "read_mode", "source_text", "image_path",
                    "summary", "details", "items", "action_items", "provider", "model", "status")
@@ -382,6 +520,7 @@ class Storage:
             return None
         with self.conn:
             self.conn.execute("UPDATE calendar_events SET memo_id=NULL WHERE memo_id=?", (int(memo_id),))
+            self.conn.execute("DELETE FROM event_sources WHERE kind='memo' AND ref_id=?", (int(memo_id),))
             self.conn.execute("DELETE FROM memos WHERE id=?", (int(memo_id),))
         return self._memo_row(row)
 

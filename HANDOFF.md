@@ -222,6 +222,7 @@
 - 1단계 완료: 버전 0.10.0-beta.1 / `updater.check_latest` 가 태그 이름이 시험판(`-`)이면 건너뜀 (단, 이미 배포된 0.9.0 엔 이 방어가 없으니 Release 의 pre-release 표시는 꼭 확인) /
   `Storage` 첫 백업: 0.9.0 DB(user_version 0)를 처음 열 때 구조 변경 전에 `data/backup/messages-before-0.10.db` 로 SQLite 백업, 실패하면 user_version 을 안 남겨 다음에 다시 시도, 동시에 열어도 먼저 만든 백업을 덮지 않음 (Sol 검토 2건 반영) /
   `app/event_match.py` 중복 판정 규칙(same/maybe/different, AI 없음, Terra 작성·Claude 검토). 아직 어디서도 쓰지 않음 → 다음 A2a(event_sources·dup_of 저장).
+- A2a 완료: `Storage.suggest_event`(AI·메모 일정 제안의 새 입구: created/linked/asked/skipped, 한 트랜잭션) · `resolve_duplicate`(replace/separate/ignore) · 새 표 `event_sources`(일정↔원문 여러 개) · 새 칸 `calendar_events.dup_of`(ON DELETE SET NULL). Terra 작성, Sol 검토 3건 반영(같은 원문 속 오전·오후 회의, 묻는 중인 제안에 새 시각 채우기, add_message 실패 뒤 열린 트랜잭션 rollback). **아직 pipeline·화면은 옛 add_calendar_event 를 씀** → 다음 A2b(진입 경로 5곳 + confirm_all).
 - A2 때 주의: 시각 없는 새 일정은 같은 날 오전·오후 같은 이름 회의 둘 다 same 으로 나옴 → 후보가 2개 이상이면 자동으로 묶지 말고 묻기.
 
 ## 3. 지켜야 할 설계 규칙
