@@ -351,6 +351,10 @@ def test_to_event_confirms_existing_suggestion_instead_of_false_success(tmp_path
     assert made["ok"] and made["existed"] is True and made["id"] == sugg[0]["id"]
     evs = api._storage.calendar_events("2026-11-20", "2026-11-20")
     assert len(evs) == 1 and evs[0]["status"] == "confirmed"
+    assert evs[0]["end_time"] == "16:00"                    # (제안의 끝 시각 그대로)
+    made2 = api.memo_to_event(memo["id"], {"date": "2026-11-20", "start_time": "15:00", "end_time": "17:30",
+                                           "title": "가상 연수"})
+    assert made2["existed"] and api._storage.calendar_events("2026-11-20", "2026-11-20")[0]["end_time"] == "17:30"
     api.dismiss(evs[0]["id"])                               # 무시했던 일정과 겹쳐도 다시 확정되어 보임
     again = api.memo_to_event(memo["id"], {"date": "2026-11-20", "start_time": "15:00", "title": "가상 연수"})
     assert again["ok"] and api._storage.calendar_events("2026-11-20", "2026-11-20")[0]["status"] == "confirmed"

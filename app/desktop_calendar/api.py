@@ -841,7 +841,13 @@ class CalendarAPI:
             same = self._storage.find_calendar_event(event["date"], event["title"], event["start_time"])
             if same:
                 # 같은 날·제목·시각 일정이 이미 있음 (AI 제안이었거나 무시했던 것 포함) → 새로 만들지 않고 확정
-                self._storage.update_calendar_event(same["id"], status="confirmed")
+                # 사람이 적어 넣은 끝 시각·장소는 살리고, 비어 있던 메모(note)는 채움
+                merge = {"status": "confirmed"}
+                if event.get("end_time"):
+                    merge["end_time"] = event["end_time"]
+                if not (same.get("note") or "").strip() and event.get("note"):
+                    merge["note"] = event["note"]
+                self._storage.update_calendar_event(same["id"], **merge)
                 if not same.get("memo_id"):
                     self._storage.conn.execute("UPDATE calendar_events SET memo_id=? WHERE id=?", (memo_id, same["id"]))
                     self._storage.conn.commit()

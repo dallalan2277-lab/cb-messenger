@@ -125,7 +125,11 @@ def clean_details(raw, source: str, extra: str = "") -> list[str]:
     known = {d.lstrip("0") or "0" for d in _DIGITS.findall(text)}
     # 원문에 실제로 있는 시각 표현만 24시간 표기로 바꿔 적는 것을 허용 ('오후 3시' → '15:00', '3시 반' → '3:30')
     hours = {int(h) for h in re.findall(r"(\d{1,2})\s*(?:시|:\d{2})", text) if 0 <= int(h) <= 24}
-    hours |= {h + 12 for h in (int(x) for x in re.findall(r"(?:오후|PM|pm)\s*(\d{1,2})", text)) if 1 <= h <= 11}
+    pm = re.findall(r"(?:오후|PM|pm)\s*(\d{1,2})", text) + re.findall(r"(\d{1,2})(?::\d{2})?\s*(?:PM|pm|p\.m\.)", text)
+    hours |= {h + 12 for h in (int(x) for x in pm) if 1 <= h <= 11}
+    am12 = re.findall(r"(?:오전|AM|am)\s*12", text) + re.findall(r"12(?::\d{2})?\s*(?:AM|am|a\.m\.)", text)
+    if am12 or re.search(r"(?:자정|밤\s*12\s*시)", text):
+        hours.add(0)                                    # 오전 12시 / 12 AM → 00:00
     half = bool(re.search(r"\d\s*시\s*반", text))
     out = []
     for item in raw:

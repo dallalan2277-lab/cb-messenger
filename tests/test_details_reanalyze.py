@@ -171,6 +171,13 @@ def test_time_exception_does_not_let_other_numbers_through():
     assert clean_details(["시각: 09:00"], "9시 출발") == ["시각: 09:00"]
 
 
+def test_suffix_pm_and_midnight_times():
+    assert clean_details(["시각: 15:00"], "meeting at 3 PM") == ["시각: 15:00"]
+    assert clean_details(["시각: 15:30"], "start 3:30 pm") == ["시각: 15:30"]
+    assert clean_details(["시각: 00:00"], "오전 12시 마감") == ["시각: 00:00"]
+    assert clean_details(["시각: 00:00"], "3시 마감") == []          # 원문에 없는 자정은 여전히 뺌
+
+
 def test_clean_details_accepts_24h_conversion_of_pm_time():
     src = "11월 18일(수) 오후 3시, 본관 2층 회의실"
     assert clean_details(["일시: 2026-11-18 15:00"], src, "2026-11-18") == ["일시: 2026-11-18 15:00"]
