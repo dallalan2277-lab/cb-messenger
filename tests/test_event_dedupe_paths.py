@@ -187,3 +187,18 @@ def test_resolve_duplicate_api(setup, action):
         assert events[proposal]["dup_of"] is None and events[proposal]["status"] == "confirmed"
     else:
         assert events[proposal]["status"] == "dismissed" and events[proposal]["dup_of"] == original
+
+
+def test_suggestions_carry_original_for_comparison(tmp_path):
+    from datetime import date, timedelta
+    from app.desktop_calendar.api import CalendarAPI
+    from app.storage import Storage
+    st = Storage(str(tmp_path / "s.db"))
+    api = CalendarAPI(st, tmp_path / "prefs.json")
+    day = (date.today() + timedelta(days=3)).isoformat()
+    old = st.suggest_event(title="가상 협의회", date=day, start_time="14:00", status="confirmed")["event_id"]
+    asked = st.suggest_event(title="가상 협의회", date=day, start_time="15:00")
+    assert asked["action"] == "asked"
+    rows = {r["id"]: r for r in api.suggestions()}
+    assert rows[asked["event_id"]]["dup_of"] == old
+    assert rows[asked["event_id"]]["dup"]["start_time"] == "14:00"

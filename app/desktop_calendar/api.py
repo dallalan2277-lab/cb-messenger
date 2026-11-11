@@ -149,8 +149,18 @@ class CalendarAPI:
     @_locked
     def suggestions(self) -> list[dict]:
         t = date.today() - timedelta(days=7)
-        return [_public(e) for e in self._storage.calendar_events(t.isoformat(), "9999-12-31")
-                if e["status"] == "suggested"]
+        out = []
+        for e in self._storage.calendar_events(t.isoformat(), "9999-12-31"):
+            if e["status"] != "suggested":
+                continue
+            d = _public(e)
+            if e.get("dup_of"):   # '기존 일정과 같은 일인가요?' 제안 → 비교할 기존 일정도 같이
+                r = self._storage.conn.execute("SELECT * FROM calendar_events WHERE id=?", (e["dup_of"],)).fetchone()
+                d["dup"] = _public(dict(r)) if r else None
+                if not r:
+                    d["dup_of"] = None
+            out.append(d)
+        return out
 
     @_locked
     def message(self, message_id: int) -> dict | None:
