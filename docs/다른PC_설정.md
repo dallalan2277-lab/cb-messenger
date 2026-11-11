@@ -18,7 +18,7 @@ GitHub 로 직접 옮겨지지 않습니다. 그래서 **원본을 이 저장소
 
 | PC 의 파일 | 내용 | 원본 |
 |---|---|---|
-| `C:\Users\(이름)\.claude\CLAUDE.md` | Codex 위임 규칙 (5.6 Sol 상시 검증, 6.1 Sol 어려운 문제, luna 금지, `--effort` 안 붙이기) | `pc-settings/claude-global.md` |
+| `C:\Users\(이름)\.claude\CLAUDE.md` | Codex 위임 규칙 (6.1 Terra 상시 작업·검증, 6.1 Sol 어려운 문제, luna 금지, `--effort` 안 붙이기) | `pc-settings/claude-global.md` |
 | `C:\Users\(이름)\.codex\config.toml` | 맨 위 `model = "gpt-6.1-sol"`, `model_reasoning_effort = "ultra"` | `pc-settings/sync.ps1` |
 
 - CLAUDE.md 는 표시 줄(`cb-messenger-ai pc-settings BEGIN` ~ `END`) 사이만 바꿉니다. 그 밖에 직접 적은 내용은 그대로 둡니다.

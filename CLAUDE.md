@@ -100,11 +100,11 @@ app/paths.py                실행 위치·자료 위치. 개발: 저장소 폴�
 - `.claude/settings.json` 의 SessionStart hook 이 Claude Code 시작 때 sync 를 자동 실행. `[pc-settings]` 로 시작하는 줄이 보이면 바뀐 내용을 사용자에게 쉬운 말로 알리고, 앱 재시작이 필요하면 안내할 것.
 - 규칙을 바꿀 때는 `pc-settings/claude-global.md` 를 고치고 sync 를 실행한 뒤 커밋 (`~/.claude/CLAUDE.md` 를 직접 고치면 다음 동기화 때 덮어써짐).
 - 새 PC 에서 config 에 ultra 가 없으면 Codex 가 low 로 돎 → `9_PC설정맞추기.bat` 실행을 안내할 것.
-- **gpt-5.6-sol — 상시 검증 (기본)**: 코드 리뷰, 테스트 작성·실행, 회귀 버그 탐지, 사양이 분명한 일반 구현 (캘린더 화면 `calendar.html`·`api.py`, `ics_export.py`, 테스트 추가 등). `--model gpt-5.6-sol`.
-- **gpt-6.1-sol — 어려운 문제만 재검증**: 5.6 Sol 로 안 풀리는 오류, 복잡한 원인 분석, 중요 변경 검토. 이 프로젝트에서 중요 변경 = 로그인·토큰(`llm/chatgpt_auth.py`·`chatgpt_plan_provider.py`), IMAP·디코딩(`collectors/naver_mail.py`·`mail_content.py`), `redact.py`, `secrets_store.py`, `analyzer.py` 의 근거 확인·글 속 지시 무시, `storage.py` 마이그레이션. `--model gpt-6.1-sol`. `/codex:review` 는 모델을 못 골라 config 기본값(6.1 Sol)으로 돌므로 중요 변경 검토에 씀.
-- terra·luna 는 쓰지 않음 (사용자가 직접 지정할 때만).
+- **gpt-6.1-terra — 상시 작업·검증 (기본, 적극 사용, 2026-11-10~)**: 사양이 분명한 구현, 코드 리뷰, 테스트 작성·실행, 회귀 버그 탐지, 증상이 분명한 버그 수정 (캘린더 화면 `calendar.html`·`api.py`, `ics_export.py`, 테스트 추가 등). `--model gpt-6.1-terra`. 결과의 엣지 케이스(빈 값, 날짜 경계, 한글 경로·파일 이름) 따로 확인.
+- **gpt-6.1-sol — 어려운 문제만 재검증**: Terra 로 안 풀리는 오류(두 번 이상 실패), 복잡한 원인 분석, 중요 변경 검토. 이 프로젝트에서 중요 변경 = 로그인·토큰(`llm/chatgpt_auth.py`·`chatgpt_plan_provider.py`), IMAP·디코딩(`collectors/naver_mail.py`·`mail_content.py`), `redact.py`, `secrets_store.py`, `analyzer.py` 의 근거 확인·글 속 지시 무시, `storage.py` 마이그레이션. `--model gpt-6.1-sol`. `/codex:review` 는 모델을 못 골라 config 기본값(6.1 Sol)으로 돌므로 중요 변경 검토에 씀.
+- 5.6 계열·luna 는 쓰지 않음 (사용자가 직접 지정할 때만).
 - 사고 수준: `--effort` 를 붙이지 않음. Codex 설정(`~/.codex/config.toml`) 기본값이 `ultra` 이고, 플러그인은 `--effort` 로 xhigh 까지만 받아서 붙이면 오히려 낮아짐.
-- 학교 PC 계정은 Codex 에서 `gpt-6.1-*` 를 못 씀 (2026-11-09) → 그 PC 에서는 6.1 Sol 대신 `gpt-6-astra`(ultra 지원). 5.6 Sol 은 그대로.
+- 학교 PC 계정은 Codex 에서 `gpt-6.1-*` 를 못 씀 (2026-11-09) → 그 PC 에서는 6.1 Sol 대신 `gpt-6-astra`, 6.1 Terra 대신 `gpt-5.6-terra` (둘 다 ultra 지원).
 - **위임하지 않음 (Claude 가 직접 + 사용자 PC 확인)**: `eztalk_collector.py`·`eztalk_parse.py`(실제 메신저 창 구조는 사용자 PC 에서만 확인 가능), `desktop_calendar/widget.py`(Win32 창 동작), tkinter 화면 모양, 설계 규칙·분석 스키마 변경 결정.
 - **Codex 에 넘기지 않을 것**: 실제 쪽지·메일 원문, `.env`, `data/`(DB·쪽지기록), `messenger-check --raw` 출력, 토큰·비밀번호. 넘기면 OpenAI 서버로 전송됨 → 재현이 필요하면 가상 예시로 바꿔서.
 - 위임 지시에는 이 문서의 "지켜야 할 규칙"(읽기 전용 수집, 테스트는 네트워크·키 없이, Python 3.10 호환, Windows 전용 import 는 함수 안) 을 함께 적을 것.
