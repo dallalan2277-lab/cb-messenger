@@ -201,7 +201,13 @@
 - 시험판: `__version__ = "0.9.0-beta.2"` (updater.is_newer 가 '같은 번호의 정식판 > 시험판' 으로 보게 고침 → 정식 v0.9.0 이 나오면 시험판에서도 업데이트가 뜸). GitHub 배포 안 함, 이 PC 에만 설치 파일.
   빌드된 프로그램에서 `cbm.exe ocr-check <이미지>` 로 글자 인식 동작 확인. beta.2: 펼친 목록(select option)이 흰 바탕+흐린 글자로 보이던 문제(color-scheme 없음) 수정.
 - GPT 가 남긴 `.agent-pytest-api-review/`, `.tmp-pytest-root/` 폴더는 권한 문제로 못 지움 (.git/info/exclude 에 넣음, 동작 영향 없음).
-- 남은 것: 사용자 실사용 의견, GPT 교차 검토(ChatGPT 한도 풀린 뒤 — `review --base main --model gpt-6-astra`), 확인 후 main 에 합쳐 v0.9.0 배포.
+- 2026-11-11: 사용자 요청으로 main 에 합쳐 **v0.9.0** 정식 배포 (실사용 전).
+  GPT 교차 검토 1차(gpt-6-astra, main 대비 전체) 7건 + 2차(gpt-5.6-terra, 고친 부분) 3건 모두 반영:
+  캘린더 첫 화면이 memo_status(전엔 create_provider → ChatGPT 모델 목록 인터넷 요청)를 기다리던 것 → 설정의 제공자 이름만 보고 판단·첫 화면 뒤에 읽음 /
+  일정으로 넣기 때 같은 일정이 있으면(제안·무시 포함) 그 일정을 확정하고 적어 넣은 끝 시각 반영 / 다시 정리의 상대 날짜는 메모 created_at 기준 /
+  설정 저장 뒤 Host.settings_changed → 화면 calendarSettingsChanged 로 메모 상태 다시 읽기 / clean_details 시각 예외는 원문의 시각 표현(오후·PM·3 PM·오전 12시·자정)에만 /
+  Pillow 를 모든 환경 의존성으로 / GIF 를 고르기·붙여 넣기·끌어다 놓기 모두 허용.
+- `updater.is_newer`: 같은 숫자면 시험판(0.9.0-beta.N) < 정식판(0.9.0).
 
 ### 2-13. 쪽지 본문 대신 보낸 사람 소속 줄이 저장되던 문제 — 2026-11-11
 - 증상: 원문 보기에 '- 312(교실) / 070-… / 담당 / 1-2담임' 같은 줄만 있음 (2026-11-10~11 에 5건쯤). AI 요약도 그 줄만 보고 함.

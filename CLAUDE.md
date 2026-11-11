@@ -18,7 +18,7 @@ Claude Code 는 이 폴더(`cb-messenger-ai/`, 저장소 맨 위)에서 열 것.
 충북소통메신저 쪽지 + 네이버 메일을 실시간으로 받아 AI 가 중요도별로 요약·분석하고, 일정은 **바탕화면 캘린더**에 넣는 Windows 상주 프로그램.
 AI 는 **GPT 와 Claude 둘 다** 쓸 수 있어야 함 (구독 또는 API 키).
 
-## 현재 상태 (v0.8.3, Python 약 5,900줄, 테스트 53개 통과)
+## 현재 상태 (v0.9.0, Python 약 5,900줄, 테스트 53개 통과)
 | 기능 | 상태 |
 |---|---|
 | 소통메신저 쪽지 수집 (eztalk.exe 창 UI 자동화, Project Monday 방식) | 코드 완료 · **Windows 실사용 미확인** |
@@ -33,7 +33,7 @@ AI 는 **GPT 와 Claude 둘 다** 쓸 수 있어야 함 (구독 또는 API 키).
 | Claude 로그인 버튼·상태 표시 (설정 화면 [AI 연결] 탭, 공식 `claude auth status/login` 만 실행) (v0.8.0) | 완료 |
 | 캘린더 ⚙ 메뉴에서 AI 모델 바로 고르기 (v0.7.0) | 완료 · 미리보기로 확인 |
 | AI '자세히' 정리(3~6줄: 무엇·언제·어디·대상·제출물·주의·문의) · 받은 소식 [다시 분석] · 일정 ↔ 원문 오가기 (v0.8.3) | 완료 · 미리보기와 실제 AI 로 확인 |
-| 메모 탭: 캡처·글 붙여 넣기 → 이 PC 글자 인식(Windows OCR)/캡처를 AI 에 → AI 정리(종류 자동·수정)·일정 제안·일정으로 넣기, 설정에서 끄기 (v0.9.0-beta) | 시험판 · 미리보기·실제 창·진짜 OCR/AI 로 확인 · **사용자 실사용 전** |
+| 메모 탭: 캡처·글 붙여 넣기 → 이 PC 글자 인식(Windows OCR)/캡처를 AI 에 → AI 정리(종류 자동·수정)·일정 제안·일정으로 넣기, 설정에서 끄기 (v0.9.0) | 완료 · 미리보기·실제 창·진짜 OCR/AI 로 확인, GPT 교차 검토 2회 반영 · **사용자 실사용 전** |
 | 다른 캘린더 파일에서 일정 가져오기 (.ics·엑셀·csv·txt, 미리보기·칸 맞추기·중복 건너뜀·되돌리기) (v0.8.1) | 완료 · 미리보기로 확인 |
 | 자동 업데이트 (GitHub Releases, SHA-256 확인, `packaging\release.bat` 로 배포) (v0.7.0) | 코드 완료 · **실제 업데이트 한 바퀴 미확인** |
 
@@ -58,6 +58,7 @@ app/
   collectors/               수집기: eztalk_parse(순수 파싱)·eztalk_collector, naver_mail·mail_content, manual, windows_notification(예비)
   desktop_calendar/         calendar.html(화면, MockAPI 내장) · api.py(CalendarAPI) · widget.py(pywebview 창) · holidays_kr.json
                             settings.html(설정 화면, MockAPI 내장) · settings_api.py(SettingsAPI: 읽기·저장·로그인·메일 연결) · settings_window.py(창 띄우기)
+  memo.py · ocr.py          메모 정리(MEMO_PROMPT·MEMO_SCHEMA·organize) · Windows 한국어 글자 인식(함수 안에서 winrt import)
   extensions/               archive.py(원문 보관), ics_export.py, calendar_import.py(일정 파일 읽기: ics·xlsx(zip XML 직접)·csv·txt·주간 달력)
 tests/                      pytest. 네트워크·API 키·Windows 없이 돌아감
 1_설치하기.bat … 8_메일연결.bat   사용자용 더블클릭 파일 (CRLF, UTF-8, chcp 65001)
@@ -120,14 +121,11 @@ python main.py chatgpt-login / chatgpt-models
 python main.py models / usage               :: 모델 설정 / 토큰 사용량
 python main.py settings                     :: 설정 창 (캘린더 ⚙ → 설정 열기 와 같은 화면)
 python main.py gui                          :: 테스트 화면 (메시지 붙여 넣어 분석해 보기)
+python main.py ocr-check 그림.png            :: 이 PC 글자 인식으로 이미지 읽어 보기 (저장·AI 없음)
 ```
 화면만 고칠 때: `app/desktop_calendar/calendar.html` · `settings.html` 을 브라우저로 열면 예시 데이터(MockAPI)로 동작 (settings.html 은 `?theme=light`, `?claude=none`, `?claude=logout` 으로 상태를 바꿔 볼 수 있음).
 
 ## 남은 작업 (우선순위 순)
-0. **진행 중: 메모 기능 (브랜치 `feature/memo`, 시험판 v0.9.0-beta.2)** — 2026-11-10 기준
-   - 캡처·글 → (이 PC 글자 인식 또는 캡처를 AI 에 그대로) → AI 메모 정리(종류 자동·수정 가능) → 일정 제안/일정으로 넣기. 자세한 내용은 그 브랜치의 HANDOFF.md 2-12.
-   - 다음에 할 일: ① 사용자가 시험판(packaging\Output\CBMessengerAI_Setup_0.9.0-beta.2.exe, GitHub 배포 안 함)을 실제로 써 보고 의견 ② GPT 교차 검토 (`review --base main --model gpt-6-astra`, 학교 PC) ③ 괜찮으면 main 에 합쳐 v0.9.0 정식 배포, 아니면 브랜치 버리고 v0.8.3 설치 파일로 되돌리기.
-   - 시작 전: `git fetch` 후 `git checkout feature/memo` (main 에는 메모 기능이 없음).
 1. **사용자 PC 에서 실제 확인·수정** (가장 먼저)
    - ~~설치 오류 여부~~ → 2026-11-08 확인: Python 3.10.6 에서 requirements 설치 OK, Windows 라이브러리 import OK, 테스트 52 통과·1 건너뜀(유닉스용 가짜 claude), `--provider fake test` 정상
    - ChatGPT 구독 로그인: 첫 콜백의 `client_id`, ID 토큰 검증(OIDC discovery 주소 미확인, 대체 jwks 주소 사용 중), 토큰 갱신, `text.format json_schema` 허용 여부, `reasoning` 허용 여부
