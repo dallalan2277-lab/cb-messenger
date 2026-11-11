@@ -132,8 +132,25 @@ def parse_view(texts):
     if send_i is not None and sender_raw and sender_raw in texts[send_i:]:
         # 본문 덩어리는 바로 다음 글(첫 줄 조각)이 그 앞부분과 같다는 점으로 찾음. 못 찾으면 가장 긴 글.
         start = texts.index(sender_raw, send_i) + 1
-        pool = [t for t in texts[start:] if not (t.startswith("※") or _is_label(t) or t == sender_raw or t == ev["time"]
-                                                  or t == title or TIME_ONLY_RE.match(t))]
+        # 보낸 사람 이름 바로 뒤에 붙는 소속·전화번호 줄('312(교실) / 070-… / 담당 / 1-2담임', 앞에 '- ' 붙은 것도)은 본문이 아님:
+        # 이름 다음부터 시각·'받는사람'·'※' 안내문 전까지가 그 머리글 구역
+        head_end = next((i for i in range(start, len(texts))
+                         if TIME_RE.search(texts[i]) or texts[i].startswith(("받는", "※"))), len(texts))
+        # (머리글 구역의 앞 3줄 중 '/' 로 나뉜 줄만 — 본문이 머리글처럼 보이는 옛 창 모양에서 본문을 지우지 않게)
+        profile = {re.sub(r"^[-–—·\s]+", "", t) for t in texts[start:min(head_end, start + 3)] if t.count("/") >= 2}
+        # 소통메신저 보기 창은 '※「정보통신망…」' 안내문 다음에 본문이 옴 → 안내문 뒤에 글이 있으면 그 뒤만 본문 후보
+        notice = max((i for i in range(start, len(texts) - 1) if texts[i].startswith("※")), default=None)
+        # '받는사람' 줄 뒤의 받는 사람 목록(이름들·인원수)은 본문이 아님 — 안내문(※)까지, 안내문이 아직 없으면 끝까지
+        skip: set[int] = set()
+        to_i = next((i for i in range(start, len(texts)) if texts[i].startswith("받는")), None)
+        if to_i is not None:
+            to_end = next((i for i in range(to_i + 1, len(texts)) if texts[i].startswith("※")), len(texts))
+            skip = set(range(to_i, to_end))
+        if notice is not None:
+            start = notice + 1
+        pool = [t for i, t in enumerate(texts) if i >= start and i not in skip and not (
+                    t.startswith("※") or _is_label(t) or t == sender_raw or t == ev["time"]
+                    or t == title or TIME_ONLY_RE.match(t) or re.sub(r"^[-–—·\s]+", "", t) in profile)]
         norm = lambda x: re.sub(r"\s+", "", x)  # noqa: E731
         body = ""
         for i in range(len(pool) - 1):

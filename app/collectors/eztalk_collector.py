@@ -60,13 +60,13 @@ class EztalkCollector(Collector):
         self.on_unreadable = on_unreadable
         self.unknown_log = unknown_log
         self._unknown: set[str] = set()
+        self.stats = {"polls": 0, "events": 0, "last_error": "", "messenger_seen_ts": 0.0, "classes": set(),
+                      "old_skipped": 0}
         self._api()
         self.seen = set(self._messenger_windows())  # 시작할 때 이미 떠 있던 창은 새 쪽지가 아님
         self.vfail: dict[int, int] = {}
         self.vsig: dict[int, tuple] = {}   # 보기 창: 같은 창에서 다음 쪽지를 열면 내용만 바뀜 → 2초마다 확인
         self.sig: dict[int, tuple] = {}    # 알림 창: 떠 있는 동안 내용이 바뀌면 새 쪽지
-        self.stats = {"polls": 0, "events": 0, "last_error": "", "messenger_seen_ts": 0.0, "classes": set(),
-                      "old_skipped": 0}
         self.started = time.time()   # 이보다 먼저 보낸 쪽지를 보기 창으로 다시 열면 새 쪽지로 치지 않음
 
     # ---------- Windows API ----------
@@ -172,7 +172,7 @@ class EztalkCollector(Collector):
                 if not key or key == old[0] or not old[0]:
                     continue
                 ev = parse_view(texts)
-                if not ev["ok"] and not ev["secure"] and self.vfail.get(hwnd, 0) < 3:
+                if not ev["secure"] and (not ev["ok"] or not ev["time"]) and self.vfail.get(hwnd, 0) < 5:
                     self.vfail[hwnd] = self.vfail.get(hwnd, 0) + 1   # 내용이 덜 채워졌을 수 있어 다시 읽음
                     self.vsig[hwnd] = (old[0], 0)
                     continue
@@ -192,6 +192,12 @@ class EztalkCollector(Collector):
                 ev = parse_alarm(texts)
             else:
                 ev = parse_view(texts)
+                if not ev["secure"] and (not ev["ok"] or not ev["time"]) and self.vfail.get(hwnd, 0) < 5:
+                    # 창이 막 열려 본문·보낸 시각이 아직 안 채워짐 → 다음 확인 때 다시 읽음 (최대 5번)
+                    self.vfail[hwnd] = self.vfail.get(hwnd, 0) + 1
+                    self.vsig[hwnd] = (("(덜 읽힘)",), 0)
+                    continue
+                self.vfail.pop(hwnd, None)
                 self.vsig[hwnd] = (tuple(tidy_list(texts)), time.time())
             events.append(ev)
         for d in (self.sig, self.vsig):
