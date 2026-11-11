@@ -121,17 +121,25 @@ def clean_details(raw, source: str, extra: str = "") -> list[str]:
         raw = [ln for ln in raw.splitlines()]
     if not isinstance(raw, list):
         return []
-    known = {d.lstrip("0") or "0" for d in _DIGITS.findall((source or "") + " " + (extra or ""))}
-    # '오후 3시' → '15:00' 처럼 24시간으로 바꿔 적은 시각은 지어낸 숫자가 아님
-    known |= {str(int(d) + 12) for d in list(known) if d.isdigit() and 1 <= int(d) <= 11}
-    known.add("0")   # '15:00' 의 '00' 분
-    known.add("30")  # '3시 반' → '15:30'
+    text = (source or "") + " " + (extra or "")
+    known = {d.lstrip("0") or "0" for d in _DIGITS.findall(text)}
+    # 원문에 실제로 있는 시각 표현만 24시간 표기로 바꿔 적는 것을 허용 ('오후 3시' → '15:00', '3시 반' → '3:30')
+    hours = {int(h) for h in re.findall(r"(\d{1,2})\s*(?:시|:\d{2})", text) if 0 <= int(h) <= 24}
+    hours |= {h + 12 for h in (int(x) for x in re.findall(r"(?:오후|PM|pm)\s*(\d{1,2})", text)) if 1 <= h <= 11}
+    half = bool(re.search(r"\d\s*시\s*반", text))
     out = []
     for item in raw:
         line = re.sub(r"^\s*[-•·*]\s*", "", str(item or "")).strip()
         if not line:
             continue
-        if any((d.lstrip("0") or "0") not in known for d in _DIGITS.findall(line)):
+
+        def _time_ok(m):
+            h, mm = int(m.group(1)), m.group(2)
+            ok = h in hours and (mm == "00" or (mm == "30" and half) or (mm.lstrip("0") or "0") in known)
+            return " " if ok else m.group(0)
+
+        rest = re.sub(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)", _time_ok, line)   # 확인된 시각은 숫자 검사에서 뺌
+        if any((d.lstrip("0") or "0") not in known for d in _DIGITS.findall(rest)):
             continue
         out.append(line[:300])
         if len(out) >= MAX_DETAILS:

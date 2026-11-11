@@ -352,6 +352,12 @@ class Storage:
         self.conn.commit()
         return cur.rowcount
 
+    def find_calendar_event(self, date: str, title: str, start_time: str = "") -> dict | None:
+        """같은 날·제목·시작 시각 일정 (무시한 제안 포함, 가장 최근 것)"""
+        r = self.conn.execute("SELECT * FROM calendar_events WHERE date=? AND title=? AND start_time=? "
+                              "ORDER BY id DESC LIMIT 1", (date, title, start_time or "")).fetchone()
+        return dict(r) if r else None
+
     def update_calendar_event(self, event_id: int, **fields) -> bool:
         sets = {k: v for k, v in fields.items() if k in self.CAL_FIELDS}
         if not sets:

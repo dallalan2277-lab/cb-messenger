@@ -909,7 +909,7 @@ const SRC_ICON = { mail: "✉", eztalk: "💬" };
 const fmtTime = (iso) => { if (!iso) return ""; const [d, t] = iso.split("T"); const today = new Date(); const pad = (n) => String(n).padStart(2, "0");
   const ds = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`; return (d === ds ? "" : fmtDate(d) + " ") + (t || "").slice(0, 5); };
 
-const MEMO_IMAGE_RE = /^data:image\/(?:png|jpeg|webp|bmp);base64,[a-z0-9+/=\s]+$/i;
+const MEMO_IMAGE_RE = /^data:image\/(?:png|jpeg|jpg|webp|bmp|gif);base64,[a-z0-9+/=\s]+$/i;
 function safeMemoImageUrl(value) {
   const src = String(value || "");
   return MEMO_IMAGE_RE.test(src) ? src : "";
@@ -1178,7 +1178,7 @@ async function openMemoDetail(id, warning = "") {
     catch (ex) { result = { ok: false, error: String(ex.message || ex) }; }
     if (seq !== memoDialogSeq) return;
     if (!result || !result.ok) { $("memoEventErr").textContent = (result && result.error) || "일정을 넣지 못했습니다."; button.disabled = false; button.textContent = "일정 넣기"; return; }
-    toast("일정으로 넣었습니다."); await render(); if (seq === memoDialogSeq) await openMemoDetail(memo.id);
+    toast(result.existed ? "이미 있던 같은 일정을 확정했습니다." : "일정으로 넣었습니다."); await render(); if (seq === memoDialogSeq) await openMemoDetail(memo.id);
   };
   $("memoDelete").onclick = () => { $("memoDeleteConfirm").hidden = false; $("memoDeleteConfirm").scrollIntoView({ block: "nearest" }); };
   $("memoDeleteNo").onclick = () => { $("memoDeleteConfirm").hidden = true; };
@@ -1520,20 +1520,27 @@ function bindDragAndResize() {
 /* ===================== 시작 ===================== */
 async function boot(realApi) {
   api = realApi || MockAPI();
-  try {
-    if (typeof api.memo_status === "function") memoStatus = { ...memoStatus, ...(await api.memo_status()) };
-  } catch (ex) { memoStatus.enabled = false; }
-  $("memoTab").hidden = !memoStatus.enabled;
   prefs = await api.get_prefs();
   menuLabels();
   const t = new Date(); cur = { y: t.getFullYear(), m: t.getMonth() + 1 };
   bindUI();
   await render();
+  refreshMemoStatus();              // 메모 기능 상태는 첫 화면을 그린 뒤에 (기다리지 않음)
   setTimeout(checkForUpdateSilently, 5000);
   setInterval(checkForUpdateSilently, 6 * 60 * 60 * 1000);
   setInterval(render, 60 * 1000);   // 1분마다 새 일정(메신저에서 온 제안) 반영 · 날짜 바뀜 반영
 }
-window.calendarRefresh = () => render();   // 위젯이 새 일정을 넣은 뒤 바로 다시 그리게 부름
+window.calendarRefresh = () => render();
+async function refreshMemoStatus() {
+  try {
+    if (typeof api.memo_status === "function") memoStatus = { ...memoStatus, ...(await api.memo_status()) };
+  } catch (ex) { memoStatus.enabled = false; }
+  $("memoTab").hidden = !memoStatus.enabled;
+  if (!memoStatus.enabled && sideTab === "memo") {     // 메모를 끈 채 메모 탭에 있으면 일정 탭으로
+    const t = document.querySelector('.tab[data-tab="sched"]'); if (t) t.click();
+  }
+}
+window.calendarSettingsChanged = () => { refreshMemoStatus(); render(); };   // 설정 창에서 저장한 뒤   // 위젯이 새 일정을 넣은 뒤 바로 다시 그리게 부름
 if (window.pywebview && window.pywebview.api) boot(window.pywebview.api);
 else window.addEventListener("pywebviewready", () => boot(window.pywebview.api));
 setTimeout(() => { if (!api) boot(null); }, 800);   // 일반 브라우저: 미리보기 모드

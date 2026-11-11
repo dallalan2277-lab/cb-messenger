@@ -321,3 +321,46 @@ def test_claude_image_stream_json_shape_and_result(tmp_path, monkeypatch):
     assert payload["message"]["content"][1] == {"type": "text", "text": "user"}
     assert "ANTHROPIC_API_KEY" not in kwargs["env"]
     assert provider.last_usage == {"input_tokens": 7, "output_tokens": 2}
+
+
+# ---------- GPT 교차 검토(2026-11-11) 지적 ----------
+def test_memo_status_never_builds_provider_or_touches_network(tmp_path, monkeypatch):
+    """캘린더 첫 화면을 막지 않게: memo_status 는 AI 를 만들지 않고 설정 이름만 봄"""
+    settings = _settings()
+    api, _p, _d = _api(tmp_path, monkeypatch, settings=settings)
+
+    def boom(*a, **k):
+        raise AssertionError("memo_status 가 AI 를 만들면 안 됨")
+
+    monkeypatch.setattr(calendar_api, "create_provider", boom)
+    settings.analyze_model, settings.fallback_model = "chatgpt_plan", ""
+    assert api.memo_status()["image_ai"] is True
+    settings.analyze_model, settings.fallback_model = "openai:gpt-5", "claude_cli:opus"
+    assert api.memo_status()["image_ai"] is True           # 대체 모델이 이미지 가능
+    settings.analyze_model, settings.fallback_model = "fake", ""
+    st = api.memo_status()
+    assert st["image_ai"] is False and st["image_ai_reason"]
+
+
+def test_to_event_confirms_existing_suggestion_instead_of_false_success(tmp_path, monkeypatch):
+    api, _p, _d = _api(tmp_path, monkeypatch)
+    memo = api.memo_create({"mode": "text", "text": "가상 연수 2026-11-20 15:00", "kind": ""})["memo"]
+    sugg = [e for e in api._storage.calendar_events("2026-11-20", "2026-11-20") if e["status"] == "suggested"]
+    assert len(sugg) == 1
+    made = api.memo_to_event(memo["id"], {"date": "2026-11-20", "start_time": "15:00", "title": "가상 연수"})
+    assert made["ok"] and made["existed"] is True and made["id"] == sugg[0]["id"]
+    evs = api._storage.calendar_events("2026-11-20", "2026-11-20")
+    assert len(evs) == 1 and evs[0]["status"] == "confirmed"
+    api.dismiss(evs[0]["id"])                               # 무시했던 일정과 겹쳐도 다시 확정되어 보임
+    again = api.memo_to_event(memo["id"], {"date": "2026-11-20", "start_time": "15:00", "title": "가상 연수"})
+    assert again["ok"] and api._storage.calendar_events("2026-11-20", "2026-11-20")[0]["status"] == "confirmed"
+
+
+def test_reanalyze_uses_memo_creation_time_for_relative_dates(tmp_path, monkeypatch):
+    api, provider, _d = _api(tmp_path, monkeypatch)
+    memo = api.memo_create({"mode": "text", "text": "내일 가상 회의", "kind": ""})["memo"]
+    api._storage.conn.execute("UPDATE memos SET created_at='2026-11-10 09:00:00' WHERE id=?", (memo["id"],))
+    api._storage.conn.commit()
+    assert api.memo_reanalyze(memo["id"])["ok"]
+    sent = json.loads(provider.text_calls[-1][1])
+    assert sent["current_time"].startswith("2026-11-10 09:00")

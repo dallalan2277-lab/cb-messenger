@@ -245,6 +245,9 @@ class CalendarAPI:
 
     def _settings_saved(self) -> dict:
         """설정 창에서 저장했을 때: 감시를 새 설정으로 다시 시작하고 화면을 다시 그림"""
+        host = self._host
+        if host is not None and hasattr(host, "settings_changed"):
+            host.settings_changed()        # 메모 탭 보이기·기본 읽는 방식 등 화면 상태 다시 읽기
         r = self.restart_watch()
         host = self._host
         if host is not None and hasattr(host, "refresh"):
@@ -447,18 +450,13 @@ class CalendarAPI:
         except Exception as e:  # noqa: BLE001
             can_ocr, ocr_reason = False, str(e)
 
-        spec = str(getattr(settings, "analyze_model", "") or "")
-        cache = self._memo_image_cache
-        if cache and cache[1] == spec and time.monotonic() - cache[0] < 600:
-            image_ai, image_reason = cache[2], cache[3]
-        else:
-            try:
-                provider = create_provider(settings, settings.analyze_model)
-                image_ai = bool(getattr(provider, "supports_images", False))
-                image_reason = "" if image_ai else "현재 분석 AI는 이미지를 받을 수 없습니다."
-            except Exception as e:  # noqa: BLE001  (로그인·설정 오류도 화면에 안내)
-                image_ai, image_reason = False, str(e)[:300]
-            self._memo_image_cache = (time.monotonic(), spec, image_ai, image_reason)
+        # 캘린더 첫 화면을 막지 않도록 AI 를 만들거나 인터넷에 묻지 않고, 설정의 제공자 이름만 봄
+        # (로그인·한도 문제는 실제로 보낼 때 알려 줌)
+        from ..llm.factory import parse_spec
+        image_kinds = ("chatgpt_plan", "chatgpt", "claude_cli", "claude_code")
+        names = [parse_spec(str(getattr(settings, key, "") or ""))[0] for key in ("analyze_model", "fallback_model")]
+        image_ai = any(n in image_kinds for n in names if n)
+        image_reason = "" if image_ai else "지금 분석 AI(ChatGPT 구독·Claude 구독이 아닌 연결)는 이미지를 받지 못합니다."
         return {
             "enabled": self._memo_is_enabled(settings),
             "default_mode": mode,
@@ -776,7 +774,7 @@ class CalendarAPI:
                 mime=mime,
                 kind=forced_kind,
                 role=settings.user_role,
-                now=datetime.now(),
+                now=_memo_created_at(row),     # '내일' 같은 상대 날짜가 다시 정리할 때 바뀌지 않게
                 redact_fn=redact_fn,
             )
         except Exception as e:  # noqa: BLE001
@@ -840,14 +838,21 @@ class CalendarAPI:
         except (TypeError, ValueError) as e:
             return {"ok": False, "error": str(e)}
         with self._lock:
-            event_id = self._storage.add_calendar_event(
-                **event,
-                status="confirmed",
-                origin="memo",
-                memo_id=memo_id,
-            )
+            same = self._storage.find_calendar_event(event["date"], event["title"], event["start_time"])
+            if same:
+                # 같은 날·제목·시각 일정이 이미 있음 (AI 제안이었거나 무시했던 것 포함) → 새로 만들지 않고 확정
+                self._storage.update_calendar_event(same["id"], status="confirmed")
+                if not same.get("memo_id"):
+                    self._storage.conn.execute("UPDATE calendar_events SET memo_id=? WHERE id=?", (memo_id, same["id"]))
+                    self._storage.conn.commit()
+                event_id, existed = same["id"], True
+            else:
+                event_id = self._storage.add_calendar_event(**event, status="confirmed", origin="memo", memo_id=memo_id)
+                existed = False
+        if not event_id:
+            return {"ok": False, "error": "일정을 넣지 못했습니다."}
         self._memo_refresh()
-        return {"ok": True, "error": "", "id": event_id}
+        return {"ok": True, "error": "", "id": event_id, "existed": existed}
 
     def memo_delete(self, memo_id: int) -> dict:
         try:
@@ -1010,6 +1015,14 @@ def _public(e: dict) -> dict:
     out = {k: e.get(k) for k in keys}
     out["sender"] = e.get("msg_sender") or ""
     return out
+
+
+def _memo_created_at(row: dict) -> datetime:
+    """메모를 만든 시각 (상대 날짜 기준). 읽을 수 없으면 지금."""
+    try:
+        return datetime.fromisoformat(str(row.get("created_at") or "").replace("T", " ")[:19])
+    except ValueError:
+        return datetime.now()
 
 
 def _decode_image_data_url(value: str) -> tuple[bytes, str, str]:

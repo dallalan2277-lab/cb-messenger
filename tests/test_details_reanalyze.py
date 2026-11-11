@@ -163,6 +163,14 @@ def test_api_reanalyze_uses_settings_and_reports_errors(tmp_path, monkeypatch):
     assert "찾을 수 없습니다" in api.reanalyze(99999)["error"]
 
 
+def test_time_exception_does_not_let_other_numbers_through():
+    """시각 예외가 인원·금액 같은 다른 숫자에는 적용되지 않음 (GPT 교차 검토 지적)"""
+    src = "대상은 3명입니다. 오후 3시 회의"
+    assert clean_details(["대상: 15명", "비용: 30만원", "시각: 15:00", "시각: 15:30"], src) == ["시각: 15:00"]
+    assert clean_details(["시각: 15:30"], "오후 3시 반 회의") == ["시각: 15:30"]
+    assert clean_details(["시각: 09:00"], "9시 출발") == ["시각: 09:00"]
+
+
 def test_clean_details_accepts_24h_conversion_of_pm_time():
     src = "11월 18일(수) 오후 3시, 본관 2층 회의실"
     assert clean_details(["일시: 2026-11-18 15:00"], src, "2026-11-18") == ["일시: 2026-11-18 15:00"]
