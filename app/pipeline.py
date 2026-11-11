@@ -134,9 +134,10 @@ class Pipeline:
             if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", e.date or ""):
                 continue
             note = e.note or a.summary
-            if self.storage.add_calendar_event(title=e.title, date=e.date, start_time=e.start_time,
-                                               end_time=e.end_time, location=e.location, note=note,
-                                               status=status, origin="ai", message_id=m.id):
+            result = self.storage.suggest_event(title=e.title, date=e.date, start_time=e.start_time,
+                                                end_time=e.end_time, location=e.location, note=note,
+                                                status=status, origin="ai", message_id=m.id)
+            if result["action"] in ("created", "asked"):
                 n += 1
         return n
 

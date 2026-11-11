@@ -223,6 +223,7 @@
   `Storage` 첫 백업: 0.9.0 DB(user_version 0)를 처음 열 때 구조 변경 전에 `data/backup/messages-before-0.10.db` 로 SQLite 백업, 실패하면 user_version 을 안 남겨 다음에 다시 시도, 동시에 열어도 먼저 만든 백업을 덮지 않음 (Sol 검토 2건 반영) /
   `app/event_match.py` 중복 판정 규칙(same/maybe/different, AI 없음, Terra 작성·Claude 검토). 아직 어디서도 쓰지 않음 → 다음 A2a(event_sources·dup_of 저장).
 - A2a 완료: `Storage.suggest_event`(AI·메모 일정 제안의 새 입구: created/linked/asked/skipped, 한 트랜잭션) · `resolve_duplicate`(replace/separate/ignore) · 새 표 `event_sources`(일정↔원문 여러 개) · 새 칸 `calendar_events.dup_of`(ON DELETE SET NULL). Terra 작성, Sol 검토 3건 반영(같은 원문 속 오전·오후 회의, 묻는 중인 제안에 새 시각 채우기, add_message 실패 뒤 열린 트랜잭션 rollback). **아직 pipeline·화면은 옛 add_calendar_event 를 씀** → 다음 A2b(진입 경로 5곳 + confirm_all).
+- A2b 완료: pipeline `_suggest_events`(reanalyze 포함)·메모 정리·메모 다시 정리가 `suggest_event` 사용, `memo_to_event` 는 `Storage.add_event_from_user`(같은 일 1개면 그 일정 확정, 아니면 새로 확정 + 비슷한 AI 제안에 dup_of), `confirm_all` 은 dup_of 제안 건너뜀, `confirm` 은 dup_of 제안을 '따로 등록', API `resolve_duplicate`·`event_sources`, `_public` 에 dup_of. **화면(calendar.html)은 아직 dup_of 를 모름** → 다음 A2c(묻기 3버튼·관련 원문·MockAPI).
 - A2 때 주의: 시각 없는 새 일정은 같은 날 오전·오후 같은 이름 회의 둘 다 same 으로 나옴 → 후보가 2개 이상이면 자동으로 묶지 말고 묻기.
 
 ## 3. 지켜야 할 설계 규칙

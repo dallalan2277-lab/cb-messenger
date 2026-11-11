@@ -629,7 +629,7 @@ class CalendarAPI:
                 status="ok",
             )
             for event in result.events:
-                self._storage.add_calendar_event(
+                self._storage.suggest_event(
                     title=event.title,
                     date=event.date,
                     start_time=event.start_time,
@@ -798,7 +798,7 @@ class CalendarAPI:
         with self._lock:
             self._storage.update_memo(memo_id, **changes)
             for event in result.events:
-                self._storage.add_calendar_event(
+                self._storage.suggest_event(
                     title=event.title,
                     date=event.date,
                     start_time=event.start_time,
@@ -838,27 +838,9 @@ class CalendarAPI:
         except (TypeError, ValueError) as e:
             return {"ok": False, "error": str(e)}
         with self._lock:
-            same = self._storage.find_calendar_event(event["date"], event["title"], event["start_time"])
-            if same:
-                # 같은 날·제목·시각 일정이 이미 있음 (AI 제안이었거나 무시했던 것 포함) → 새로 만들지 않고 확정
-                # 사람이 적어 넣은 끝 시각·장소는 살리고, 비어 있던 메모(note)는 채움
-                merge = {"status": "confirmed"}
-                if event.get("end_time"):
-                    merge["end_time"] = event["end_time"]
-                if not (same.get("note") or "").strip() and event.get("note"):
-                    merge["note"] = event["note"]
-                self._storage.update_calendar_event(same["id"], **merge)
-                if not same.get("memo_id"):
-                    self._storage.conn.execute("UPDATE calendar_events SET memo_id=? WHERE id=?", (memo_id, same["id"]))
-                    self._storage.conn.commit()
-                event_id, existed = same["id"], True
-            else:
-                event_id = self._storage.add_calendar_event(**event, status="confirmed", origin="memo", memo_id=memo_id)
-                existed = False
-        if not event_id:
-            return {"ok": False, "error": "일정을 넣지 못했습니다."}
+            result = self._storage.add_event_from_user(event, memo_id=memo_id)
         self._memo_refresh()
-        return {"ok": True, "error": "", "id": event_id, "existed": existed}
+        return {"ok": True, "error": "", **result}
 
     def memo_delete(self, memo_id: int) -> dict:
         try:
@@ -896,7 +878,19 @@ class CalendarAPI:
 
     @_locked
     def confirm(self, event_id: int) -> dict:
-        return {"ok": self._storage.update_calendar_event(int(event_id), status="confirmed")}
+        event_id = int(event_id)
+        row = self._storage.conn.execute("SELECT dup_of FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        if row and row["dup_of"] is not None:
+            return self._storage.resolve_duplicate(event_id, "separate")
+        return {"ok": self._storage.update_calendar_event(event_id, status="confirmed")}
+
+    @_locked
+    def resolve_duplicate(self, event_id: int, action: str) -> dict:
+        return self._storage.resolve_duplicate(int(event_id), action)
+
+    @_locked
+    def event_sources(self, event_id: int) -> list[dict]:
+        return self._storage.event_sources(int(event_id))
 
     @_locked
     def dismiss(self, event_id: int) -> dict:
@@ -904,8 +898,14 @@ class CalendarAPI:
 
     @_locked
     def confirm_all(self) -> dict:
-        n = sum(1 for e in self.suggestions() if self._storage.update_calendar_event(e["id"], status="confirmed"))
-        return {"ok": True, "count": n}
+        n = skipped = 0
+        for e in self.suggestions():
+            if e["dup_of"] is not None and self._storage.conn.execute(
+                    "SELECT 1 FROM calendar_events WHERE id=?", (e["dup_of"],)).fetchone():
+                skipped += 1
+            elif self._storage.update_calendar_event(e["id"], status="confirmed"):
+                n += 1
+        return {"ok": True, "count": n, "skipped": skipped}
 
     # ---------- 다른 캘린더 파일에서 일정 가져오기 ----------
     _IMPORT_TYPES = ("일정 파일 (*.ics;*.xlsx;*.csv;*.tsv;*.txt)", "모든 파일 (*.*)")
@@ -1017,7 +1017,7 @@ class CalendarAPI:
 
 def _public(e: dict) -> dict:
     keys = ("id", "title", "date", "start_time", "end_time", "location", "note", "status", "origin", "message_id",
-            "memo_id")
+            "memo_id", "dup_of")
     out = {k: e.get(k) for k in keys}
     out["sender"] = e.get("msg_sender") or ""
     return out

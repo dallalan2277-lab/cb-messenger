@@ -399,6 +399,48 @@ class Storage:
                         "candidates": [match[0]["id"] for match in matches]}
             return {"action": "created", "event_id": event_id}
 
+    def add_event_from_user(self, event: dict, *, memo_id: int) -> dict:
+        """메모에서 직접 넣은 일정과 관련 제안을 한 트랜잭션으로 처리한다."""
+        if self.conn.in_transaction:
+            self.conn.commit()
+        with self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            rows = [dict(row) for row in self.conn.execute(
+                "SELECT * FROM calendar_events WHERE date=? AND dup_of IS NULL ORDER BY id",
+                (event["date"],))]
+            matches = [(row, classify(event, row)[0]) for row in rows]
+            same = [row for row, kind in matches if kind == "same"]
+            if len(same) == 1:
+                old = same[0]
+                self.conn.execute(
+                    "UPDATE calendar_events SET status='confirmed', end_time=?, note=?, memo_id=?, "
+                    "updated_at=datetime('now','localtime') WHERE id=?",
+                    (event.get("end_time") or old["end_time"],
+                     old["note"] if (old["note"] or "").strip() else event.get("note", ""),
+                     old["memo_id"] or memo_id, old["id"]))
+                self.conn.execute("INSERT OR IGNORE INTO event_sources(event_id, kind, ref_id, relation) "
+                                  "VALUES (?, 'memo', ?, 'same')", (old["id"], memo_id))
+                return {"id": old["id"], "existed": True}
+
+            cur = self.conn.execute(
+                "INSERT INTO calendar_events(title, date, start_time, end_time, location, note, status, origin, memo_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'confirmed', 'memo', ?)",
+                (event["title"], event["date"], event.get("start_time", ""), event.get("end_time", ""),
+                 event.get("location", ""), event.get("note", ""), memo_id))
+            event_id = cur.lastrowid
+            self.conn.execute("INSERT OR IGNORE INTO event_sources(event_id, kind, ref_id, relation) "
+                              "VALUES (?, 'memo', ?, 'origin')", (event_id, memo_id))
+            targeted = {r[0] for r in self.conn.execute(
+                "SELECT DISTINCT dup_of FROM calendar_events WHERE dup_of IS NOT NULL")}
+            # 이미 다른 묻기 제안이 가리키는 제안은 건드리지 않음 (dup_of 는 한 단계만)
+            related = [row["id"] for row, kind in matches if kind in ("same", "maybe")
+                       and row["status"] == "suggested" and row["origin"] in ("ai", "memo")
+                       and row["id"] not in targeted]
+            for related_id in related:
+                self.conn.execute("UPDATE calendar_events SET dup_of=?, updated_at=datetime('now','localtime') "
+                                  "WHERE id=?", (event_id, related_id))
+            return {"id": event_id, "existed": False, "related": related}
+
     def resolve_duplicate(self, event_id: int, action: str) -> dict:
         if self.conn.in_transaction:
             self.conn.commit()   # 이 연결에 남은 작업이 있으면 먼저 확정 (중첩 BEGIN 오류·남의 작업 되돌리기 방지)
