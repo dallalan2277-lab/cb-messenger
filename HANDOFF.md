@@ -217,6 +217,13 @@
   (`eztalk_collector`): 새로 뜬 보기 창이 본문 없음 또는 시각 없음이면 넘기고 다시 읽음(최대 5번). stats 를 창 찾기보다 먼저 만들어 시작 때 AttributeError 나던 것 고침.
 - 이미 잘못 저장된 쪽지는 자동으로 고쳐지지 않음 (메신저 창으로만 원문을 다시 읽을 수 있음).
 
+### 2-14. 능동 비서 '오늘 할 일 순서' + 중복 일정 제안 (브랜치 feature/today-plan, 0.10.0-beta.N) — 2026-11-11~
+- 계획: `docs/계획_능동비서_중복제안.md` (단계표·DB 규칙·Codex 검토 기록 27건). 시험판만 GitHub 에 (브랜치 + pre-release), main·정식 latest 는 사용자 승인 전엔 안 건드림.
+- 1단계 완료: 버전 0.10.0-beta.1 / `updater.check_latest` 가 태그 이름이 시험판(`-`)이면 건너뜀 (단, 이미 배포된 0.9.0 엔 이 방어가 없으니 Release 의 pre-release 표시는 꼭 확인) /
+  `Storage` 첫 백업: 0.9.0 DB(user_version 0)를 처음 열 때 구조 변경 전에 `data/backup/messages-before-0.10.db` 로 SQLite 백업, 실패하면 user_version 을 안 남겨 다음에 다시 시도, 동시에 열어도 먼저 만든 백업을 덮지 않음 (Sol 검토 2건 반영) /
+  `app/event_match.py` 중복 판정 규칙(same/maybe/different, AI 없음, Terra 작성·Claude 검토). 아직 어디서도 쓰지 않음 → 다음 A2a(event_sources·dup_of 저장).
+- A2 때 주의: 시각 없는 새 일정은 같은 날 오전·오후 같은 이름 회의 둘 다 same 으로 나옴 → 후보가 2개 이상이면 자동으로 묶지 말고 묻기.
+
 ## 3. 지켜야 할 설계 규칙
 
 0. **모델 선택은 항상 `create_provider(settings, spec)` / `build_pipeline(settings)` 경유**. spec 형식 `제공자[:모델]`.

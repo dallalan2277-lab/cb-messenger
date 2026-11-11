@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
 import sqlite3
 from pathlib import Path
 
 from .models import Analysis, Event, Message
+
+log = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -93,13 +97,74 @@ CREATE TABLE IF NOT EXISTS usage (
 
 
 class Storage:
+    # DB 구조 번호 (PRAGMA user_version). 0.9.0 이하는 0. 0.10 시험판부터 10.
+    # 0.9.0 은 이 값을 건드리지 않으므로, 시험판 → 0.9.0 → 시험판으로 오가도 백업은 처음 한 번만.
+    SCHEMA_VERSION = 10
+
     def __init__(self, db_path: str):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        existed = db_path != ":memory:" and os.path.isfile(db_path) and os.path.getsize(db_path) > 0
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
+        backup_ok = True
+        if existed:
+            backup_ok = self._backup_before_upgrade(db_path)   # 구조를 바꾸기(새 표 포함) 전에
         self.conn.executescript(SCHEMA)
         self._migrate()
+        # 백업이 실패했으면 구조 번호를 남기지 않음 → 다음에 켤 때 다시 백업을 시도
+        # (새 칸·새 표는 추가만 하므로, 그때 백업되는 DB 도 0.9.0 에서 그대로 열림)
+        if backup_ok and self.conn.execute("PRAGMA user_version").fetchone()[0] < self.SCHEMA_VERSION:
+            self.conn.execute(f"PRAGMA user_version = {int(self.SCHEMA_VERSION)}")
+            self.conn.commit()
+
+    @staticmethod
+    def backup_path(db_path: str) -> Path:
+        p = Path(db_path)
+        return p.parent / "backup" / f"{p.stem}-before-0.10{p.suffix or '.db'}"
+
+    def _backup_before_upgrade(self, db_path: str) -> bool:
+        """예전(0.9.0 이하) DB 를 시험판 구조로 바꾸기 직전에 한 번만 통째로 백업.
+        SQLite 백업 기능으로 임시 파일에 쓴 뒤 이름을 바꿔서, 도중에 꺼져도 반쪽 백업이 남지 않게 함.
+        두 프로그램이 동시에 처음 열어도 먼저 만든 백업을 덮어쓰지 않음 (임시 파일 이름을 프로세스마다 다르게,
+        이미 있으면 버림). 실패해도 프로그램은 그대로 열림 (로그만). 백업이 있거나 필요 없으면 True."""
+        tmp = None
+        try:
+            if self.conn.execute("PRAGMA user_version").fetchone()[0] >= self.SCHEMA_VERSION:
+                return True
+            dest = self.backup_path(db_path)
+            if dest.exists():
+                return True   # 처음 백업을 덮어쓰지 않음
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            tmp = dest.with_name(f"{dest.name}.{os.getpid()}.tmp")
+            if tmp.exists():
+                tmp.unlink()
+            out = sqlite3.connect(str(tmp))
+            try:
+                self.conn.backup(out)
+            finally:
+                out.close()
+            try:
+                os.link(tmp, dest)          # 이미 있으면 실패 (덮어쓰지 않음), 윈도·리눅스 모두
+            except FileExistsError:
+                pass                        # 다른 프로그램이 먼저 만듦 → 그것을 둠
+            except OSError:
+                if dest.exists():
+                    raise
+                os.rename(tmp, dest)        # 하드 링크를 못 쓰는 드라이브
+                tmp = None
+            if tmp is not None:
+                tmp.unlink()
+            log.info("DB 구조를 바꾸기 전에 백업했습니다: %s", dest)
+            return True
+        except Exception as e:  # noqa: BLE001
+            log.warning("DB 백업을 만들지 못했습니다 (프로그램은 계속): %s", e)
+            try:
+                if tmp is not None and tmp.exists():
+                    tmp.unlink()
+            except OSError:
+                pass
+            return False
 
     # 예전 버전 DB 에 새 칸 추가 (데이터는 그대로)
     _NEW_COLUMNS = {
