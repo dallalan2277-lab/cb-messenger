@@ -96,6 +96,32 @@ CREATE TABLE IF NOT EXISTS mail_cursor (
     updated_at TEXT DEFAULT (datetime('now', 'localtime'))
 );
 
+-- 오늘 할 일 순서 (하루 2번 정리). slot: morning | noon | manual
+CREATE TABLE IF NOT EXISTS daily_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_date TEXT NOT NULL,
+    slot TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'running',     -- running | done
+    claimed_at TEXT,
+    finished_at TEXT,
+    source TEXT DEFAULT '',                    -- rule | ai
+    provider TEXT DEFAULT '',
+    model TEXT DEFAULT '',
+    data TEXT DEFAULT '{}',
+    notified INTEGER DEFAULT 0,
+    UNIQUE(plan_date, slot)
+);
+
+-- 할 일 상태: kind message|event, state done|snoozed(until 날짜까지 숨김). 소식의 완료는 messages.done 을 씀
+CREATE TABLE IF NOT EXISTS todo_state (
+    kind TEXT NOT NULL,
+    ref_id INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    until TEXT DEFAULT '',
+    updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+    PRIMARY KEY(kind, ref_id)
+);
+
 CREATE TABLE IF NOT EXISTS usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     purpose TEXT NOT NULL,          -- analyze | digest | memo
@@ -770,6 +796,123 @@ class Storage:
         return [dict(r) for r in rows]
 
     # ---- 받은 소식 (캘린더 옆 통합 목록) ----
+    # ---- 오늘 할 일 순서 ----
+    def _begin(self):
+        if self.conn.in_transaction:
+            self.conn.commit()
+
+    def claim_plan(self, plan_date: str, slot: str, now_iso: str, stale_minutes: int = 15) -> bool:
+        """이 (날짜, 회차) 정리를 내가 맡음. 두 프로그램이 동시에 떠도 한쪽만 True.
+        이미 끝난 회차는 False, 정리 중에 꺼져 오래 'running' 으로 남은 것은 다시 맡을 수 있음.
+        manual(사용자가 누른 '다시 정리')은 끝난 것도 다시 맡음."""
+        self._begin()
+        stale = f"-{int(stale_minutes)} minutes"
+        with self.conn:
+            cur = self.conn.execute(
+                "INSERT OR IGNORE INTO daily_plans(plan_date, slot, state, claimed_at) VALUES (?,?,'running',?)",
+                (plan_date, slot, now_iso))
+            if cur.rowcount:
+                return True
+            if slot == "manual":
+                cur = self.conn.execute(
+                    "UPDATE daily_plans SET state='running', claimed_at=? WHERE plan_date=? AND slot='manual' "
+                    "AND (state='done' OR claimed_at IS NULL OR claimed_at <= datetime(?, ?))",
+                    (now_iso, plan_date, now_iso, stale))
+            else:
+                cur = self.conn.execute(
+                    "UPDATE daily_plans SET claimed_at=? WHERE plan_date=? AND slot=? AND state='running' "
+                    "AND (claimed_at IS NULL OR claimed_at <= datetime(?, ?))",
+                    (now_iso, plan_date, slot, now_iso, stale))
+            return cur.rowcount > 0
+
+    def finish_plan(self, plan_date: str, slot: str, data: dict, source: str, now_iso: str,
+                    provider: str = "", model: str = "") -> None:
+        self._begin()
+        with self.conn:
+            self.conn.execute(
+                "UPDATE daily_plans SET state='done', finished_at=?, source=?, provider=?, model=?, data=?, notified=0 "
+                "WHERE plan_date=? AND slot=?",
+                (now_iso, source, provider, model, json.dumps(data, ensure_ascii=False), plan_date, slot))
+
+    def get_plan(self, plan_date: str, slot: str | None = None) -> dict | None:
+        """그 날의 (회차) 정리. 회차를 안 주면 가장 최근에 끝난 것."""
+        if slot:
+            r = self.conn.execute("SELECT * FROM daily_plans WHERE plan_date=? AND slot=? AND state='done'",
+                                  (plan_date, slot)).fetchone()
+        else:
+            r = self.conn.execute("SELECT * FROM daily_plans WHERE plan_date=? AND state='done' "
+                                  "ORDER BY finished_at DESC, id DESC LIMIT 1", (plan_date,)).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        try:
+            d["data"] = json.loads(d.get("data") or "{}")
+        except ValueError:
+            d["data"] = {}
+        return d
+
+    def last_plan_finished_before(self, now_iso: str) -> str | None:
+        r = self.conn.execute("SELECT MAX(finished_at) FROM daily_plans WHERE state='done' AND finished_at < ?",
+                              (now_iso,)).fetchone()
+        return r[0] if r and r[0] else None
+
+    def mark_plan_notified(self, plan_date: str, slot: str) -> bool:
+        """알림은 이걸 0→1 로 바꾼 쪽만 보냄 (두 번 안 나가게)"""
+        self._begin()
+        with self.conn:
+            cur = self.conn.execute("UPDATE daily_plans SET notified=1 WHERE plan_date=? AND slot=? AND notified=0",
+                                    (plan_date, slot))
+            return cur.rowcount > 0
+
+    def set_todo(self, kind: str, ref_id: int, state: str, until: str = "") -> None:
+        if kind not in ("message", "event") or state not in ("done", "snoozed"):
+            raise ValueError("할 일 상태를 확인해 주세요.")
+        self.conn.execute(
+            "INSERT INTO todo_state(kind, ref_id, state, until) VALUES (?,?,?,?) "
+            "ON CONFLICT(kind, ref_id) DO UPDATE SET state=excluded.state, until=excluded.until, "
+            "updated_at=datetime('now','localtime')", (kind, int(ref_id), state, until or ""))
+        self.conn.commit()
+
+    def clear_todo(self, kind: str, ref_id: int) -> bool:
+        cur = self.conn.execute("DELETE FROM todo_state WHERE kind=? AND ref_id=?", (kind, int(ref_id)))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def todo_states(self) -> dict:
+        return {(r["kind"], r["ref_id"]): {"state": r["state"], "until": r["until"] or ""}
+                for r in self.conn.execute("SELECT kind, ref_id, state, until FROM todo_state")}
+
+    def plan_messages(self, since_iso: str, deadline_from: str, deadline_to: str) -> list[dict]:
+        """오늘 할 일 후보 소식: 처리 안 했고(done=0), 가장 최근 분석이 AI 분석(규칙 생략 아님)이며,
+        마감이 deadline_from~deadline_to(YYYY-MM-DD) 이거나 since_iso 이후에 받은 것."""
+        sql = ("SELECT m.id, m.sender, m.subject, m.source, m.received_at, "
+               "a.importance, a.category, a.summary, a.action_items, a.deadline, a.provider, a.school_relevance "
+               "FROM messages m JOIN analyses a ON a.id = (SELECT MAX(id) FROM analyses WHERE message_id = m.id) "
+               "WHERE m.done = 0 AND a.provider != 'rule' AND ("
+               "(a.deadline GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND substr(a.deadline, 1, 10) BETWEEN ? AND ?)"
+               " OR (? != '' AND m.received_at >= ?)) ORDER BY m.received_at DESC")
+        out = []
+        for r in self.conn.execute(sql, (deadline_from, deadline_to, since_iso or "", since_iso or "")):
+            d = dict(r)
+            try:
+                d["action_items"] = json.loads(d["action_items"] or "[]")
+            except ValueError:
+                d["action_items"] = []
+            out.append(d)
+        return out
+
+    def messages_linked_to_events(self, event_ids) -> set:
+        """이 일정들에 원문으로 연결된 메시지 id (같은 일을 할 일과 일정으로 두 번 보이지 않게)"""
+        ids = [int(i) for i in event_ids]
+        if not ids:
+            return set()
+        q = ",".join("?" * len(ids))
+        linked = {r[0] for r in self.conn.execute(
+            f"SELECT ref_id FROM event_sources WHERE kind='message' AND event_id IN ({q})", ids)}
+        linked |= {r[0] for r in self.conn.execute(
+            f"SELECT message_id FROM calendar_events WHERE message_id IS NOT NULL AND id IN ({q})", ids)}
+        return linked
+
     def feed(self, *, source: str = "", only_open: bool = True, school_only: bool = False,
              limit: int = 100, since: str = "", order: str = "importance") -> list[dict]:
         """order: importance(처리 안 한 것 먼저·긴급→중요→참고·최신) | recent(받은 시각 최신순)"""
