@@ -1065,6 +1065,10 @@ function startRowDrag(ev, w, heights, gap) {
   const minRow = rowHeightForLines(1, calendarMetrics());
   const before = { layout: prefs.calendar_layout, px: prefs.calendar_row_px };
   rowDrag = { moved: false, pending: false, px: 0 };
+  // 끄는 동안 격자가 짧아져도 스크롤 위치가 저절로 당겨지지 않게, 줄어든 만큼 아래 여백을 잠시 둔다.
+  // (안 그러면 스크롤을 내린 채 위로 끌 때 gridTop 기준이 어긋나 경계가 마우스를 못 따라감)
+  const gridScroll = $("gridScroll");
+  const startGridH = $("grid").offsetHeight;
   document.body.classList.add("row-resizing");
   const onMove = (e) => {
     const boundary = e.clientY - gridTop;                 // 격자 맨 위에서 끄는 경계까지
@@ -1076,6 +1080,8 @@ function startRowDrag(ev, w, heights, gap) {
       if (!rowDrag) return;
       rowDrag.pending = false;
       prefs.calendar_layout = "custom"; prefs.calendar_row_px = rowDrag.px;
+      const n = heights.length;
+      gridScroll.style.paddingBottom = `${Math.max(0, startGridH - (n * rowDrag.px + (n - 1) * gap)).toFixed(2)}px`;
       layoutGrid();
     });
   };
@@ -1083,6 +1089,7 @@ function startRowDrag(ev, w, heights, gap) {
     document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", onUp);
     document.removeEventListener("pointercancel", onUp);
     document.body.classList.remove("row-resizing");
+    gridScroll.style.paddingBottom = "";
     const done = rowDrag; rowDrag = null;
     if (!done || !done.moved) return;
     try {

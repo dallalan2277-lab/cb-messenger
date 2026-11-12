@@ -11,6 +11,7 @@ import functools
 import io
 import json
 import logging
+import math
 import re
 import threading
 import time
@@ -125,7 +126,7 @@ class CalendarAPI:
             changes["calendar_lines"] = DEFAULT_PREFS["calendar_lines"]
         if "calendar_row_px" in changes:
             v = changes["calendar_row_px"]
-            if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v:
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
                 changes["calendar_row_px"] = DEFAULT_PREFS["calendar_row_px"]
             else:
                 changes["calendar_row_px"] = int(min(600, max(40, round(v))))

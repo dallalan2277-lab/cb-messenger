@@ -65,6 +65,8 @@ def test_expanded_layout_sizes_every_week_by_chosen_lines():
     ("120", DEFAULT_PREFS["calendar_row_px"]),
     (True, DEFAULT_PREFS["calendar_row_px"]),
     (float("nan"), DEFAULT_PREFS["calendar_row_px"]),
+    (float("inf"), DEFAULT_PREFS["calendar_row_px"]),
+    (None, DEFAULT_PREFS["calendar_row_px"]),
 ])
 def test_custom_row_height_is_clamped(tmp_path, px, expected):
     """주 사이 경계를 끌어 정한 칸 높이(직접 맞춤)는 40~600 정수로만 저장."""
