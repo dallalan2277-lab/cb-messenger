@@ -254,3 +254,12 @@ def test_first_plan_counts_last_day_messages_as_new(db):
     msg(db, received="2026-11-10 08:00")                   # 이틀 전 → 새 소식 아님
     data = tp.run_plan(db, NOW, "morning")
     assert [x["ref_id"] for x in data["items"]] == [recent]
+
+
+def test_new_since_last_plan_with_t_format_received_at(db):
+    """실제 수집기는 받은 시각을 '2026-11-12T08:10:00' 처럼 T 로 씀 — 같은 날이라도 정리 전에 받은 것은 새 소식 아님"""
+    before = msg(db, received="2026-11-12T08:10:00")
+    after = msg(db, received="2026-11-12T08:40:00")
+    items, _, _ = tp.collect(db, NOW, last_plan_at="2026-11-12 08:30:00")
+    ids = [it.ref_id for it in items]
+    assert after in ids and before not in ids

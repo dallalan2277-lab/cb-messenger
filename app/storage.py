@@ -890,7 +890,8 @@ class Storage:
                "FROM messages m JOIN analyses a ON a.id = (SELECT MAX(id) FROM analyses WHERE message_id = m.id) "
                "WHERE m.done = 0 AND a.provider != 'rule' AND ("
                "(a.deadline GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND substr(a.deadline, 1, 10) BETWEEN ? AND ?)"
-               " OR (? != '' AND m.received_at >= ?)) ORDER BY m.received_at DESC")
+               # 받은 시각은 수집기마다 '2026-11-12T10:00:00'(T) 모양 → 비교 전에 'YYYY-MM-DD HH:MM:SS' 로 맞춤
+               " OR (? != '' AND replace(substr(m.received_at, 1, 19), 'T', ' ') >= ?)) ORDER BY m.received_at DESC")
         out = []
         for r in self.conn.execute(sql, (deadline_from, deadline_to, since_iso or "", since_iso or "")):
             d = dict(r)
