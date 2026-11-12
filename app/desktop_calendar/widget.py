@@ -381,6 +381,8 @@ def run(settings, with_watch: bool = False):
         try:
             if icon:
                 icon.stop()
+            if getattr(host, "_plan", None):
+                host._plan.stop()
             from . import settings_window
             settings_window.close_open()   # 설정 창이 열려 있으면 함께 닫음
         finally:
@@ -398,5 +400,10 @@ def run(settings, with_watch: bool = False):
                 api._runner = Runner(settings, on_change=host.refresh).start()   # 쪽지 감시 + 메일 확인 + AI
             except Exception as e:  # noqa: BLE001
                 log.error("감시를 시작하지 못했습니다: %s", e)
+        try:   # 하루 2번 '오늘 할 일 순서' 정리·알림 (감시와 따로, 감시를 꺼도 동작)
+            from ..plan_scheduler import PlanScheduler
+            host._plan = PlanScheduler(settings.db_path, on_change=host.refresh).start()
+        except Exception as e:  # noqa: BLE001
+            log.error("오늘 할 일 정리를 시작하지 못했습니다: %s", e)
 
     webview.start(started, gui="edgechromium", debug=bool(os.getenv("CAL_DEBUG")))

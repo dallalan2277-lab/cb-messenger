@@ -560,6 +560,21 @@
             <input id="quietEnd" type="time">
           </div>
           <p class="hint subgroup">한국 시각, 예: 22:00 ~ 08:00</p>
+          <div class="check-row">
+            <input id="planOn" type="checkbox">
+            <label for="planOn"><strong>오늘 할 일 순서 알림</strong> (하루 2번, 무엇부터 할지 정리해서 알려 줌 — 캘린더 '오늘' 탭)</label>
+          </div>
+          <div class="quiet-line subgroup">
+            <label for="planMorning">아침</label>
+            <input id="planMorning" type="time">
+            <label for="planNoon">점심</label>
+            <input id="planNoon" type="time">
+          </div>
+          <div class="check-row subgroup">
+            <input id="planWorkdays" type="checkbox">
+            <label for="planWorkdays">주말·공휴일은 쉬기</label>
+          </div>
+          <p class="hint subgroup">PC 가 꺼져 있었으면 켤 때 한 번 정리해요. 방해금지 시간에는 정리만 하고 알림은 보내지 않아요.</p>
           <div class="action-line">
             <button class="btn" id="notifyTest" type="button">테스트 알림</button>
           </div>
@@ -717,7 +732,11 @@ function MockAPI() {
       preview: false,
       quiet: true,
       quiet_start: "22:00",
-      quiet_end: "08:00"
+      quiet_end: "08:00",
+      plan_on: true,
+      plan_morning: "08:30",
+      plan_noon: "12:40",
+      plan_workdays: true
     },
     school: { name: "", duties: "", senders: "", role: "교사", my_names: "" }
   };
@@ -892,7 +911,11 @@ function collectData() {
       preview: $("notifyPreview").checked,
       quiet: $("notifyQuiet").checked,
       quiet_start: $("quietStart").value,
-      quiet_end: $("quietEnd").value
+      quiet_end: $("quietEnd").value,
+      plan_on: $("planOn").checked,
+      plan_morning: $("planMorning").value,
+      plan_noon: $("planNoon").value,
+      plan_workdays: $("planWorkdays").checked
     },
     school: {
       name: $("schoolName").value,
@@ -1064,6 +1087,10 @@ function populateForm(data) {
   setChecked("notifyQuiet", notify.quiet);
   setValue("quietStart", notify.quiet_start);
   setValue("quietEnd", notify.quiet_end);
+  setChecked("planOn", notify.plan_on !== false);
+  setValue("planMorning", notify.plan_morning || "08:30");
+  setValue("planNoon", notify.plan_noon || "12:40");
+  setChecked("planWorkdays", notify.plan_workdays !== false);
 
   setValue("schoolName", school.name);
   setValue("schoolDuties", school.duties);

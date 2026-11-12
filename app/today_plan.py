@@ -302,8 +302,10 @@ def run_plan(storage, now: datetime, slot: str) -> dict | None:
     stamp = now_iso(now)
     if not storage.claim_plan(plan_date, slot, stamp):
         return None
+    # 처음 정리하는 날(이전 정리가 없음)은 최근 하루 동안 받은 소식을 새 소식으로 봄
+    since = storage.last_plan_finished_before(stamp) or now_iso(now - timedelta(days=1))
     try:
-        data = build_plan(storage, now, slot, storage.last_plan_finished_before(stamp))
+        data = build_plan(storage, now, slot, since)
     except Exception:
         # 다음 확인 때 다시 맡을 수 있게 (claimed_at 을 오래전으로)
         storage.conn.execute("UPDATE daily_plans SET claimed_at=NULL WHERE plan_date=? AND slot=? AND state='running'",
@@ -319,7 +321,8 @@ def live_view(storage, now: datetime) -> dict:
     정리가 아직 없으면 지금 규칙으로 바로 만들어 보여 줌(저장 안 함)."""
     plan = storage.get_plan(now.strftime("%Y-%m-%d"))
     if not plan:
-        data = build_plan(storage, now, "preview")
+        since = storage.last_plan_finished_before(now_iso(now)) or now_iso(now - timedelta(days=1))
+        data = build_plan(storage, now, "preview", since)
         data["saved"] = False
         return data
     data = dict(plan["data"])

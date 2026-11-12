@@ -51,6 +51,14 @@ def _comma_lines(v, limit: int = 1000) -> str:
     return ", ".join(x for x in parts if x)[:limit]
 
 
+_TIME = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
+
+
+def _plan_time(times, i, default):
+    t = str(times[i]).strip() if len(times) > i else ""
+    return t if _TIME.fullmatch(t) else default
+
+
 class SettingsAPI:
     _CLAUDE_TTL = 30     # Claude 상태는 30초 동안 다시 묻지 않음 (화면이 자주 불러도 프로세스를 계속 띄우지 않게)
     _MODELS_TTL = 600
@@ -111,7 +119,10 @@ class SettingsAPI:
                        "high_only": s.notify_high_only,
                        "eztalk": "eztalk" in s.notify_sources, "mail": "mail" in s.notify_sources,
                        "sound": s.notify_sound, "preview": s.notify_preview, "quiet": s.notify_quiet,
-                       "quiet_start": s.notify_quiet_start, "quiet_end": s.notify_quiet_end},
+                       "quiet_start": s.notify_quiet_start, "quiet_end": s.notify_quiet_end,
+                       "plan_on": s.plan_enabled, "plan_workdays": s.plan_workdays_only,
+                       "plan_morning": _plan_time(s.plan_times, 0, "08:30"),
+                       "plan_noon": _plan_time(s.plan_times, 1, "12:40")},
             "school": {"name": s.school_name, "duties": s.school_duties, "senders": s.school_senders,
                        "role": s.user_role, "my_names": ", ".join(s.my_names)},
         }
@@ -163,6 +174,10 @@ class SettingsAPI:
         err = validate(scope, qs, qe) if noti.get("quiet") else validate(scope, "22:00", "08:00")
         if err:
             return {"ok": False, "error": err}
+        pm = str(noti.get("plan_morning") or "08:30").strip()
+        pn = str(noti.get("plan_noon") or "12:40").strip()
+        if not (_TIME.fullmatch(pm) and _TIME.fullmatch(pn)) or pm >= pn:
+            return {"ok": False, "error": "오늘 할 일 정리 시각을 확인해 주세요 (아침이 점심보다 빨라야 해요, 예: 08:30 · 12:40)."}
 
         account = str(mail.get("account") or "").strip().lower()
         if account or mail.get("on"):
@@ -200,6 +215,8 @@ class SettingsAPI:
             "NOTIFY_SOURCES": ",".join(k for k in ("eztalk", "mail") if noti.get(k)),
             "NOTIFY_SOUND": _b(noti.get("sound")), "NOTIFY_PREVIEW": _b(noti.get("preview")),
             "NOTIFY_QUIET": _b(noti.get("quiet")),
+            "PLAN_ENABLED": _b(noti.get("plan_on", True)), "PLAN_TIMES": f"{pm},{pn}",
+            "PLAN_WORKDAYS_ONLY": _b(noti.get("plan_workdays", True)),
             "SCHOOL_NAME": _one_line(school.get("name"), 200), "USER_ROLE": _one_line(school.get("role"), 200),
             "MY_NAMES": ",".join(n.strip() for n in _one_line(school.get("my_names"), 200).split(",") if n.strip()),
             "SCHOOL_DUTIES": _comma_lines(school.get("duties")), "SCHOOL_SENDERS": _comma_lines(school.get("senders")),

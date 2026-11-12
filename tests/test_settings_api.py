@@ -402,3 +402,27 @@ def test_calendar_open_settings_falls_back_to_separate_window(tmp_path, monkeypa
     assert api.open_settings() == {"ok": True, "inline": False}      # 창(host) 없이 = 따로 띄움
     assert started and started[0][-1] == "settings"
     assert api._usage_summary("2000-01-01") == []
+
+
+def test_plan_settings_load_and_save(tmp_path, env, monkeypatch):
+    monkeypatch.setenv("PLAN_TIMES", "09:00,13:10")
+    monkeypatch.setenv("PLAN_WORKDAYS_ONLY", "false")
+    noti = _api(tmp_path).load()["notify"]
+    assert noti["plan_on"] is True and noti["plan_morning"] == "09:00" and noti["plan_noon"] == "13:10"
+    assert noti["plan_workdays"] is False
+    d = _data()
+    d["notify"].update({"plan_on": False, "plan_morning": "08:40", "plan_noon": "15:30", "plan_workdays": True})
+    assert _api(tmp_path).save(d)["ok"]
+    assert env["PLAN_ENABLED"] == "false" and env["PLAN_TIMES"] == "08:40,15:30" and env["PLAN_WORKDAYS_ONLY"] == "true"
+
+
+@pytest.mark.parametrize("m,n", [("13:00", "12:00"), ("25:00", "12:40"), ("08:30", "")])
+def test_plan_settings_reject_bad_times(tmp_path, env, m, n):
+    d = _data()
+    d["notify"].update({"plan_morning": m, "plan_noon": n})
+    if n == "":
+        assert _api(tmp_path).save(d)["ok"]            # 비우면 기본 12:40
+        assert env["PLAN_TIMES"] == "08:30,12:40"
+    else:
+        r = _api(tmp_path).save(d)
+        assert r["ok"] is False and "정리 시각" in r["error"]

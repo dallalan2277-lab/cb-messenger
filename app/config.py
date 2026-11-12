@@ -117,6 +117,10 @@ class Settings:
     notify_quiet_end: str = _f("NOTIFY_QUIET_END", "08:00")
     notify_preview: bool = field(default_factory=lambda: _bool("NOTIFY_PREVIEW", False))
     notify_sources: list[str] = field(default_factory=lambda: _list(_env("NOTIFY_SOURCES", "eztalk,mail")))
+    # 오늘 할 일 순서 (능동 비서): 하루 2번 정리·알림, 근무일만
+    plan_enabled: bool = field(default_factory=lambda: _bool("PLAN_ENABLED", True))
+    plan_times: list[str] = field(default_factory=lambda: _list(_env("PLAN_TIMES", "08:30,12:40")))
+    plan_workdays_only: bool = field(default_factory=lambda: _bool("PLAN_WORKDAYS_ONLY", True))
 
     # ---- 네이버 메일 ----
     mail_enabled: bool = field(default_factory=lambda: _bool("MAIL_ENABLED", False))

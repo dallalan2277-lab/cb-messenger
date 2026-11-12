@@ -247,3 +247,10 @@ def test_next_workday_skips_weekend_and_holidays():
     from datetime import date
     assert tp.next_workday(date(2026, 11, 13), {}) == date(2026, 11, 16)                 # 금 → 월
     assert tp.next_workday(date(2026, 12, 24), {"2026-12-25": "성탄절"}) == date(2026, 12, 28)
+
+
+def test_first_plan_counts_last_day_messages_as_new(db):
+    recent = msg(db, received="2026-11-11 15:00")          # 18시간 전
+    msg(db, received="2026-11-10 08:00")                   # 이틀 전 → 새 소식 아님
+    data = tp.run_plan(db, NOW, "morning")
+    assert [x["ref_id"] for x in data["items"]] == [recent]

@@ -252,6 +252,14 @@
 - 고침: `transparent=False` + 화면 배경은 불투명, 투명도 슬라이더는 창 전체 투명도(`Host.set_opacity` → `Win32.set_alpha`, WS_EX_LAYERED + SetLayeredWindowAttributes LWA_ALPHA, 0.3~1). 시작 때 prefs.opacity 적용. 글자도 함께 옅어짐(배경만 투명은 Windows 에서 불가). 브라우저 미리보기는 예전처럼 CSS 배경만 옅게.
 - 이 PC(Windows 10)에서 실제 창 55% 로 바탕화면이 비치는 것 확인.
 
+### 2-17. 능동 비서 '오늘 할 일 순서' (B1a·B1b·B2, 규칙만) — 2026-11-12
+- Codex 사용 한도(11/16 12:48 까지)로 사용자 승인 하에 Claude 가 직접 구현. **Codex 교차 검토 아직 안 받음** (16일 이후 받기).
+- `app/today_plan.py`: 오늘·내일 확정 일정 + 처리 안 한 소식(마감 -3~+7일, 또는 지난 정리 이후 새 소식 — 처음이면 최근 24시간, 참고·광고·AI 생략 제외) → 규칙 순서(마감 지남 → 오늘 마감(시각) → 오늘 일정 → 오늘 마감(시각 없음) → 앞으로 마감 → 내일 일정 → 새 소식). 이유 한 줄·총평·겹침/마감 지남 경고는 DB 값으로. 같은 메시지의 확정 일정이 있으면 일정 하나로. 최대 40개.
+- DB: `daily_plans`(날짜·회차 UNIQUE, running→done, 15분 지난 running 은 다시 맡음, manual 은 덮어씀, notified 0→1 한 번만), `todo_state`(일정 완료·내일로). 소식 [완료]는 `messages.done`.
+- 화면: '오늘' 탭(일정 옆, 첫 화면은 그대로 일정), [완료][내일로(다음 근무일)] + 6초 되돌리기, 확정할 일정, [다시 정리]. `live_view` 는 정리 뒤 완료·미룬 것·지워진 일정을 뺌.
+- `app/plan_scheduler.py`: 캘린더 프로세스에서 Runner 와 따로 1분마다, 아침~점심 전 = morning, 점심~18시 = noon, 근무일만(설정), 방해금지·알림 끄기 따름(정리는 함, 몰아서 안 보냄), 점심에 남은 할 일 0 이면 알림 생략. 설정 PLAN_ENABLED·PLAN_TIMES("08:30,12:40")·PLAN_WORKDAYS_ONLY (설정 화면 알림 탭).
+- 남은 것: B3 AI 순서 다듬기(PLAN_SCHEMA·이유 코드·가림·검증) — Codex Sol 검토 후. 실제 Windows 알림 표시·'오늘' 탭 실제 창 모습은 설치판에서 확인 필요.
+
 ## 3. 지켜야 할 설계 규칙
 
 0. **모델 선택은 항상 `create_provider(settings, spec)` / `build_pipeline(settings)` 경유**. spec 형식 `제공자[:모델]`.
