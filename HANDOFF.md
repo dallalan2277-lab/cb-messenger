@@ -236,6 +236,7 @@
   · 한 화면에 맞춤(기본 `calendar_layout: fit`): 6주 모두 보이되 주마다 '그 주 가장 많은 하루 일정 수'로 필요 높이를 정해 남는 높이를 바쁜 주에 나눔(`fitRowHeights`). 사용자 실제 11월(하루 11건)도 '+더' 없이 다 보임.
   · 넓게 보기(`expanded`, `calendar_lines` 4/6/8): 바쁜 주가 그 줄 수만큼 커지고 `#gridScroll` 만 세로 스크롤, 오늘 주로 이동.
   · (beta.2 사용자 제보 '칸 크기 조절이 안 됨') 원인: 넓게 N줄이 '일정이 N개 넘는 주만' 키워서 창 높이 700~900px 에서는 맞춤·4·6·8줄이 모두 같은 높이였음. 수정: 넓게 보기는 모든 주를 N줄 높이(창이 더 크면 고르게 나눈 높이)로 똑같이 맞춤 (`layoutGrid`).
+  · (beta.3) 주 사이 경계 끌기: `addRowResizers`·`startRowDrag`. 끄는 경계가 마우스를 따라가게 위의 w+1주를 같은 높이로 바꿔 모든 주가 같은 높이(`calendar_layout: "custom"`, `calendar_row_px` 40~600, api.set_prefs 에서 검증). 경계 두 번 누르기 = 한 화면에 맞춤. ⚙ '창 위치·크기'는 접는 목록(`#placeList`)으로.
   · '+N개 더' → 칸 옆 말풍선(`openDayPopover`), Esc·바깥 클릭·다시 그리기 때 닫힘, 아주 작은 창은 기존 모달. 칩 1개도 안 들어가면 날짜 옆 '·N'.
   · `render()` = 자료(api.month+옆 패널) / `layoutGrid()` = 배치. 창 크기 변경은 ResizeObserver(#gridScroll)로 배치만. (Codex 가 없는 `#cal` 을 관찰해 첫 화면이 안 그려지던 것 → Claude 가 #gridScroll 로 고침)
 - 받은 소식: '전체(30일)'·'학교 업무'는 최신순(`Storage.feed(order='recent')`), '학교 업무'는 처리 완료 포함(흐리게). '처리 안 한 것'만 중요도순.

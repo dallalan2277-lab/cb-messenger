@@ -70,8 +70,9 @@ DEFAULT_PREFS = {
     "week_start": 0,         # 0 = 일요일, 1 = 월요일
     "show_suggested": True,
     "theme": "dark",         # dark | light
-    "calendar_layout": "fit", # fit | expanded
+    "calendar_layout": "fit", # fit | expanded | custom(주 사이 경계를 끌어서 맞춤)
     "calendar_lines": 6,       # expanded 일 때 칸마다 보일 줄 수: 4 | 6 | 8
+    "calendar_row_px": 0,      # custom 일 때 한 주(줄)의 높이(px, 40~600). 0 = 아직 안 정함
     "last_import": None,     # 마지막으로 파일에서 가져온 묶음 {batch, name, count, at} — 되돌리기용
 }
 
@@ -115,13 +116,19 @@ class CalendarAPI:
     def set_prefs(self, changes: dict) -> dict:
         p = self.get_prefs()
         changes = {k: v for k, v in (changes or {}).items() if k in DEFAULT_PREFS}
-        if "calendar_layout" in changes and changes["calendar_layout"] not in ("fit", "expanded"):
+        if "calendar_layout" in changes and changes["calendar_layout"] not in ("fit", "expanded", "custom"):
             changes["calendar_layout"] = DEFAULT_PREFS["calendar_layout"]
         if ("calendar_lines" in changes
                 and (not isinstance(changes["calendar_lines"], int)
                      or isinstance(changes["calendar_lines"], bool)
                      or changes["calendar_lines"] not in (4, 6, 8))):
             changes["calendar_lines"] = DEFAULT_PREFS["calendar_lines"]
+        if "calendar_row_px" in changes:
+            v = changes["calendar_row_px"]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v:
+                changes["calendar_row_px"] = DEFAULT_PREFS["calendar_row_px"]
+            else:
+                changes["calendar_row_px"] = int(min(600, max(40, round(v))))
         p.update(changes)
         self._prefs_path.parent.mkdir(parents=True, exist_ok=True)
         self._prefs_path.write_text(json.dumps(p, ensure_ascii=False, indent=1), encoding="utf-8")
