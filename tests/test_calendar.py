@@ -155,3 +155,23 @@ def test_restart_watch_reports_start_error(tmp_path, monkeypatch):
     api._watch_on_change = lambda: None
     r = api.restart_watch()
     assert r["ok"] is False and "로그인" in r["error"] and api._runner is None
+
+
+def test_host_set_opacity_uses_whole_window_alpha(tmp_path):
+    """Windows 에서는 배경만 투명하게 못 해서 창 전체 투명도로 (가짜 Win32 로 확인)"""
+    from app.desktop_calendar.widget import Host
+
+    class FakeW32:
+        def __init__(self):
+            self.calls = []
+
+        def set_alpha(self, hwnd, a):
+            self.calls.append((hwnd, a))
+            return True
+
+    host = Host.__new__(Host)
+    host.w32, host.hwnd = FakeW32(), 0
+    assert host.set_opacity(0.5) is False          # 창을 아직 못 찾았으면 아무것도 안 함
+    host.hwnd = 1234
+    assert host.set_opacity(0.5) is True
+    assert host.w32.calls == [(1234, 0.5)]

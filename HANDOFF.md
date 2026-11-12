@@ -246,6 +246,12 @@
 - 2026-11-12 beta.2 빌드 중 발견: `win11toast.toast()` 가 알림이 닫힐 때까지 기다림 → 분석 줄(Runner 작업 스레드)이 알림마다 멈출 수 있었음 (v0.6 부터 있던 문제, `cbm test` 가 멈춰서 알게 됨).
   `notifier.notify` 는 이제 백그라운드 스레드로 띄우고 바로 돌아옴(`wait=True` 는 시험용).
 
+### 2-16. 투명도 조절이 회색·흰색으로 변하던 문제 (0.10.0-beta.4) — 2026-11-12
+- 제보(친구): 투명도를 낮추면 바탕화면이 비치지 않고 회색·흰색이 됨.
+- 원인: pywebview 6.2.1 Windows(WinForms+WebView2)의 `transparent=True` 는 WebView2 배경만 투명하게 하고, 그 아래 WinForms 폼은 불투명(기본 회색) → CSS 배경 알파를 낮추면 회색 폼이 비침. (2-1b 의 '확인할 것 (1)' 답: 안 먹음)
+- 고침: `transparent=False` + 화면 배경은 불투명, 투명도 슬라이더는 창 전체 투명도(`Host.set_opacity` → `Win32.set_alpha`, WS_EX_LAYERED + SetLayeredWindowAttributes LWA_ALPHA, 0.3~1). 시작 때 prefs.opacity 적용. 글자도 함께 옅어짐(배경만 투명은 Windows 에서 불가). 브라우저 미리보기는 예전처럼 CSS 배경만 옅게.
+- 이 PC(Windows 10)에서 실제 창 55% 로 바탕화면이 비치는 것 확인.
+
 ## 3. 지켜야 할 설계 규칙
 
 0. **모델 선택은 항상 `create_provider(settings, spec)` / `build_pipeline(settings)` 경유**. spec 형식 `제공자[:모델]`.

@@ -1741,8 +1741,13 @@ function closeDlg() { $("scrim").classList.remove("on"); editing = null; }
 function applyOpacity(o) {
   const a = Math.max(0.3, Math.min(1, Number(o) || 0.92));
   const light = prefs.theme === "light";
+  // 실제 창(pywebview): Windows 에서는 배경만 투명하게 할 수 없어(뒤에 회색이 비침) 창 전체 투명도로 —
+  // 화면 배경은 불투명하게 두고 창이 통째로 비치게 함. 브라우저 미리보기: 예전처럼 배경색만 옅게.
+  const inApp = !!(window.pywebview && window.pywebview.api);
+  const bgA = inApp ? 1 : a;
   // body 에 넣어야 함: 밝은 테마는 body.light 가 --bg 를 다시 정해서, html 에 넣은 값은 가려짐
-  document.body.style.setProperty("--bg", light ? `rgba(250,250,252,${a})` : `rgba(18,22,30,${a})`);
+  document.body.style.setProperty("--bg", light ? `rgba(250,250,252,${bgA})` : `rgba(18,22,30,${bgA})`);
+  if (inApp) { clearTimeout(applyOpacity._t); applyOpacity._t = setTimeout(() => api.win("set_opacity", a), 30); }
 }
 function menuLabels() {
   $("weekStart").textContent = `주 시작: ${prefs.week_start === 1 ? "월요일" : "일요일"} (바꾸기)`;
