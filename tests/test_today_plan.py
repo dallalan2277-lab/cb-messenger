@@ -218,3 +218,32 @@ def test_old_version_sql_still_works_with_new_tables(db):
                     ("가상", TODAY, "", "", "", "", "confirmed", "manual", None, None))
     db.conn.commit()
     assert len(db.calendar_events(TODAY, TODAY)) == 1
+
+
+def test_calendar_api_today_tab(tmp_path, monkeypatch):
+    from app.desktop_calendar.api import CalendarAPI
+    st = Storage(str(tmp_path / "t.db"))
+    api = CalendarAPI(st, tmp_path / "prefs.json")
+    monkeypatch.setattr(CalendarAPI, "_now", staticmethod(lambda: NOW))
+    m = msg(st, deadline=TODAY)
+    e = event(st, "가상 회의", time="14:00")
+    view = api.today_plan()
+    assert view["saved"] is False and len(view["items"]) == 2
+    view = api.today_plan_run()
+    assert view["saved"] is True and st.get_plan(TODAY, "manual")
+    assert api.todo_done("todo", m)["ok"] and st.is_done(m)
+    assert [x["ref_id"] for x in api.today_plan()["items"]] == [e]
+    snoozed = api.todo_snooze("event", e)
+    assert snoozed["until"] == TOMORROW                    # 목요일 → 금요일
+    assert api.today_plan()["items"] == []
+    api.todo_undo("todo", m)
+    api.todo_undo("event", e)
+    assert not st.is_done(m) and len(api.today_plan()["items"]) == 2
+    with pytest.raises(ValueError):
+        api.todo_done("이상한 종류", 1)
+
+
+def test_next_workday_skips_weekend_and_holidays():
+    from datetime import date
+    assert tp.next_workday(date(2026, 11, 13), {}) == date(2026, 11, 16)                 # 금 → 월
+    assert tp.next_workday(date(2026, 12, 24), {"2026-12-25": "성탄절"}) == date(2026, 12, 28)

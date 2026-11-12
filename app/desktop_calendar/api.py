@@ -252,6 +252,61 @@ class CalendarAPI:
     def set_done(self, message_id: int, done: bool = True) -> dict:
         return {"ok": self._storage.set_done(int(message_id), bool(done))}
 
+    # ---------- 오늘 할 일 순서 (능동 비서) ----------
+    @staticmethod
+    def _now() -> datetime:
+        from ..notify_policy import SEOUL
+        return datetime.now(SEOUL).replace(tzinfo=None)
+
+    @_locked
+    def today_plan(self) -> dict:
+        """'오늘' 탭: 오늘 마지막 정리(완료·미룬 것은 뺌). 정리가 아직 없으면 지금 규칙으로 만든 미리보기."""
+        from .. import today_plan as tp
+        return tp.live_view(self._storage, self._now())
+
+    @_locked
+    def today_plan_run(self) -> dict:
+        """[다시 정리] — 지금 자료로 다시 정리해서 저장 (알림은 보내지 않음)"""
+        from .. import today_plan as tp
+        now = self._now()
+        tp.run_plan(self._storage, now, "manual")
+        return tp.live_view(self._storage, now)
+
+    @staticmethod
+    def _todo_kind(kind) -> str:
+        if kind in ("event", "suggested"):
+            return "event"
+        if kind in ("todo", "message"):
+            return "message"
+        raise ValueError("할 일 종류를 확인해 주세요.")
+
+    @_locked
+    def todo_done(self, kind: str, ref_id: int) -> dict:
+        """[완료]: 소식은 '처리 완료'(받은 소식 탭과 같음), 일정은 오늘 할 일에서만 뺌(달력엔 그대로)"""
+        k = self._todo_kind(kind)
+        if k == "message":
+            return {"ok": self._storage.set_done(int(ref_id), True)}
+        self._storage.set_todo("event", int(ref_id), "done")
+        return {"ok": True}
+
+    @_locked
+    def todo_snooze(self, kind: str, ref_id: int) -> dict:
+        """[내일로]: 다음 근무일(주말·공휴일 건너뜀)까지 오늘 할 일에서 숨김"""
+        from .. import today_plan as tp
+        until = tp.next_workday(self._now().date(), load_holidays()).isoformat()
+        self._storage.set_todo(self._todo_kind(kind), int(ref_id), "snoozed", until)
+        return {"ok": True, "until": until}
+
+    @_locked
+    def todo_undo(self, kind: str, ref_id: int) -> dict:
+        """[되돌리기]: 완료·내일로를 취소"""
+        k = self._todo_kind(kind)
+        cleared = self._storage.clear_todo(k, int(ref_id))
+        if k == "message":
+            self._storage.set_done(int(ref_id), False)
+            cleared = True
+        return {"ok": cleared}
+
     def status(self) -> dict:
         r = self._runner
         st = dict(r.status) if r else {"messenger": "꺼짐", "mail": "꺼짐"}

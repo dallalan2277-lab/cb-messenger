@@ -346,3 +346,17 @@ def live_view(storage, now: datetime) -> dict:
     data["saved"] = True
     data["finished_at"] = plan.get("finished_at")
     return data
+
+
+def is_workday(d: date, holidays: dict) -> bool:
+    return d.weekday() < 5 and d.isoformat() not in holidays
+
+
+def next_workday(d: date, holidays: dict) -> date:
+    """'내일로' 미룰 때: 다음 근무일 (주말·공휴일 건너뜀)"""
+    x = d + timedelta(days=1)
+    for _ in range(30):
+        if is_workday(x, holidays):
+            return x
+        x += timedelta(days=1)
+    return d + timedelta(days=1)

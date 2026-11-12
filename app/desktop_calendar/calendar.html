@@ -174,6 +174,20 @@
   .item.sugg { border: 1px dashed var(--sugg); }
   .item .acts { display: flex; gap: 6px; margin-top: 6px; }
   .item .acts .btn { padding: 3px 8px; font-size: 11px; }
+  .plan-head { font-size: 13px; color: var(--text); line-height: 1.45; }
+  .plan-meta { font-size: 11px; color: var(--faint); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .plan-warn { font-size: 11px; color: var(--sugg); border: 1px dashed var(--sugg); border-radius: 7px; padding: 5px 7px; line-height: 1.45; }
+  .prow { display: flex; gap: 8px; align-items: flex-start; padding: 7px 8px; border-radius: 8px; background: var(--panel); margin-bottom: 6px; cursor: pointer; border: 1px solid transparent; }
+  .prow:hover { border-color: var(--line); }
+  .prow .pno { flex: 0 0 20px; height: 20px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+  .prow.over .pno { background: #d93025; }
+  .prow .pbody { flex: 1; min-width: 0; }
+  .prow .ptitle { line-height: 1.35; overflow-wrap: anywhere; }
+  .prow .preason { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  .prow.over .preason { color: #f28b82; }
+  .prow .pacts { display: flex; gap: 4px; margin-top: 5px; }
+  .prow .pacts .btn { padding: 2px 7px; font-size: 11px; }
+  details.plan-later summary { cursor: pointer; font-size: 12px; color: var(--dim); }
   .dupnote { margin-top: 4px; padding: 5px 7px; border-radius: 6px; background: var(--bg); font-size: 11px; color: var(--dim); line-height: 1.45; }
   .dupnote b { color: var(--sugg); font-weight: 600; }
   .dupnote .chg { color: var(--text); font-weight: 600; }
@@ -396,6 +410,7 @@
     <aside class="side" id="side">
       <div class="tabs">
         <div class="tab on" data-tab="sched">일정</div>
+        <div class="tab" data-tab="today">오늘<span class="n" id="todayN" style="display:none"></span></div>
         <div class="tab" data-tab="feed">받은 소식<span class="n" id="feedN" style="display:none"></span></div>
         <div class="tab" id="memoTab" data-tab="memo" hidden>메모</div>
       </div>
@@ -408,6 +423,19 @@
           <h3>다가오는 일정 (2주)</h3>
           <div id="upList"></div>
         </section>
+      </div>
+      <div class="pane hidden" id="paneToday">
+        <div class="plan-head" id="planHead"></div>
+        <div id="planWarn"></div>
+        <section>
+          <h3>무엇부터 할까요</h3>
+          <div id="planList"></div>
+        </section>
+        <section id="planSuggSec" hidden>
+          <h3>확정할 일정</h3>
+          <div id="planSugg"></div>
+        </section>
+        <div class="plan-meta"><span id="planMeta"></span><span style="flex:1"></span><button class="btn" id="planRerun" type="button">다시 정리</button></div>
       </div>
       <div class="pane hidden" id="paneFeed">
         <div class="chips" id="feedFilt">
@@ -523,6 +551,21 @@ function MockAPI() {
   ];
   const hol = { "2026-11-11": "", "2026-12-25": "성탄절", "2027-01-01": "신정" };
   const ts = (n, h) => add(n) + `T${h}:00`;
+  const todoMock = {}; let planMadeAt = "";
+  const mockPlan = (rerun) => {
+    if (rerun || !planMadeAt) planMadeAt = ts(0, "08:30").replace("T", " ");
+    const items = [
+      { no: 1, kind: "todo", ref_id: 2, title: "학교폭력 실태조사 참여율 입력", reason: "마감 오늘 16:00 · 회신·제출 필요", sender: "교감", overdue: false },
+      { no: 2, kind: "event", ref_id: 2, title: "학교폭력 실태조사 입력 마감", reason: "오늘 16:00", sender: "교감" },
+      { no: 3, kind: "event", ref_id: 4, title: "학부모 상담", reason: "내일 14:00", sender: "" },
+      { no: 4, kind: "todo", ref_id: 11, title: "[공문] 2학기 교육과정 운영 실태 점검 자료 제출", reason: "마감 " + add(5).slice(5).replace("-", "/") + " · 회신·제출 필요", sender: "충북교육청" },
+      { no: 5, kind: "todo", ref_id: 1, title: "학업성적관리위원회 회의 참석 요청", reason: "참석 · 중요", sender: "교무부장" },
+    ].filter((x) => !todoMock[x.kind + x.ref_id]);
+    return { headline: `할 일 ${items.length}건 · 오늘 일정 1건 · 오늘까지 마감 1건 · 확정할 일정 1건`, items,
+      suggested: [{ kind: "suggested", ref_id: 3, title: "AI 디지털교과서 연수 신청 마감", reason: "내일 종일 · 확정 필요", sender: "충북교육청 연수원" }],
+      warnings: [{ kind: "overlap", nos: [2, 3], text: "16:00 학교폭력 실태조사 입력 마감 과(와) 16:00 체육대회 준비 회의 시간이 겹쳐요" }],
+      source: "rule", saved: true, finished_at: planMadeAt };
+  };
   const feedItems = [
     { id: 2, source: "eztalk", sender: "교감", subject: "", received_at: ts(0, "09:10"), importance: "긴급", category: "처리 필요", school_relevance: "학교 업무", summary: "학교폭력 실태조사 학급별 참여율을 오늘 16시까지 업무포털에 입력", action_items: ["업무포털에 참여율 입력"], deadline: add(0), done: false },
     { id: 11, source: "mail", sender: "충북교육청 <notice@cbe.go.kr>", subject: "[공문] 2학기 교육과정 운영 실태 점검 자료 제출", received_at: ts(0, "08:40"), importance: "중요", category: "처리 필요", school_relevance: "학교 업무", summary: "학년별 교육과정 운영 실태 점검표를 금요일까지 제출 요청", action_items: ["점검표 작성·제출"], deadline: add(5), done: false },
@@ -597,6 +640,11 @@ function MockAPI() {
       const o = e.dup_of && evs.find((x) => x.id === e.dup_of);
       return o ? { ...e, dup: { ...o } } : { ...e, dup_of: null };
     }),
+    today_plan: async () => mockPlan(false),
+    today_plan_run: async () => mockPlan(true),
+    todo_done: async (k, i) => { todoMock[k + i] = "done"; return { ok: true }; },
+    todo_snooze: async (k, i) => { todoMock[k + i] = "snoozed"; return { ok: true, until: add(1) }; },
+    todo_undo: async (k, i) => { delete todoMock[k + i]; return { ok: true }; },
     resolve_duplicate: async (i, act) => {
       const e = evs.find((x) => x.id === i); const o = e && evs.find((x) => x.id === e.dup_of);
       if (!e || !o) return { ok: false, error: "기존 일정을 찾을 수 없어요." };
@@ -1254,6 +1302,43 @@ function toastUndo(msg, undo) {
 }
 
 let sideTab = "sched", feedF = "open", feedS = "";
+
+/* ---------- 오늘 할 일 순서 (능동 비서) ---------- */
+const TODO_DONE_MSG = { done: "완료했어요.", snooze: "다음 근무일로 미뤘어요." };
+function planRowHtml(x, acts) {
+  return `<div class="prow ${x.overdue ? "over" : ""}" data-k="${esc(x.kind)}" data-id="${x.ref_id}">
+    <div class="pno">${x.no || "·"}</div>
+    <div class="pbody"><div class="ptitle">${esc(x.title)}</div>
+      <div class="preason">${esc(x.reason || "")}${x.sender ? " · " + esc(x.sender.replace(/\s*<[^>]+>/, "")) : ""}</div>
+      ${acts ? `<div class="pacts"><button class="btn okc" data-act="done">완료</button><button class="btn ghost" data-act="snooze">내일로</button></div>` : ""}
+    </div></div>`;
+}
+async function renderToday(fresh) {
+  let p;
+  try { p = fresh ? await api.today_plan_run() : await api.today_plan(); } catch (ex) { $("planHead").textContent = "오늘 할 일을 불러오지 못했어요."; return; }
+  p = p || { items: [], suggested: [], warnings: [] };
+  $("planHead").textContent = p.headline || "오늘 챙길 일이 없어요";
+  $("planWarn").innerHTML = (p.warnings || []).map((w) => `<div class="plan-warn">⚠ ${esc(w.text || "")}</div>`).join("");
+  $("planList").innerHTML = (p.items || []).length ? p.items.map((x) => planRowHtml(x, true)).join("")
+    : `<div class="empty">지금은 할 일이 없어요. 새 소식이 오면 다시 정리해요.</div>`;
+  $("planSuggSec").hidden = !(p.suggested || []).length;
+  $("planSugg").innerHTML = (p.suggested || []).map((x) => planRowHtml({ ...x, no: "" }, false)).join("");
+  const made = (p.finished_at || p.made_at || "").replace("T", " ").slice(5, 16);
+  $("planMeta").textContent = p.saved === false ? "아직 정리 전 · 지금 자료로 본 순서"
+    : `${made} 정리 · ${p.source === "ai" ? "AI 정리" : "규칙 정리"}`;
+  setTodayCount((p.items || []).length);
+  document.querySelectorAll("#paneToday .prow").forEach((el) => el.addEventListener("click", async (ev) => {
+    const kind = el.dataset.k, id = Number(el.dataset.id), act = ev.target.dataset.act;
+    if (act === "done" || act === "snooze") {
+      const r = act === "done" ? await api.todo_done(kind, id) : await api.todo_snooze(kind, id);
+      if (r && r.ok) toastUndo(TODO_DONE_MSG[act], async () => { await api.todo_undo(kind, id); renderToday(); });
+      return renderToday();
+    }
+    if (kind === "todo") return openItem(id);
+    const evs = await api.upcoming(2); const e = evs.find((x) => x.id === id); if (e) openEdit(e);
+  }));
+}
+function setTodayCount(n) { const b = $("todayN"); b.textContent = n; b.style.display = n ? "" : "none"; }
 const SRC_ICON = { mail: "✉", eztalk: "💬" };
 const fmtTime = (iso) => { if (!iso) return ""; const [d, t] = iso.split("T"); const today = new Date(); const pad = (n) => String(n).padStart(2, "0");
   const ds = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`; return (d === ds ? "" : fmtDate(d) + " ") + (t || "").slice(0, 5); };
@@ -1609,6 +1694,8 @@ async function renderSide() {
   if ($("side").classList.contains("hidden")) return;
   if (sideTab === "feed") return renderFeed();
   if (sideTab === "memo") return renderMemo();
+  if (sideTab === "today") return renderToday();
+  if (typeof api.today_plan === "function") api.today_plan().then((p) => setTodayCount(((p && p.items) || []).length)).catch(() => {});
   const [sugg, up] = await Promise.all([api.suggestions(), api.upcoming(14)]);
   $("suggList").innerHTML = sugg.length ? sugg.map((e) => itemHtml(e, true)).join("") : `<div class="empty">새 제안이 없습니다.</div>`;
   $("confirmAll").style.display = sugg.length > 1 ? "" : "none";
@@ -1859,7 +1946,9 @@ function bindUI() {
   document.querySelectorAll(".tab").forEach((t) => t.onclick = () => {
     sideTab = t.dataset.tab; document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === t));
     $("paneSched").classList.toggle("hidden", sideTab !== "sched"); $("paneFeed").classList.toggle("hidden", sideTab !== "feed");
+    $("paneToday").classList.toggle("hidden", sideTab !== "today");
     $("paneMemo").classList.toggle("hidden", sideTab !== "memo"); renderSide(); });
+  $("planRerun").onclick = async () => { $("planRerun").disabled = true; try { await renderToday(true); toast("지금 자료로 다시 정리했어요."); } finally { $("planRerun").disabled = false; } };
   document.querySelectorAll("#feedFilt [data-f]").forEach((c) => c.onclick = () => { feedF = c.dataset.f; document.querySelectorAll("#feedFilt [data-f]").forEach((x) => x.classList.toggle("on", x === c)); renderFeed(); });
   document.querySelectorAll("#feedFilt [data-s]").forEach((c) => c.onclick = () => { feedS = c.dataset.s; document.querySelectorAll("#feedFilt [data-s]").forEach((x) => x.classList.toggle("on", x === c)); renderFeed(); });
   const memoDrop = $("memoDrop");
