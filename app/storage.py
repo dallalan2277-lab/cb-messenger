@@ -771,7 +771,8 @@ class Storage:
 
     # ---- 받은 소식 (캘린더 옆 통합 목록) ----
     def feed(self, *, source: str = "", only_open: bool = True, school_only: bool = False,
-             limit: int = 100, since: str = "") -> list[dict]:
+             limit: int = 100, since: str = "", order: str = "importance") -> list[dict]:
+        """order: importance(처리 안 한 것 먼저·긴급→중요→참고·최신) | recent(받은 시각 최신순)"""
         sql = ("SELECT m.id, m.sender, m.room, m.received_at, m.source, m.subject, m.done, "
                "a.importance, a.category, a.summary, a.action_items, a.deadline, a.school_relevance "
                "FROM messages m JOIN analyses a ON a.id = (SELECT MAX(id) FROM analyses WHERE message_id = m.id) WHERE 1=1 ")
@@ -786,8 +787,11 @@ class Storage:
         if since:
             sql += "AND m.received_at >= ? "
             params.append(since)
-        sql += ("ORDER BY m.done, CASE a.importance WHEN '긴급' THEN 0 WHEN '중요' THEN 1 ELSE 2 END, "
-                "m.received_at DESC LIMIT ?")
+        if order == "recent":
+            sql += "ORDER BY m.received_at DESC, m.id DESC LIMIT ?"
+        else:
+            sql += ("ORDER BY m.done, CASE a.importance WHEN '긴급' THEN 0 WHEN '중요' THEN 1 ELSE 2 END, "
+                    "m.received_at DESC LIMIT ?")
         params.append(limit)
         out = []
         for r in self.conn.execute(sql, params).fetchall():

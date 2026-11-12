@@ -22,6 +22,14 @@
     --ok: #81c995;
     --radius: 10px;
     --font: "Pretendard", "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", sans-serif;
+    /* 달력 칸 안쪽 치수: JS의 줄 수 계산도 이 값을 그대로 읽는다. */
+    --chip-h: 20px;
+    --chip-gap: 3px;
+    --cell-head-h: 24px;
+    --cell-pad-top: 6px;
+    --cell-pad-bottom: 4px;
+    --cell-events-gap: 3px;
+    --cell-border: 1px;
   }
   body.light {
     --bg: rgba(250, 250, 252, 0.90);
@@ -89,15 +97,21 @@
   .cal { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 4px 10px 10px 12px; }
   .dow { display: grid; grid-template-columns: repeat(7, 1fr); padding: 6px 0 4px; flex: none; }
   .dow div { text-align: left; padding-left: 8px; color: var(--dim); font-size: 12px; }
-  .grid { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(6, 1fr); gap: 4px; min-height: 0; }
+  #gridScroll { flex: 1; min-height: 0; overflow-y: hidden; overscroll-behavior: contain; }
+  #gridScroll.expanded { overflow-y: auto; }
+  #gridScroll::-webkit-scrollbar, .side::-webkit-scrollbar, .menu::-webkit-scrollbar { width: 6px; height: 6px; }
+  #gridScroll::-webkit-scrollbar-track, .side::-webkit-scrollbar-track, .menu::-webkit-scrollbar-track { background: transparent; }
+  #gridScroll::-webkit-scrollbar-thumb, .side::-webkit-scrollbar-thumb, .menu::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 999px; }
+  #gridScroll, .side, .menu { scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; min-height: 0; }
   .cell {
-    background: var(--panel); border-radius: var(--radius); padding: 6px 6px 4px; min-height: 0;
-    display: flex; flex-direction: column; overflow: hidden; cursor: default; border: 1px solid transparent;
+    background: var(--panel); border-radius: var(--radius); padding: var(--cell-pad-top) 6px var(--cell-pad-bottom); min-height: 0;
+    display: flex; flex-direction: column; overflow: hidden; cursor: default; border: var(--cell-border) solid transparent;
   }
   .cell:hover { border-color: var(--line); }
   .cell.out { opacity: 0.38; }
   .cell.today { border-color: var(--today); box-shadow: inset 0 0 0 1px var(--today); }
-  .cell-head { display: flex; align-items: baseline; gap: 6px; flex: none; }
+  .cell-head { display: flex; align-items: baseline; gap: 6px; height: var(--cell-head-h); flex: none; overflow: hidden; }
   .num { font-weight: 600; font-size: 14px; width: 24px; height: 24px; line-height: 24px; text-align: center; border-radius: 50%; }
   .today .num { background: var(--today); color: #fff; }
   body:not(.light) .today .num { color: #0b1a33; }
@@ -105,11 +119,13 @@
   .today.sun .num, .today.hol .num { color: #fff; }
   .sat .num { color: var(--sat); }
   .hname { color: var(--sun); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .event-count { border: 0; background: transparent; color: var(--dim); padding: 0 1px; font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
+  .event-count:hover, .event-count:focus { color: var(--accent); outline: none; }
   .add-hint { margin-left: auto; color: var(--faint); opacity: 0; font-size: 15px; cursor: pointer; padding: 0 4px; }
   .cell:hover .add-hint { opacity: 1; }
-  .evs { display: flex; flex-direction: column; gap: 3px; margin-top: 3px; min-height: 0; overflow: hidden; }
+  .evs { display: flex; flex-direction: column; gap: var(--chip-gap); margin-top: var(--cell-events-gap); min-height: 0; overflow: hidden; }
   .chip {
-    background: var(--chip); color: var(--chip-text); border-radius: 6px; padding: 2px 6px;
+    height: var(--chip-h); line-height: calc(var(--chip-h) - 6px); background: var(--chip); color: var(--chip-text); border-radius: 6px; padding: 2px 6px;
     font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
     border: 1px solid transparent; flex: none;
   }
@@ -117,7 +133,26 @@
   .chip .t { color: var(--dim); margin-right: 4px; font-variant-numeric: tabular-nums; }
   .chip.sugg { background: transparent; border: 1px dashed var(--sugg); color: var(--sugg); }
   .chip.sugg::before { content: "제안 "; font-size: 10px; opacity: 0.85; }
-  .more { color: var(--dim); font-size: 11px; padding-left: 4px; cursor: pointer; flex: none; }
+  .more { height: var(--chip-h); line-height: calc(var(--chip-h) - 2px); color: var(--dim); padding: 0 4px; cursor: pointer; flex: none; border: 0; background: transparent; text-align: left; font: inherit; font-size: 11px; }
+  .more:hover, .more:focus { color: var(--accent); outline: none; }
+
+  /* '+N개 더'를 누르면 칸 밖에 띄우는 일정 말풍선 */
+  .day-popover {
+    position: absolute; z-index: 30; width: min(310px, calc(100% - 12px)); max-height: 70%;
+    display: flex; flex-direction: column; overflow: hidden; background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.32); padding: 10px; user-select: text; -webkit-user-select: text;
+  }
+  body:not(.light) .day-popover { background: rgb(28, 32, 40); }
+  body.light .day-popover { background: rgb(250, 250, 252); }
+  .day-popover[hidden] { display: none; }
+  .day-pop-title { font-size: 13px; font-weight: 700; margin: 0 0 7px; flex: none; }
+  .day-pop-list { flex: 1 1 auto; overflow-y: auto; min-height: 0; margin: 0 -2px 8px; padding: 0 2px; }
+  .day-pop-event { display: flex; align-items: baseline; gap: 6px; width: 100%; padding: 6px 5px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+  .day-pop-event:hover, .day-pop-event:focus { background: var(--panel); outline: none; }
+  .day-pop-time { flex: none; min-width: 36px; color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .day-pop-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .day-pop-tag { flex: none; color: var(--sugg); border: 1px dashed var(--sugg); border-radius: 999px; padding: 0 4px; font-size: 10px; }
+  .day-pop-add { align-self: flex-start; flex: none; }
 
   .side {
     width: 320px; flex: none; border-left: 1px solid var(--line); padding: 12px 12px 12px 14px;
@@ -351,7 +386,7 @@
   <div class="main">
     <div class="cal">
       <div class="dow" id="dow"></div>
-      <div class="grid" id="grid"></div>
+      <div id="gridScroll"><div class="grid" id="grid"></div></div>
     </div>
     <aside class="side" id="side">
       <div class="tabs">
@@ -397,6 +432,13 @@
     <button class="mi" id="nextMon">다른 모니터로 옮기기</button>
     <div class="sec">보기</div>
     <div class="rng">배경 투명도 <input type="range" id="opacity" min="40" max="100" step="2"></div>
+    <button class="mi" id="calendarLayout"></button>
+    <div class="mlist" id="calendarLayoutList">
+      <button class="mi" data-calendar-layout="fit">한 화면에 맞춤</button>
+      <button class="mi" data-calendar-layout="expanded" data-calendar-lines="4">넓게 4줄</button>
+      <button class="mi" data-calendar-layout="expanded" data-calendar-lines="6">넓게 6줄</button>
+      <button class="mi" data-calendar-layout="expanded" data-calendar-lines="8">넓게 8줄</button>
+    </div>
     <button class="mi" id="weekStart"></button>
     <button class="mi" id="toggleSugg"></button>
     <button class="mi" id="theme"></button>
@@ -432,6 +474,7 @@
   </div>
 
   <div class="scrim" id="scrim2"><div class="dialog" id="dialog2"></div></div>
+  <div class="day-popover" id="dayPopover" role="dialog" aria-modal="false" hidden></div>
 
   <div class="grip e" data-dir="e"></div><div class="grip s" data-dir="s"></div>
   <div class="grip w" data-dir="w"></div><div class="grip sw" data-dir="sw"></div>
@@ -457,7 +500,7 @@ function MockAPI() {
   const t = new Date(); const pad = (n) => String(n).padStart(2, "0");
   const ds = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const add = (n) => { const d = new Date(t); d.setDate(d.getDate() + n); return ds(d); };
-  let id = 10; let p = { week_start: 0, show_suggested: true, theme: "dark", opacity: 0.92 };
+  let id = 10; let p = { week_start: 0, show_suggested: true, theme: "dark", opacity: 0.92, calendar_layout: "fit", calendar_lines: 6 };
   let evs = [
     { id: 1, title: "학업성적관리위원회", date: add(3), start_time: "15:30", end_time: "16:30", location: "본관 2층 회의실", note: "담임 전원 참석", status: "suggested", origin: "ai", message_id: 1, sender: "교무부장" },
     { id: 2, title: "학교폭력 실태조사 입력 마감", date: add(0), start_time: "16:00", end_time: "", location: "", note: "", status: "confirmed", origin: "ai", message_id: 2, sender: "교감" },
@@ -480,6 +523,17 @@ function MockAPI() {
     { id: 13, source: "mail", sender: "연수원 <edu@cbe.go.kr>", subject: "AI 디지털교과서 직무연수 신청 안내", received_at: ts(-1, "11:20"), importance: "참고", category: "참고", school_relevance: "학교 업무", summary: "15시간 직무연수 신청을 금요일까지 받음", action_items: [], deadline: "", done: true },
   ];
   const query = new URLSearchParams(location.search);
+  if (query.get("busy") === "1") {
+    // 미리보기에서 한 화면 맞춤과 넓게 보기를 비교할 수 있는, 이번 달의 가상 일정들
+    [[5, 5], [13, 7], [21, 11]].forEach(([day, count]) => {
+      const busyDate = ds(new Date(t.getFullYear(), t.getMonth(), day));
+      for (let n = 0; n < count; n++) {
+        evs.push({ id: ++id, title: `가상 일정 ${n + 1}`, date: busyDate,
+          start_time: `${String(8 + n).padStart(2, "0")}:00`, end_time: "", location: "", note: "",
+          status: n % 4 === 0 ? "suggested" : "confirmed", origin: "manual", message_id: null, sender: "" });
+      }
+    });
+  }
   const memoEnabled = query.get("memo") !== "off";
   const memoImageAi = query.get("imageai") !== "off";
   const makeMemoImage = () => {
@@ -568,7 +622,8 @@ function MockAPI() {
     update_check: async () => ({ current: "0.7.0", available: true, latest: "0.7.1", notes: "- 업데이트 기능 추가\n- 버그 수정", html_url: "", error: "", disabled: false }),
     update_install: async () => ({ ok: false, error: "미리보기에서는 설치하지 않습니다." }),
     win: async () => ({ ok: false }),
-    feed: async (f, src) => feedItems.filter((x) => (f === "all" || !x.done) && (f !== "school" || x.school_relevance === "학교 업무") && (!src || x.source === src)),
+    feed: async (f, src) => feedItems.filter((x) => (f !== "open" || !x.done) && (f !== "school" || x.school_relevance === "학교 업무") && (!src || x.source === src))
+      .sort((a, b) => f === "open" ? 0 : b.received_at.localeCompare(a.received_at)),
     reanalyze: async (i) => { await new Promise((r) => setTimeout(r, 1200)); const x = feedItems.find((y) => y.id === i); if (x) x._redone = true; return { ok: true, model: "claude_cli:opus" }; },
     item: async (i) => { const x = feedItems.find((y) => y.id === i); const ev = evs.filter((e) => e.message_id === i && e.status !== "dismissed");
       const det = (x.id === 2 || x._redone) ? ["요청: 학급별 학교폭력 실태조사 참여율 입력", "마감: 오늘 16:00", "방법: 업무포털 → 학교폭력 실태조사 메뉴", "문의: 교감"] : [];
@@ -888,42 +943,188 @@ function confirmUndoImport(info) {
 }
 
 let renderSeq = 0;
-async function render() {
-  const seq = ++renderSeq;
-  const data = await api.month(cur.y, cur.m);
-  if (seq !== renderSeq) return;          // 더 새로 그리는 중이면 이 결과는 버림
-  $("title").innerHTML = `${data.year}년 ${data.month}월`;
+let monthData = null;
+let dayPopoverState = null;
+let layoutObserver = null;
+let layoutTimer = null;
+
+function currentLayout() { return prefs.calendar_layout === "expanded" ? "expanded" : "fit"; }
+function currentLines() { return [4, 6, 8].includes(Number(prefs.calendar_lines)) ? Number(prefs.calendar_lines) : 6; }
+function cssPx(style, name, fallback) { return Number.parseFloat(style.getPropertyValue(name)) || fallback; }
+function calendarMetrics() {
+  const s = getComputedStyle(document.documentElement);
+  return {
+    chipH: cssPx(s, "--chip-h", 20), chipGap: cssPx(s, "--chip-gap", 3),
+    headH: cssPx(s, "--cell-head-h", 24), padTop: cssPx(s, "--cell-pad-top", 6),
+    padBottom: cssPx(s, "--cell-pad-bottom", 4), eventsGap: cssPx(s, "--cell-events-gap", 3),
+    border: cssPx(s, "--cell-border", 1),
+  };
+}
+function rowHeightForLines(lines, m) {
+  const n = Math.max(1, lines);
+  return m.padTop + m.padBottom + m.border * 2 + m.headH + m.eventsGap + n * m.chipH + (n - 1) * m.chipGap;
+}
+function weekEventCounts(weeks) { return weeks.map((week) => Math.max(0, ...week.map((d) => (d.events || []).length))); }
+function fitRowHeights(counts, availableRows, m) {
+  const min = rowHeightForLines(1, m);
+  const allMin = min * counts.length;
+  if (availableRows <= allMin) return counts.map(() => Math.max(0, availableRows / counts.length));
+  const needs = counts.map((count) => Math.max(0, rowHeightForLines(Math.max(1, count), m) - min));
+  const needTotal = needs.reduce((sum, n) => sum + n, 0);
+  const rest = availableRows - allMin;
+  if (!needTotal) return counts.map(() => min + rest / counts.length);
+  if (rest >= needTotal) return needs.map((need) => min + need + (rest - needTotal) / counts.length);
+  return needs.map((need) => min + rest * need / needTotal);
+}
+function chipCapacity(rowHeight, m) {
+  const usable = rowHeight - m.padTop - m.padBottom - m.border * 2 - m.headH - m.eventsGap;
+  return Math.max(0, Math.floor((usable + m.chipGap + 0.01) / (m.chipH + m.chipGap)));
+}
+function isTodayMonth() {
+  const now = new Date(); return cur.y === now.getFullYear() && cur.m === now.getMonth() + 1;
+}
+function drawCalendarHeader(data) {
+  $("title").textContent = `${data.year}년 ${data.month}월`;
   const names = prefs.week_start === 1 ? DOW_MON : DOW_SUN;
   $("dow").innerHTML = names.map((n) => `<div style="color:${n === "일" ? "var(--sun)" : n === "토" ? "var(--sat)" : ""}">${n}</div>`).join("");
-  const grid = $("grid"); grid.innerHTML = "";
-  const rowH = grid.clientHeight / 6;
-  const maxChips = Math.max(1, Math.floor((rowH - 36) / 21));
-  data.weeks.flat().forEach((d) => {
-    const cell = document.createElement("div");
-    const cls = ["cell"];
-    if (!d.in_month) cls.push("out");
-    if (d.date === data.today) cls.push("today");
-    if (d.weekday === 6) cls.push("sun");
-    if (d.weekday === 5) cls.push("sat");
-    if (d.holiday) cls.push("hol");
-    cell.className = cls.join(" ");
-    const shown = d.events.slice(0, d.events.length > maxChips ? maxChips - 1 : maxChips);
-    const rest = d.events.length - shown.length;
-    cell.innerHTML =
-      `<div class="cell-head"><span class="num">${d.day}</span>${d.holiday ? `<span class="hname">${esc(d.holiday)}</span>` : ""}<span class="add-hint" title="이 날 일정 추가">+</span></div>` +
-      `<div class="evs">${shown.map((e) => `<div class="chip ${e.status === "suggested" ? "sugg" : ""}" data-id="${e.id}" title="${esc(e.title)}">${e.start_time ? `<span class="t">${e.start_time}</span>` : ""}${esc(e.title)}</div>`).join("")}` +
-      `${rest > 0 ? `<div class="more" data-date="${d.date}">+${rest}개 더</div>` : ""}</div>`;
-    cell.addEventListener("dblclick", (ev) => { if (!ev.target.closest(".chip")) openNew(d.date); });
-    cell.querySelector(".add-hint").addEventListener("click", () => openNew(d.date));
-    cell.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => openEdit(d.events.find((e) => e.id == c.dataset.id))));
-    const more = cell.querySelector(".more");
-    if (more) more.addEventListener("click", () => showDay(d));
-    grid.appendChild(cell);
-  });
-  const b = $("suggBadge");
-  b.textContent = `AI 제안 ${data.suggested_count}건`;
-  b.classList.toggle("on", data.suggested_count > 0);
-  await renderSide();
+  const badge = $("suggBadge");
+  badge.textContent = `AI 제안 ${data.suggested_count}건`;
+  badge.classList.toggle("on", data.suggested_count > 0);
+}
+
+function addCalendarCell(grid, d, weekIndex, rowHeight, m) {
+  const events = d.events || [];
+  const capacity = chipCapacity(rowHeight, m);
+  const overflow = events.length > capacity;
+  const shown = capacity ? events.slice(0, overflow ? Math.max(0, capacity - 1) : capacity) : [];
+  const rest = events.length - shown.length;
+  const compactCount = events.length && capacity < 1;
+  const cell = document.createElement("div");
+  const cls = ["cell"];
+  if (!d.in_month) cls.push("out");
+  if (d.date === monthData.today) cls.push("today");
+  if (d.weekday === 6) cls.push("sun");
+  if (d.weekday === 5) cls.push("sat");
+  if (d.holiday) cls.push("hol");
+  cell.className = cls.join(" ");
+  cell.dataset.week = weekIndex;
+  const countHtml = compactCount ? `<button type="button" class="event-count" aria-label="${d.day}일 일정 ${events.length}건 보기">·${events.length}</button>` : "";
+  const chipHtml = shown.map((e) => `<div class="chip ${e.status === "suggested" ? "sugg" : ""}" data-id="${e.id}" title="${esc(e.title)}">${e.start_time ? `<span class="t">${e.start_time}</span>` : ""}${esc(e.title)}</div>`).join("");
+  const moreHtml = rest > 0 && capacity > 0 ? `<button type="button" class="more" data-date="${d.date}">+${rest}개 더</button>` : "";
+  cell.innerHTML =
+    `<div class="cell-head"><span class="num">${d.day}</span>${countHtml}${d.holiday ? `<span class="hname">${esc(d.holiday)}</span>` : ""}<span class="add-hint" title="이 날 일정 추가">+</span></div>` +
+    `<div class="evs">${chipHtml}${moreHtml}</div>`;
+  cell.addEventListener("dblclick", (ev) => { if (!ev.target.closest(".chip, .more, .event-count, .add-hint")) openNew(d.date); });
+  cell.querySelector(".add-hint").addEventListener("click", () => openNew(d.date));
+  cell.querySelectorAll(".chip").forEach((chip) => chip.addEventListener("click", () => openEdit(events.find((e) => e.id == chip.dataset.id))));
+  const opener = cell.querySelector(".more, .event-count");
+  if (opener) opener.addEventListener("click", () => openDayPopover(d, opener));
+  grid.appendChild(cell);
+}
+
+function scrollToTodayWeek() {
+  const gridScroll = $("gridScroll");
+  const todayCell = $("grid").querySelector(`.cell.today`);
+  if (!todayCell) { gridScroll.scrollTop = 0; return; }
+  const outer = gridScroll.getBoundingClientRect(); const cell = todayCell.getBoundingClientRect();
+  if (cell.top < outer.top || cell.bottom > outer.bottom) gridScroll.scrollTop += cell.top - outer.top - 4;
+}
+
+/* 이 함수는 이미 받은 monthData만 배치한다. 크기 변경 때 API를 다시 부르지 않는다. */
+function layoutGrid(options = {}) {
+  if (!monthData) return;
+  closeDayPopover(false);
+  const grid = $("grid"); const gridScroll = $("gridScroll");
+  const oldScrollTop = Number.isFinite(options.scrollTop) ? options.scrollTop : gridScroll.scrollTop;
+  const weeks = monthData.weeks || [];
+  const metrics = calendarMetrics();
+  const gap = Number.parseFloat(getComputedStyle(grid).rowGap) || 4;
+  const available = Math.max(0, gridScroll.clientHeight);
+  const availableRows = Math.max(0, available - gap * Math.max(0, weeks.length - 1));
+  const counts = weekEventCounts(weeks);
+  const fitHeights = fitRowHeights(counts, availableRows, metrics);
+  const expanded = currentLayout() === "expanded";
+  const heights = expanded ? fitHeights.map((fit, index) => {
+    const visibleLines = counts[index] ? Math.min(currentLines(), counts[index]) : 0;
+    return Math.max(fit, visibleLines ? rowHeightForLines(visibleLines, metrics) : fit);
+  }) : fitHeights;
+  const gridHeight = expanded
+    ? heights.reduce((sum, height) => sum + height, 0) + gap * Math.max(0, heights.length - 1)
+    : available;
+  gridScroll.classList.toggle("expanded", expanded);
+  grid.style.gridTemplateRows = heights.map((height) => `${Math.max(0, height).toFixed(2)}px`).join(" ");
+  grid.style.height = `${Math.max(0, gridHeight).toFixed(2)}px`;
+  grid.innerHTML = "";
+  weeks.forEach((week, weekIndex) => week.forEach((d) => addCalendarCell(grid, d, weekIndex, heights[weekIndex], metrics)));
+  const finishScroll = () => {
+    if (!expanded) { gridScroll.scrollTop = 0; return; }
+    if (options.scroll === "top") { gridScroll.scrollTop = 0; return; }
+    if (options.scroll === "today") { scrollToTodayWeek(); return; }
+    gridScroll.scrollTop = Math.max(0, Math.min(oldScrollTop, gridScroll.scrollHeight - gridScroll.clientHeight));
+  };
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(finishScroll); else setTimeout(finishScroll, 0);
+}
+
+async function render(options = {}) {
+  closeDayPopover(false);
+  const seq = ++renderSeq;
+  const oldScrollTop = $("gridScroll") ? $("gridScroll").scrollTop : 0;
+  // 자료를 가져오는 일(month + 옆 패널)과, 화면에 다시 배치하는 일(layoutGrid)을 분리한다.
+  const [data] = await Promise.all([api.month(cur.y, cur.m), renderSide()]);
+  if (seq !== renderSeq) return;          // 더 새로 그리는 중이면 이 결과는 버림
+  monthData = data;
+  drawCalendarHeader(data);
+  layoutGrid({ scroll: options.scroll || "keep", scrollTop: oldScrollTop });
+}
+
+function scheduleGridLayout() {
+  clearTimeout(layoutTimer);
+  layoutTimer = setTimeout(() => { if (monthData) layoutGrid({ scroll: "keep" }); }, 120);
+}
+
+function closeDayPopover(restoreFocus = true) {
+  const pop = $("dayPopover");
+  if (!pop || !dayPopoverState) return;
+  const opener = dayPopoverState.opener;
+  dayPopoverState = null;
+  pop.hidden = true; pop.innerHTML = ""; pop.style.left = ""; pop.style.top = ""; pop.style.visibility = "";
+  if (restoreFocus && opener && document.body.contains(opener)) opener.focus({ preventScroll: true });
+}
+
+function positionDayPopover(anchor) {
+  const pop = $("dayPopover"); const frame = $("frame");
+  const frameRect = frame.getBoundingClientRect(); const anchorRect = anchor.getBoundingClientRect();
+  const margin = 6; const width = pop.offsetWidth; const height = pop.offsetHeight;
+  let left = anchorRect.right - frameRect.left + margin;
+  let top = anchorRect.top - frameRect.top;
+  if (left + width > frame.clientWidth - margin) left = anchorRect.left - frameRect.left - width - margin;
+  if (top + height > frame.clientHeight - margin) top = anchorRect.bottom - frameRect.top - height;
+  left = Math.max(margin, Math.min(left, frame.clientWidth - width - margin));
+  top = Math.max(margin, Math.min(top, frame.clientHeight - height - margin));
+  pop.style.left = `${left}px`; pop.style.top = `${top}px`;
+}
+
+function openDayPopover(day, opener) {
+  const frame = $("frame");
+  // 매우 작은 창에서는 말풍선보다 기존 전체 목록 창이 더 읽기 쉽다.
+  if (frame.clientWidth < 300 || frame.clientHeight < 230) { closeDayPopover(false); showDay(day); return; }
+  closeDayPopover(false);
+  const pop = $("dayPopover");
+  const events = day.events || [];
+  pop.innerHTML = `<div class="day-pop-title">${fmtDate(day.date)} 일정 ${events.length}건</div>` +
+    `<div class="day-pop-list">${events.map((e) => `<button type="button" class="day-pop-event" data-id="${e.id}"><span class="day-pop-time">${esc(e.start_time || "종일")}</span><span class="day-pop-name">${esc(e.title)}</span>${e.status === "suggested" ? `<span class="day-pop-tag">제안</span>` : ""}</button>`).join("")}</div>` +
+    `<button type="button" class="btn primary day-pop-add">+ 이 날 일정 추가</button>`;
+  const maxHeight = Math.max(120, Math.min(frame.clientHeight - 12, Math.floor(frame.clientHeight * 0.7)));
+  pop.style.maxHeight = `${maxHeight}px`; pop.style.visibility = "hidden"; pop.hidden = false;
+  dayPopoverState = { opener };
+  positionDayPopover(opener);
+  pop.style.visibility = "";
+  pop.querySelectorAll(".day-pop-event").forEach((button) => button.addEventListener("click", () => {
+    const event = events.find((e) => e.id == button.dataset.id); closeDayPopover(false); openEdit(event);
+  }));
+  pop.querySelector(".day-pop-add").addEventListener("click", () => { closeDayPopover(false); openNew(day.date); });
+  const first = pop.querySelector(".day-pop-event") || pop.querySelector(".day-pop-add");
+  if (first) setTimeout(() => first.focus(), 0);
 }
 
 // '기존 일정과 같은 일인가요?' 제안: 기존 일정과 바뀐 부분을 굵게
@@ -1270,7 +1471,7 @@ async function renderFeed() {
         ${r.school_relevance === "학교 업무" ? '<span class="tagl school">학교</span>' : ""}<span class="tagl">${esc(r.importance)}</span><span class="tm">${fmtTime(r.received_at)}</span></div>
       ${r.subject ? `<div class="subj">${esc(r.subject)}</div>` : ""}
       <div class="sum">${esc(r.summary)}${r.action_items && r.action_items.length ? " · 할 일: " + esc(r.action_items[0]) : ""}</div></div>`).join("")
-    : `<div class="empty">${feedF === "all" ? "최근 30일 동안 받은 소식이 없습니다." : "처리할 소식이 없습니다. 👍"}</div>`;
+    : `<div class="empty">${feedF === "all" ? "최근 30일 동안 받은 소식이 없습니다." : feedF === "school" ? "최근 30일 동안 학교 업무로 판단된 소식이 없습니다." : "처리할 소식이 없습니다. 👍"}</div>`;
   $("feedList").querySelectorAll(".fi").forEach((el) => el.addEventListener("click", () => openItem(Number(el.dataset.mid))));
   const warn = [st.messenger_error, st.mail_error, st.ai_last_error, st.ai_fallback_error].filter(Boolean);
   $("statusBar").innerHTML = `💬 쪽지: ${esc(st.messenger || "꺼짐")}<br>✉ 메일: ${esc(st.mail || "꺼짐")}${st.mail_last_check ? ` · 마지막 ${esc(st.mail_last_check)}` : ""}
@@ -1470,6 +1671,13 @@ function menuLabels() {
   $("weekStart").textContent = `주 시작: ${prefs.week_start === 1 ? "월요일" : "일요일"} (바꾸기)`;
   $("toggleSugg").textContent = `AI 제안 일정 ${prefs.show_suggested ? "보이는 중 (숨기기)" : "숨김 (보이기)"}`;
   $("theme").textContent = `테마: ${prefs.theme === "light" ? "밝게" : "어둡게"} (바꾸기)`;
+  $("calendarLayout").textContent = currentLayout() === "expanded"
+    ? `칸 크기: 넓게 보기 (한 칸 ${currentLines()}줄) ▾` : "칸 크기: 한 화면에 맞춤 ▾";
+  $("calendarLayoutList").querySelectorAll("[data-calendar-layout]").forEach((button) => {
+    const lines = Number(button.dataset.calendarLines || 6);
+    button.classList.toggle("sel", button.dataset.calendarLayout === currentLayout() &&
+      (currentLayout() === "fit" || lines === currentLines()));
+  });
   $("opacity").value = Math.round((prefs.opacity || 0.92) * 100);
   document.body.classList.toggle("light", prefs.theme === "light");
   applyOpacity(prefs.opacity);
@@ -1515,9 +1723,15 @@ function drawModelList() {
 }
 
 function bindUI() {
-  $("prev").onclick = () => { cur.m--; if (cur.m < 1) { cur.m = 12; cur.y--; } render(); };
-  $("next").onclick = () => { cur.m++; if (cur.m > 12) { cur.m = 1; cur.y++; } render(); };
-  $("todayBtn").onclick = () => { const t = new Date(); cur = { y: t.getFullYear(), m: t.getMonth() + 1 }; render(); };
+  const moveMonth = (delta) => {
+    cur.m += delta;
+    if (cur.m < 1) { cur.m = 12; cur.y--; }
+    if (cur.m > 12) { cur.m = 1; cur.y++; }
+    render({ scroll: isTodayMonth() ? "today" : "top" });
+  };
+  $("prev").onclick = () => moveMonth(-1);
+  $("next").onclick = () => moveMonth(1);
+  $("todayBtn").onclick = () => { const t = new Date(); cur = { y: t.getFullYear(), m: t.getMonth() + 1 }; render({ scroll: "today" }); };
   $("addBtn").onclick = () => { const t = new Date(); openNew(`${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`); };
   $("sideBtn").onclick = () => { $("side").classList.toggle("hidden"); render(); };
   $("suggBadge").onclick = () => { $("side").classList.remove("hidden"); render(); };
@@ -1526,10 +1740,24 @@ function bindUI() {
   $("menuBtn").onclick = (ev) => { ev.stopPropagation(); $("menu").classList.toggle("on"); if ($("menu").classList.contains("on")) loadModels(false); };
   $("modelBtn").onclick = (ev) => { ev.stopPropagation(); const l = $("modelList"); l.classList.toggle("on"); if (l.classList.contains("on")) drawModelList(); };
   document.addEventListener("click", (ev) => { if (!ev.target.closest("#menu")) $("menu").classList.remove("on"); });
+  document.addEventListener("pointerdown", (ev) => {
+    if (!dayPopoverState || !(ev.target instanceof Element)) return;
+    if (!ev.target.closest("#dayPopover, .more, .event-count")) closeDayPopover();
+  });
+  $("gridScroll").addEventListener("scroll", () => closeDayPopover(), { passive: true });
   document.querySelectorAll("[data-snap]").forEach((b) => b.onclick = () => api.win("snap", b.dataset.snap));
   $("nextMon").onclick = () => api.win("next_monitor");
   $("opacity").oninput = (ev) => { prefs.opacity = ev.target.value / 100; applyOpacity(prefs.opacity); };
   $("opacity").onchange = (ev) => api.set_prefs({ opacity: ev.target.value / 100 });
+  $("calendarLayout").onclick = (ev) => { ev.stopPropagation(); $("calendarLayoutList").classList.toggle("on"); };
+  $("calendarLayoutList").querySelectorAll("[data-calendar-layout]").forEach((button) => button.onclick = async (ev) => {
+    ev.stopPropagation();
+    const layout = button.dataset.calendarLayout;
+    const changes = { calendar_layout: layout };
+    if (layout === "expanded") changes.calendar_lines = Number(button.dataset.calendarLines);
+    $("calendarLayoutList").classList.remove("on");
+    await setPref(changes);
+  });
   $("weekStart").onclick = () => setPref({ week_start: prefs.week_start === 1 ? 0 : 1 });
   $("toggleSugg").onclick = () => setPref({ show_suggested: !prefs.show_suggested });
   $("theme").onclick = () => setPref({ theme: prefs.theme === "light" ? "dark" : "light" });
@@ -1578,10 +1806,14 @@ function bindUI() {
     if (result && result.data_url) openMemoNew({ imageDataUrl: result.data_url });
   };
   document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape") { closeDlg(); $("menu").classList.remove("on"); closeDialog2(); }
+    if (ev.key === "Escape") { closeDayPopover(); closeDlg(); $("menu").classList.remove("on"); closeDialog2(); }
     if (ev.key === "Enter" && $("scrim").classList.contains("on") && ev.target.tagName === "INPUT") save();
   });
-  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 120); });
+  window.addEventListener("resize", scheduleGridLayout);
+  if (window.ResizeObserver) {
+    layoutObserver = new ResizeObserver(scheduleGridLayout);
+    layoutObserver.observe($("gridScroll"));   // 달력 격자 영역 크기가 바뀌면 배치만 다시 (자료는 다시 안 받음)
+  }
   bindDragAndResize();
 }
 
@@ -1621,7 +1853,7 @@ async function boot(realApi) {
   menuLabels();
   const t = new Date(); cur = { y: t.getFullYear(), m: t.getMonth() + 1 };
   bindUI();
-  await render();
+  await render({ scroll: "today" });
   refreshMemoStatus();              // 메모 기능 상태는 첫 화면을 그린 뒤에 (기다리지 않음)
   setTimeout(checkForUpdateSilently, 5000);
   setInterval(checkForUpdateSilently, 6 * 60 * 60 * 1000);

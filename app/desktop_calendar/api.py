@@ -70,6 +70,8 @@ DEFAULT_PREFS = {
     "week_start": 0,         # 0 = 일요일, 1 = 월요일
     "show_suggested": True,
     "theme": "dark",         # dark | light
+    "calendar_layout": "fit", # fit | expanded
+    "calendar_lines": 6,       # expanded 일 때 칸마다 보일 줄 수: 4 | 6 | 8
     "last_import": None,     # 마지막으로 파일에서 가져온 묶음 {batch, name, count, at} — 되돌리기용
 }
 
@@ -112,7 +114,15 @@ class CalendarAPI:
     @_locked
     def set_prefs(self, changes: dict) -> dict:
         p = self.get_prefs()
-        p.update({k: v for k, v in (changes or {}).items() if k in DEFAULT_PREFS})
+        changes = {k: v for k, v in (changes or {}).items() if k in DEFAULT_PREFS}
+        if "calendar_layout" in changes and changes["calendar_layout"] not in ("fit", "expanded"):
+            changes["calendar_layout"] = DEFAULT_PREFS["calendar_layout"]
+        if ("calendar_lines" in changes
+                and (not isinstance(changes["calendar_lines"], int)
+                     or isinstance(changes["calendar_lines"], bool)
+                     or changes["calendar_lines"] not in (4, 6, 8))):
+            changes["calendar_lines"] = DEFAULT_PREFS["calendar_lines"]
+        p.update(changes)
         self._prefs_path.parent.mkdir(parents=True, exist_ok=True)
         self._prefs_path.write_text(json.dumps(p, ensure_ascii=False, indent=1), encoding="utf-8")
         return p
@@ -173,11 +183,13 @@ class CalendarAPI:
     # ---------- 받은 소식 (쪽지·메일 통합 목록) ----------
     @_locked
     def feed(self, filt: str = "open", source: str = "", limit: int = 80) -> list[dict]:
-        """filt: open(처리 안 한 것) | school(학교 업무, 처리 안 한 것) | all(처리 완료 포함, 최근 30일)"""
+        """filt: open(처리 안 한 것, 중요도순) | school(학교 업무 전체·처리 완료 포함, 최신순) | all(전체, 최신순)
+        — 모두 최근 30일. 처리 완료한 것은 화면에서 흐리게 보임."""
         since = (date.today() - timedelta(days=30)).isoformat()
         rows = self._storage.feed(source=source if source in ("mail", "eztalk") else "",
-                                  only_open=filt != "all", school_only=filt == "school",
-                                  limit=int(limit), since=since)
+                                  only_open=filt == "open", school_only=filt == "school",
+                                  limit=int(limit), since=since,
+                                  order="importance" if filt == "open" else "recent")
         for r in rows:
             r["sender_short"] = re.sub(r"\s*<[^>]+>", "", r["sender"]).strip() or r["sender"]
         return rows

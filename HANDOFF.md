@@ -231,6 +231,15 @@
 - 2026-11-11: 0.10.0-beta.1 설치 파일을 이 PC 에서 빌드(`cbm.exe --provider fake test` 정상), feature/today-plan push, GitHub pre-release 로 배포(수동 업로드).
 - A2 때 주의: 시각 없는 새 일정은 같은 날 오전·오후 같은 이름 회의 둘 다 same 으로 나옴 → 후보가 2개 이상이면 자동으로 묶지 말고 묻기.
 
+### 2-15. 달력 칸 높이 · 받은 소식 목록 순서 (feature/today-plan) — 2026-11-12
+- 달력 칸: Codex(astra)와 따로 연구 → 같은 결론. 구현은 Codex(gpt-5.6-terra), Claude 검토·실제 창 확인.
+  · 한 화면에 맞춤(기본 `calendar_layout: fit`): 6주 모두 보이되 주마다 '그 주 가장 많은 하루 일정 수'로 필요 높이를 정해 남는 높이를 바쁜 주에 나눔(`fitRowHeights`). 사용자 실제 11월(하루 11건)도 '+더' 없이 다 보임.
+  · 넓게 보기(`expanded`, `calendar_lines` 4/6/8): 바쁜 주가 그 줄 수만큼 커지고 `#gridScroll` 만 세로 스크롤, 오늘 주로 이동.
+  · '+N개 더' → 칸 옆 말풍선(`openDayPopover`), Esc·바깥 클릭·다시 그리기 때 닫힘, 아주 작은 창은 기존 모달. 칩 1개도 안 들어가면 날짜 옆 '·N'.
+  · `render()` = 자료(api.month+옆 패널) / `layoutGrid()` = 배치. 창 크기 변경은 ResizeObserver(#gridScroll)로 배치만. (Codex 가 없는 `#cal` 을 관찰해 첫 화면이 안 그려지던 것 → Claude 가 #gridScroll 로 고침)
+- 받은 소식: '전체(30일)'·'학교 업무'는 최신순(`Storage.feed(order='recent')`), '학교 업무'는 처리 완료 포함(흐리게). '처리 안 한 것'만 중요도순.
+  원인: 사용자가 모두 처리 완료 → 학교 업무(처리 안 한 것만) 0건, 전체는 중요도순이라 오늘 '참고' 쪽지가 맨 아래.
+
 ## 3. 지켜야 할 설계 규칙
 
 0. **모델 선택은 항상 `create_provider(settings, spec)` / `build_pipeline(settings)` 경유**. spec 형식 `제공자[:모델]`.
