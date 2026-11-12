@@ -103,7 +103,12 @@
   #gridScroll::-webkit-scrollbar-track, .side::-webkit-scrollbar-track, .menu::-webkit-scrollbar-track { background: transparent; }
   #gridScroll::-webkit-scrollbar-thumb, .side::-webkit-scrollbar-thumb, .menu::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 999px; }
   #gridScroll, .side, .menu { scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
-  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; min-height: 0; }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; min-height: 0; position: relative; }
+  /* 주 사이 경계: 위아래로 끌면 칸 높이가 바뀜 (모든 주가 같이) */
+  .row-resizer { position: absolute; left: 0; right: 0; height: 8px; cursor: row-resize; z-index: 2; touch-action: none; }
+  .row-resizer::after { content: ""; position: absolute; left: 40%; right: 40%; top: 3px; height: 2px; border-radius: 2px; background: var(--accent, #4c8dff); opacity: 0; transition: opacity .12s; }
+  .row-resizer:hover::after, body.row-resizing .row-resizer::after { opacity: 0.8; }
+  body.row-resizing, body.row-resizing * { cursor: row-resize !important; user-select: none; }
   .cell {
     background: var(--panel); border-radius: var(--radius); padding: var(--cell-pad-top) 6px var(--cell-pad-bottom); min-height: 0;
     display: flex; flex-direction: column; overflow: hidden; cursor: default; border: var(--cell-border) solid transparent;
@@ -424,13 +429,15 @@
   </div>
 
   <div class="menu" id="menu">
-    <div class="sec">위치 · 크기</div>
-    <button class="mi" data-snap="right">오른쪽 2/3</button>
-    <button class="mi" data-snap="left">왼쪽 2/3</button>
-    <button class="mi" data-snap="center">가운데 2/3</button>
-    <button class="mi" data-snap="full">화면 가득</button>
-    <button class="mi" id="nextMon">다른 모니터로 옮기기</button>
     <div class="sec">보기</div>
+    <button class="mi" id="placeBtn">창 위치·크기 ▾</button>
+    <div class="mlist" id="placeList">
+      <button class="mi" data-snap="right">오른쪽 2/3</button>
+      <button class="mi" data-snap="left">왼쪽 2/3</button>
+      <button class="mi" data-snap="center">가운데 2/3</button>
+      <button class="mi" data-snap="full">화면 가득</button>
+      <button class="mi" id="nextMon">다른 모니터로 옮기기</button>
+    </div>
     <div class="rng">배경 투명도 <input type="range" id="opacity" min="40" max="100" step="2"></div>
     <button class="mi" id="calendarLayout"></button>
     <div class="mlist" id="calendarLayoutList">
@@ -438,6 +445,7 @@
       <button class="mi" data-calendar-layout="expanded" data-calendar-lines="4">넓게 4줄</button>
       <button class="mi" data-calendar-layout="expanded" data-calendar-lines="6">넓게 6줄</button>
       <button class="mi" data-calendar-layout="expanded" data-calendar-lines="8">넓게 8줄</button>
+      <div class="note">주와 주 사이 경계를 위아래로 끌어도 칸 높이를 바꿀 수 있어요. 경계를 두 번 누르면 '한 화면에 맞춤'으로 돌아가요.</div>
     </div>
     <button class="mi" id="weekStart"></button>
     <button class="mi" id="toggleSugg"></button>
@@ -500,7 +508,7 @@ function MockAPI() {
   const t = new Date(); const pad = (n) => String(n).padStart(2, "0");
   const ds = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const add = (n) => { const d = new Date(t); d.setDate(d.getDate() + n); return ds(d); };
-  let id = 10; let p = { week_start: 0, show_suggested: true, theme: "dark", opacity: 0.92, calendar_layout: "fit", calendar_lines: 6 };
+  let id = 10; let p = { week_start: 0, show_suggested: true, theme: "dark", opacity: 0.92, calendar_layout: "fit", calendar_lines: 6, calendar_row_px: 0 };
   let evs = [
     { id: 1, title: "학업성적관리위원회", date: add(3), start_time: "15:30", end_time: "16:30", location: "본관 2층 회의실", note: "담임 전원 참석", status: "suggested", origin: "ai", message_id: 1, sender: "교무부장" },
     { id: 2, title: "학교폭력 실태조사 입력 마감", date: add(0), start_time: "16:00", end_time: "", location: "", note: "", status: "confirmed", origin: "ai", message_id: 2, sender: "교감" },
@@ -948,7 +956,9 @@ let dayPopoverState = null;
 let layoutObserver = null;
 let layoutTimer = null;
 
-function currentLayout() { return prefs.calendar_layout === "expanded" ? "expanded" : "fit"; }
+const ROW_PX_MIN = 40, ROW_PX_MAX = 600;
+function currentLayout() { return ["expanded", "custom"].includes(prefs.calendar_layout) ? prefs.calendar_layout : "fit"; }
+function currentRowPx() { const v = Number(prefs.calendar_row_px); return Number.isFinite(v) && v >= ROW_PX_MIN ? Math.min(ROW_PX_MAX, v) : 0; }
 function currentLines() { return [4, 6, 8].includes(Number(prefs.calendar_lines)) ? Number(prefs.calendar_lines) : 6; }
 function cssPx(style, name, fallback) { return Number.parseFloat(style.getPropertyValue(name)) || fallback; }
 function calendarMetrics() {
@@ -1030,6 +1040,60 @@ function scrollToTodayWeek() {
   if (cell.top < outer.top || cell.bottom > outer.bottom) gridScroll.scrollTop += cell.top - outer.top - 4;
 }
 
+/* 주 사이 경계 끌기: 끄는 경계가 마우스를 그대로 따라가도록, 그 위의 주들(w+1개)이 같은 높이로 늘고 준다.
+   모든 주가 같은 높이가 되고(직접 맞춤), 놓으면 그 높이를 기억한다. 경계를 두 번 누르면 '한 화면에 맞춤'. */
+let rowDrag = null;
+function addRowResizers(grid, heights, gap) {
+  let top = 0;
+  heights.forEach((h, w) => {
+    top += h;
+    const last = w === heights.length - 1;
+    const bar = document.createElement("div");
+    bar.className = "row-resizer";
+    bar.title = "끌어서 칸 높이 바꾸기 (두 번 누르면 한 화면에 맞춤)";
+    bar.style.top = `${(last ? top - 8 : top + gap / 2 - 4).toFixed(2)}px`;
+    bar.addEventListener("pointerdown", (ev) => startRowDrag(ev, w, heights, gap));
+    bar.addEventListener("dblclick", (ev) => { ev.stopPropagation(); setPref({ calendar_layout: "fit" }); });
+    grid.appendChild(bar);
+    top += gap;
+  });
+}
+function startRowDrag(ev, w, heights, gap) {
+  if (ev.button !== 0) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const gridTop = $("grid").getBoundingClientRect().top;
+  const minRow = rowHeightForLines(1, calendarMetrics());
+  const before = { layout: prefs.calendar_layout, px: prefs.calendar_row_px };
+  rowDrag = { moved: false, pending: false, px: 0 };
+  document.body.classList.add("row-resizing");
+  const onMove = (e) => {
+    const boundary = e.clientY - gridTop;                 // 격자 맨 위에서 끄는 경계까지
+    const h = Math.round(Math.max(minRow, Math.min(ROW_PX_MAX, (boundary - gap * w) / (w + 1))));
+    if (!rowDrag.moved && Math.abs(e.clientY - ev.clientY) < 3) return;
+    rowDrag.moved = true; rowDrag.px = h;
+    if (rowDrag.pending) return; rowDrag.pending = true;
+    requestAnimationFrame(() => {
+      if (!rowDrag) return;
+      rowDrag.pending = false;
+      prefs.calendar_layout = "custom"; prefs.calendar_row_px = rowDrag.px;
+      layoutGrid();
+    });
+  };
+  const onUp = async () => {
+    document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onUp);
+    document.body.classList.remove("row-resizing");
+    const done = rowDrag; rowDrag = null;
+    if (!done || !done.moved) return;
+    try {
+      prefs = await api.set_prefs({ calendar_layout: "custom", calendar_row_px: done.px });
+    } catch (_) { prefs.calendar_layout = before.layout; prefs.calendar_row_px = before.px; }
+    menuLabels(); layoutGrid();
+  };
+  document.addEventListener("pointermove", onMove); document.addEventListener("pointerup", onUp);
+  document.addEventListener("pointercancel", onUp);
+}
+
 /* 이 함수는 이미 받은 monthData만 배치한다. 크기 변경 때 API를 다시 부르지 않는다. */
 function layoutGrid(options = {}) {
   if (!monthData) return;
@@ -1043,11 +1107,16 @@ function layoutGrid(options = {}) {
   const availableRows = Math.max(0, available - gap * Math.max(0, weeks.length - 1));
   const counts = weekEventCounts(weeks);
   const fitHeights = fitRowHeights(counts, availableRows, metrics);
-  const expanded = currentLayout() === "expanded";
-  const heights = expanded ? fitHeights.map((fit, index) => {
-    const visibleLines = counts[index] ? Math.min(currentLines(), counts[index]) : 0;
-    return Math.max(fit, visibleLines ? rowHeightForLines(visibleLines, metrics) : fit);
-  }) : fitHeights;
+  const layout = currentLayout();
+  const expanded = layout !== "fit";   // 넓게 보기·직접 맞춤은 격자가 길어지면 스크롤
+  // 넓게 보기: 모든 주를 'N줄 들어가는 높이'로 똑같이 맞춘다 (창이 더 크면 남는 높이를 고르게).
+  // 예전에는 일정이 N개 넘는 주만 키워서, 일정이 적은 달은 4·6·8줄을 골라도 화면이 그대로였다.
+  // 직접 맞춤(경계 끌기): 모든 주를 끈 높이 그대로 (창보다 작으면 아래가 비어도 됨).
+  const minRow = rowHeightForLines(1, metrics);
+  const expandedRow = layout === "custom" && currentRowPx()
+    ? Math.max(minRow, currentRowPx())
+    : Math.max(rowHeightForLines(currentLines(), metrics), weeks.length ? availableRows / weeks.length : 0);
+  const heights = expanded ? weeks.map(() => expandedRow) : fitHeights;
   const gridHeight = expanded
     ? heights.reduce((sum, height) => sum + height, 0) + gap * Math.max(0, heights.length - 1)
     : available;
@@ -1056,6 +1125,7 @@ function layoutGrid(options = {}) {
   grid.style.height = `${Math.max(0, gridHeight).toFixed(2)}px`;
   grid.innerHTML = "";
   weeks.forEach((week, weekIndex) => week.forEach((d) => addCalendarCell(grid, d, weekIndex, heights[weekIndex], metrics)));
+  addRowResizers(grid, heights, gap);
   const finishScroll = () => {
     if (!expanded) { gridScroll.scrollTop = 0; return; }
     if (options.scroll === "top") { gridScroll.scrollTop = 0; return; }
@@ -1672,7 +1742,8 @@ function menuLabels() {
   $("toggleSugg").textContent = `AI 제안 일정 ${prefs.show_suggested ? "보이는 중 (숨기기)" : "숨김 (보이기)"}`;
   $("theme").textContent = `테마: ${prefs.theme === "light" ? "밝게" : "어둡게"} (바꾸기)`;
   $("calendarLayout").textContent = currentLayout() === "expanded"
-    ? `칸 크기: 넓게 보기 (한 칸 ${currentLines()}줄) ▾` : "칸 크기: 한 화면에 맞춤 ▾";
+    ? `칸 크기: 넓게 보기 (한 칸 ${currentLines()}줄) ▾`
+    : currentLayout() === "custom" ? "칸 크기: 직접 맞춤 (경계를 끌어서) ▾" : "칸 크기: 한 화면에 맞춤 ▾";
   $("calendarLayoutList").querySelectorAll("[data-calendar-layout]").forEach((button) => {
     const lines = Number(button.dataset.calendarLines || 6);
     button.classList.toggle("sel", button.dataset.calendarLayout === currentLayout() &&
@@ -1745,6 +1816,7 @@ function bindUI() {
     if (!ev.target.closest("#dayPopover, .more, .event-count")) closeDayPopover();
   });
   $("gridScroll").addEventListener("scroll", () => closeDayPopover(), { passive: true });
+  $("placeBtn").onclick = (ev) => { ev.stopPropagation(); $("placeList").classList.toggle("on"); };
   document.querySelectorAll("[data-snap]").forEach((b) => b.onclick = () => api.win("snap", b.dataset.snap));
   $("nextMon").onclick = () => api.win("next_monitor");
   $("opacity").oninput = (ev) => { prefs.opacity = ev.target.value / 100; applyOpacity(prefs.opacity); };
