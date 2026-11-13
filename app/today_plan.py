@@ -82,8 +82,10 @@ def _is_overdue(item: PlanItem, now: datetime) -> bool:
     return d == today and bool(t) and t < now.strftime("%H:%M")
 
 
-def collect(storage, now: datetime, last_plan_at: str | None = None) -> tuple[list, list, int]:
-    """(할 일 목록, 확정할 일정 목록, 넘쳐서 뺀 수). 할 일 목록은 규칙 순서로 번호가 매겨져 있음."""
+def collect(storage, now: datetime, last_plan_at: str | None = None, prev_plan: dict | None = None,
+            carry_out: list | None = None) -> tuple[list, list, int]:
+    """(할 일 목록, 확정할 일정 목록, 넘쳐서 뺀 수). 할 일 목록은 규칙 순서로 번호가 매겨져 있음.
+    prev_plan: 지난 정리(없으면 DB 에서 찾음). carry_out: 주면 40건 제한 전 모든 할 일 id 를 담아 줌(다음에 이어 받기용)."""
     today = now.date()
     t0, t1 = today.isoformat(), (today + timedelta(days=1)).isoformat()
     states = storage.todo_states()
@@ -105,8 +107,11 @@ def collect(storage, now: datetime, last_plan_at: str | None = None) -> tuple[li
     seen = {e["id"] for e in events}
     events += [e for e in storage.calendar_events_by_ids([ref for k, ref in back if k == "event"])
                if e["id"] not in seen and e["status"] == "confirmed"]
-    # 같은 일을 원문 소식으로 다시 보이지 않게: 완료·미룬 일정도 연결 확인엔 넣음
-    link_ids = [e["id"] for e in events if e["status"] == "confirmed"] + [ref for k, ref in states if k == "event"]
+    # 같은 일을 원문 소식으로 다시 보이지 않게: 완료·미룬 일정도 연결 확인엔 넣음 (취소·지운 일정은 빼서,
+    # 그 일정에 이어진 새 후속 소식(예: 취소 공지 속 제출 업무)이 숨지 않게)
+    state_events = storage.calendar_events_by_ids([ref for k, ref in states if k == "event"])
+    link_ids = ([e["id"] for e in events if e["status"] == "confirmed"]
+                + [e["id"] for e in state_events if e["status"] == "confirmed"])
     for e in events:
         if e["status"] == "confirmed":
             if hidden("event", e["id"]):
@@ -125,17 +130,19 @@ def collect(storage, now: datetime, last_plan_at: str | None = None) -> tuple[li
     d_from = (today - timedelta(days=DEADLINE_PAST_DAYS)).isoformat()
     d_to = (today + timedelta(days=DEADLINE_AHEAD_DAYS)).isoformat()
     # 지난 정리에 있던 할 일은 완료할 때까지 이어 받음 (마감 없는 소식이 다음 정리에서 사라지지 않게)
-    last = storage.last_plan_before(now_iso(now)) if hasattr(storage, "last_plan_before") else None
-    carry = [x.get("ref_id") for x in ((last or {}).get("data") or {}).get("items", []) if x.get("kind") == "todo"]
+    if prev_plan is None:
+        prev_plan = storage.last_plan_before(now_iso(now)) if hasattr(storage, "last_plan_before") else None
+    prev_data = (prev_plan or {}).get("data") or {}
+    carry = prev_data.get("carry_ids")
+    if not isinstance(carry, list):      # carry_ids 가 없던 예전 정리는 보인 할 일만
+        carry = [x.get("ref_id") for x in prev_data.get("items", []) if x.get("kind") == "todo"]
     carry += [ref for k, ref in back if k == "message"]
     carry = [int(i) for i in carry if isinstance(i, int) and not isinstance(i, bool)]
     for m in storage.plan_messages(since, d_from, d_to, include_ids=carry):
         if m["id"] in linked or hidden("message", m["id"]):
             continue
         d, _ = _deadline_parts(m.get("deadline") or "")
-        if d and d < d_from:
-            continue      # 이어 받은 것 중 마감이 한참 지난 것은 뺌 (새 소식처럼 보이지 않게)
-        in_window = bool(d) and d_from <= d <= d_to
+        in_window = bool(d) and d <= d_to     # 마감이 오래 지난 것(새로 받았거나 이어 받은 것)은 '마감 지남'으로
         if not in_window and (m.get("category") in SKIP_CATEGORIES):
             continue      # 마감 없는 새 소식 중 참고·광고는 할 일이 아님
         summary_lines = (m.get("summary") or "").strip().splitlines()
@@ -149,6 +156,8 @@ def collect(storage, now: datetime, last_plan_at: str | None = None) -> tuple[li
                               action=str(actions[0]) if actions else ""))
     for it in items:
         it.overdue = _is_overdue(it, now)
+    if carry_out is not None:
+        carry_out.extend(it.ref_id for it in items if it.kind == "todo")
     ordered = rule_order(items, now)
     overflow = max(0, len(ordered) - MAX_ITEMS)
     ordered = ordered[:MAX_ITEMS]
@@ -300,9 +309,12 @@ def _public(it: PlanItem) -> dict:
     return out
 
 
-def build_plan(storage, now: datetime, slot: str, last_plan_at: str | None = None) -> dict:
-    items, suggested, overflow = collect(storage, now, last_plan_at)
+def build_plan(storage, now: datetime, slot: str, last_plan_at: str | None = None,
+               prev_plan: dict | None = None) -> dict:
+    carry: list = []
+    items, suggested, overflow = collect(storage, now, last_plan_at, prev_plan, carry)
     return {
+        "carry_ids": carry,     # 화면엔 안 씀: 40건 넘어 안 보인 할 일도 다음 정리에 이어 받기용
         "slot": slot, "made_at": now_iso(now), "source": "rule",
         "headline": headline(items, suggested, overflow, now),
         "items": [_public(it) for it in items],
@@ -316,12 +328,15 @@ def run_plan(storage, now: datetime, slot: str) -> dict | None:
     """이 회차 정리를 맡아서(두 프로그램이 동시에 해도 한 번만) 만들고 저장. 못 맡으면 None."""
     plan_date = now.strftime("%Y-%m-%d")
     stamp = now_iso(now)
+    # 실행권을 맡기 전에 지난 정리를 먼저 읽어 둠 ('다시 정리'는 맡을 때 지난 수동 정리를 running 으로 바꿔서
+    # 그 뒤엔 찾을 수 없음 → 직전 수동 정리의 할 일이 이어지지 않던 문제)
+    prev = storage.last_plan_before(stamp)
+    # 처음 정리하는 날(이전 정리가 없음)은 최근 하루 동안 받은 소식을 새 소식으로 봄
+    since = (prev or {}).get("finished_at") or now_iso(now - timedelta(days=1))
     if not storage.claim_plan(plan_date, slot, stamp):
         return None
-    # 처음 정리하는 날(이전 정리가 없음)은 최근 하루 동안 받은 소식을 새 소식으로 봄
-    since = storage.last_plan_finished_before(stamp) or now_iso(now - timedelta(days=1))
     try:
-        data = build_plan(storage, now, slot, since)
+        data = build_plan(storage, now, slot, since, prev_plan=prev or {})
     except Exception:
         storage.release_plan(plan_date, slot, stamp)   # 다음 확인 때 다시 맡을 수 있게
         raise

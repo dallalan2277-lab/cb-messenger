@@ -305,3 +305,44 @@ def test_stale_run_cannot_overwrite_newer_owner(db):
                               claimed_at="2026-11-12 09:00:00")              # A 가 깨어나도 못 덮어씀
     saved = db.get_plan(TODAY, "morning")
     assert saved["data"] == {"items": []} and saved["notified"] == 1
+
+
+# ---- Codex 재검토(2026-11-13)로 고친 것 ----
+
+def test_overflow_todos_are_carried_to_next_plan(db):
+    ids = [msg(db, received=f"2026-11-12 08:{i:02d}") for i in range(tp.MAX_ITEMS + 1)]
+    morning = tp.run_plan(db, NOW, "morning")
+    shown = [x["ref_id"] for x in morning["items"]]
+    assert morning["overflow"] == 1 and len(shown) == tp.MAX_ITEMS
+    for i in shown:
+        db.set_done(i)
+    hidden_one = (set(ids) - set(shown)).pop()
+    noon = tp.run_plan(db, datetime(2026, 11, 12, 12, 40), "noon")
+    assert [x["ref_id"] for x in noon["items"]] == [hidden_one]
+
+
+def test_old_deadline_new_or_snoozed_message_is_kept_as_overdue(db):
+    new = msg(db, deadline="2026-11-01", received="2026-11-12 08:30")       # 오늘 받았는데 마감이 한참 지남
+    old = msg(db, deadline="2026-11-12", received="2026-11-10 09:00")      # 목요일 마감
+    db.set_todo("message", old, "snoozed", until="2026-11-16")              # 월요일로 미룸
+    items, _, _ = tp.collect(db, NOW, last_plan_at="2026-11-12 08:00:00")
+    assert any(it.ref_id == new and it.overdue for it in items)
+    mon_items, _, _ = tp.collect(db, datetime(2026, 11, 16, 9, 0), last_plan_at="2026-11-16 08:00:00")
+    assert any(it.ref_id == old and it.overdue for it in mon_items)
+
+
+def test_manual_replan_keeps_previous_manual_items(db):
+    m = msg(db, received="2026-11-11 15:00")                                 # 전날 받음, 마감 없음
+    assert m in [x["ref_id"] for x in tp.run_plan(db, NOW, "manual")["items"]]
+    later = datetime(2026, 11, 12, 16, 0)
+    assert m in [x["ref_id"] for x in tp.run_plan(db, later, "manual")["items"]]
+
+
+def test_cancelled_event_does_not_hide_follow_up_message(db):
+    e = event(db, "가상 회의", day=TOMORROW, time="10:00")
+    db.set_todo("event", e, "snoozed", until="2026-11-16")
+    follow = msg(db, deadline=TODAY, received="2026-11-12 08:30", subject="가상 회의 취소·자료 제출")
+    db.conn.execute("INSERT INTO event_sources(event_id, kind, ref_id) VALUES (?, 'message', ?)", (e, follow))
+    db.conn.execute("UPDATE calendar_events SET status='dismissed' WHERE id=?", (e,))
+    db.conn.commit()
+    assert ("todo", follow) in kinds(tp.collect(db, NOW, last_plan_at="2026-11-12 08:00:00")[0])
