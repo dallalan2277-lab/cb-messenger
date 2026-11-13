@@ -1,13 +1,13 @@
 ---
 name: pr-gemini-review
-description: PR을 열면서 "Gemini 검토 요청" 섹션을 채우거나, PR에 달린 Gemini·Codex 리뷰를 읽고 반영할 때 사용. "PR 올려줘", "PR 만들어줘", "Gemini 검토 요청해줘", "Gemini 리뷰 반영해줘", "PR #N 리뷰 확인해줘" 같은 요청에 쓴다.
+description: PR을 열면서 "Gemini 검토 요청" 섹션을 채우거나, PR에 달린 Gemini 리뷰와 로컬 Codex 리뷰를 함께 반영할 때 사용. "PR 올려줘", "PR 만들어줘", "Gemini 검토 요청해줘", "Gemini 리뷰 반영해줘", "PR #N 리뷰 확인해줘" 같은 요청에 쓴다.
 ---
 
 # PR + Gemini 검토 요청
 
 이 저장소는 세 AI가 역할을 나눈다.
 - **Claude Code(나):** 개발, PR 작성, 리뷰 반영
-- **Codex:** PR 자동 리뷰 (봇 계정으로 코멘트가 달림)
+- **Codex:** Claude가 로컬에서 Codex 플러그인(`codex:codex-rescue` 읽기 전용 리뷰, `/codex:review`)으로 돌리는 리뷰. **PR에 코멘트로 올리지 않는다.** Gemini는 PR 본문의 'Codex 리뷰 요약'으로만 Codex 의견을 본다.
 - **Gemini(Antigravity):** 사용자가 지시할 때만 PR을 읽고 `[Gemini]` 코멘트로 답함
 
 ## 절대 하지 말 것
@@ -64,6 +64,7 @@ BODY=$(mktemp)   # 여기에 본문 작성
   - 나쁜 예: "이 코드 검토해 주세요"
   - 좋은 예: "`saveOrder()`에서 재고 차감과 주문 저장 사이에 동시 요청이 들어오면 재고가 음수가 될 수 있는가?"
   - 좋은 예: "A안(캐시 무효화)과 B안(TTL 단축) 중 데이터 정합성 면에서 어느 쪽이 안전한가?"
+- **Codex 리뷰 요약**: 이 변경에 대해 로컬 Codex 리뷰를 돌렸으면 핵심 지적과 반영 여부를 2~4줄로 적는다. 안 돌렸으면 '안 함'.
 - 검토가 **해당 없음**이면 Gemini 섹션은 `**검토 필요:** 해당 없음` 한 줄만 남긴다.
 
 ### 5. PR 생성
@@ -89,7 +90,7 @@ gh pr view <N> --comments
 gh api repos/{owner}/{repo}/pulls/<N>/comments    # 줄 단위(인라인) 리뷰 코멘트
 ```
 - `[Gemini]`로 시작하는 코멘트 = Gemini 리뷰
-- Codex 봇 계정이 단 코멘트 = Codex 리뷰
+- Codex 의견은 PR에 없다. 이 세션에서 돌린 Codex 리뷰 결과(또는 PR 본문의 'Codex 리뷰 요약')를 쓴다. 필요하면 지금 로컬에서 Codex 리뷰를 다시 돌린다.
 - Gemini 코멘트의 기준 커밋이 현재 PR head와 다르면, 그 이후 바뀐 부분이 있다고 사용자에게 알린다.
 
 ### 2. 사용자에게 먼저 정리해서 보여주기
