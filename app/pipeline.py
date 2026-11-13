@@ -15,6 +15,23 @@ from .storage import Storage
 
 log = logging.getLogger(__name__)
 
+# 날짜·시각처럼 '일정이 들어 있을 수 있는' 표시. 이게 있으면 생략 키워드가 있어도 AI 에 보냄.
+# (예전 기본 키워드 '감사합니다' 때문에 '11. 17.(화) 08:30 회의 … 감사합니다' 같은 공지가 AI 없이 '참고'로 넘어갔음)
+_SCHEDULE_HINT = re.compile(
+    r"\d{1,2}\s*월\s*\d{1,2}\s*일"                                    # 11월 17일
+    r"|\d{4}\s*[-./]\s*\d{1,2}\s*[-./]\s*\d{1,2}"                     # 2026. 11. 17 / 2026-11-17
+    r"|\d{1,2}\s*[./]\s*\d{1,2}\s*\.?\s*\(\s*[월화수목금토일]\s*\)"   # 11. 17.(화) / 11/17(화)
+    r"|\d{1,2}\s*일\s*\(\s*[월화수목금토일]\s*\)"                      # 17일(화)
+    r"|(?<!\d)\d{1,2}\s*:\s*\d{2}(?!\d)"                              # 08:30
+    r"|(?:오전|오후)\s*\d{1,2}\s*시"                                   # 오후 3시
+    r"|(?<!\d)\d{1,2}\s*시\s*\d{1,2}\s*분"                             # 3시 30분
+)
+
+
+def has_schedule_hint(text: str) -> bool:
+    """본문에 날짜·시각이 보이면 True (AI 생략 키워드보다 우선)."""
+    return bool(_SCHEDULE_HINT.search(text or ""))
+
 
 class Pipeline:
     def __init__(self, settings: Settings, storage: Storage, analyzer: Analyzer,
@@ -53,11 +70,14 @@ class Pipeline:
         return True
 
     def skip_ai(self, m: Message) -> bool:
-        """토큰 절약: 너무 짧거나 생략 키워드가 있는 메시지는 AI 없이 '참고' 처리."""
+        """토큰 절약: 너무 짧거나 생략 키워드가 있는 메시지는 AI 없이 '참고' 처리.
+        단, 날짜·시각이 보이는 메시지는 키워드가 있어도 AI 에 보냄 (일정을 놓치지 않게)."""
         body = m.body.strip()
         if self.s.skip_ai_min_chars and len(body) < self.s.skip_ai_min_chars:
             return True
-        return any(k in body for k in self.s.skip_ai_keywords)
+        if not any(k in body for k in self.s.skip_ai_keywords):
+            return False
+        return not has_schedule_hint(body)
 
     def text_for_ai(self, m: Message) -> str:
         return redact(m.body, self.s.redact_names) if self.s.redact_enabled else m.body
