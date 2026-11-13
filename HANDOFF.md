@@ -2,16 +2,22 @@
 
 > GPT, Claude 등 다른 AI에게 이 프로젝트를 넘길 때 **이 파일과 README.md 를 먼저 보여주세요.**
 
-## ▶ 다른 PC 에서 이어서 할 일 (2026-11-13 학교 PC 에서 멈춤)
+## ▶ 다음에 이어서 할 일 (2026-11-13 밤 집 PC 에서 멈춤)
 
-- 브랜치 **`feature/today-plan`** (버전 표기는 아직 `0.10.0-beta.5`). 시작: `git fetch` → `git switch feature/today-plan` → `git pull` → `python -m pytest -q` (471 통과·1 건너뜀이면 정상).
-- 사용자 요청: 지금까지의 시험판 내용을 **정식판 0.10.0 으로 GitHub 배포**. 그 전에 남은 것:
-  1. Codex 3차 검토 (2-19 의 재검토 반영 커밋 `358ddc0` 대상) — 사용자에게 할지 물어본 상태.
-  2. 사용자 결정 대기: 이미 설치한 PC `.env` 의 `SKIP_AI_KEYWORDS` 에서 '감사합니다' 를 업데이트 때 자동으로 한 번 지울지 (2-18). 지운다면 시작 때 1회 마이그레이션 + 테스트.
-  3. 배포: `app/__init__.py` → `0.10.0`, CLAUDE.md 상태표 갱신, `feature/today-plan` 을 main 에 빨리감기로 합침(main 은 이 브랜치의 조상), 설치판 빌드 후 `cbm.exe --provider fake test` 확인,
-     `packagingelease.bat`(main 에서) 또는 같은 단계 수동: SHA-256 파일 + `gh release create v0.10.0 ... --target main` (정식판 = Latest). beta 설치 PC 에도 0.10.0 이 업데이트로 뜸(`updater.is_newer` 확인함).
-- 사용자 지시: **설치 파일·GitHub 배포는 사용자가 말할 때만.** 코드는 이 PC 처럼 커밋하고, push 도 요청 받았을 때.
-- 이 PC 사용자 설정(.env)에 아직 '감사합니다' 가 있을 수 있음 → 설정 [모델] 탭에서 지우도록 안내함.
+- 브랜치 **`feature/today-plan`** (HEAD `49af867`, 버전 표기 아직 `0.10.0-beta.5`). 시작: `git fetch` → `git switch feature/today-plan` → `git pull` → `python -m pytest -q` (**483 통과·1 건너뜀**이면 정상).
+- 검토용 **PR #4** (feature/today-plan → main, **머지 보류, 머지는 사용자가**). Gemini 는 사용자가 Antigravity 에 "PR #4 …" 를 보낼 때만 답함. PR 작업은 `pr-gemini-review` 스킬.
+- 결정됨 (2026-11-13): **beta.6 먼저** → 며칠 실사용 → 정식 0.10.0 / '감사합니다' 1회 자동 삭제 / AI 순서 정하기는 0.10.0 이후 / 3차 Codex 검토는 생략(Gemini 로 대신) / 자동 연결(한쪽만 시각 빔)·무시한 일정 조용히 연결은 **유지**.
+- 한 것: `49af867` — Gemini 1차 리뷰 결함 6건 + 점심 알림 (busy_timeout·duplicate column, release_plan 되살림, 공휴일 캐시, 메모 확정 시각·장소, 2글자 제목, 점심 새 제안 알림, `config.migrate_skip_thanks`). 테스트 11개 추가.
+- **남은 것 (순서대로)**:
+  1. Codex **Sol 짧은 검토**: `49af867` 의 storage.py·config.py·plan_scheduler.py (읽기 전용, 보조 에이전트 금지, 15줄). Gemini 는 이 커밋 재검토 질문 3개(PR 본문)에 아직 답 안 함.
+  2. **Gemini 과제 1~5 결과 반영 — 사용자 승인 대기** (PR #4 코멘트 `[Gemini] 과제 N`, 주요 주장은 코드로 확인함):
+     - 지금 반영 제안: (1a) `today_plan.live_view` 가 일정의 최신 제목·날짜·시각을 다시 읽게 / (1b) `api.dismiss` 가 `dup_of` 제안이면 `resolve_duplicate` 로, 취소 제안 확정 실패 시 '확정했습니다' 토스트 고치기 / (2) `pipeline` 상대 날짜 정규식 `_REL_SCHEDULE_HINT` 추가 (Gemini 예문 25개 직접 실행: 15/15, 10/10) / (3) 사례표 30건을 테스트로 + '(1부)/(2부)'·'(1교시)/(2교시)' 를 identifiers 로 구분
+     - 문서로 저장: (4) AI 순서 정하기 설계 초안 → `docs/계획_능동비서_중복제안.md` 다음 단계 / (5) beta.6 설치판 확인 13단계 → `docs/`
+     - 나중: 줄임말·동의어(학운위·협의회↔회의), 오전/오후 회차, '순연' 날짜 변경 문구, 0.9.0 되돌림 시 중복·(취소?) 제안 혼선(안내만)
+  3. 반영 후 pytest → 커밋·push → PR #4 본문 갱신, 바뀐 부분만 Gemini 재확인.
+  4. **사용자 승인 후** `app/__init__.py` → `0.10.0-beta.6`, `packaging
+elease.bat`(시험판은 pre-release) → 과제 5 확인 목록으로 실제 0.9.0 자료 사본 위에서 확인. beta 는 자동 업데이트로 안 감(직접 설치).
+- 사용자 지시: **설치 파일·GitHub 배포는 사용자가 말할 때만.** Codex·Claude 사용량이 빠듯함 → Codex 는 짧고 범위 좁게, 큰 검토·설계는 Gemini(PR) 활용.
 - 자세한 수정 기록: 2-18(AI 생략 키워드), 2-19(Codex 검토 반영 7건 + 재검토 4건, 나중으로 둔 것 목록).
 
 ## 0. 프로젝트 목표
