@@ -2,6 +2,24 @@
 
 > GPT, Claude 등 다른 AI에게 이 프로젝트를 넘길 때 **이 파일과 README.md 를 먼저 보여주세요.**
 
+## ▶ 다음에 이어서 할 일 (2026-11-13 밤 집 PC 에서 멈춤)
+
+- 브랜치 **`feature/today-plan`** (HEAD `49af867`, 버전 표기 아직 `0.10.0-beta.5`). 시작: `git fetch` → `git switch feature/today-plan` → `git pull` → `python -m pytest -q` (**483 통과·1 건너뜀**이면 정상).
+- 검토용 **PR #4** (feature/today-plan → main, **머지 보류, 머지는 사용자가**). Gemini 는 사용자가 Antigravity 에 "PR #4 …" 를 보낼 때만 답함. PR 작업은 `pr-gemini-review` 스킬.
+- 결정됨 (2026-11-13): **beta.6 먼저** → 며칠 실사용 → 정식 0.10.0 / '감사합니다' 1회 자동 삭제 / AI 순서 정하기는 0.10.0 이후 / 3차 Codex 검토는 생략(Gemini 로 대신) / 자동 연결(한쪽만 시각 빔)·무시한 일정 조용히 연결은 **유지**.
+- 한 것: `49af867` — Gemini 1차 리뷰 결함 6건 + 점심 알림 (busy_timeout·duplicate column, release_plan 되살림, 공휴일 캐시, 메모 확정 시각·장소, 2글자 제목, 점심 새 제안 알림, `config.migrate_skip_thanks`). 테스트 11개 추가.
+- **남은 것 (순서대로)**:
+  1. Codex **Sol 짧은 검토**: `49af867` 의 storage.py·config.py·plan_scheduler.py (읽기 전용, 보조 에이전트 금지, 15줄). Gemini 는 이 커밋 재검토 질문 3개(PR 본문)에 아직 답 안 함.
+  2. **Gemini 과제 1~5 결과 반영 — 사용자 승인 대기** (PR #4 코멘트 `[Gemini] 과제 N`, 주요 주장은 코드로 확인함):
+     - 지금 반영 제안: (1a) `today_plan.live_view` 가 일정의 최신 제목·날짜·시각을 다시 읽게 / (1b) `api.dismiss` 가 `dup_of` 제안이면 `resolve_duplicate` 로, 취소 제안 확정 실패 시 '확정했습니다' 토스트 고치기 / (2) `pipeline` 상대 날짜 정규식 `_REL_SCHEDULE_HINT` 추가 (Gemini 예문 25개 직접 실행: 15/15, 10/10) / (3) 사례표 30건을 테스트로 + '(1부)/(2부)'·'(1교시)/(2교시)' 를 identifiers 로 구분
+     - 문서로 저장: (4) AI 순서 정하기 설계 초안 → `docs/계획_능동비서_중복제안.md` 다음 단계 / (5) beta.6 설치판 확인 13단계 → `docs/`
+     - 나중: 줄임말·동의어(학운위·협의회↔회의), 오전/오후 회차, '순연' 날짜 변경 문구, 0.9.0 되돌림 시 중복·(취소?) 제안 혼선(안내만)
+  3. 반영 후 pytest → 커밋·push → PR #4 본문 갱신, 바뀐 부분만 Gemini 재확인.
+  4. **사용자 승인 후** `app/__init__.py` → `0.10.0-beta.6`, `packaging
+elease.bat`(시험판은 pre-release) → 과제 5 확인 목록으로 실제 0.9.0 자료 사본 위에서 확인. beta 는 자동 업데이트로 안 감(직접 설치).
+- 사용자 지시: **설치 파일·GitHub 배포는 사용자가 말할 때만.** Codex·Claude 사용량이 빠듯함 → Codex 는 짧고 범위 좁게, 큰 검토·설계는 Gemini(PR) 활용.
+- 자세한 수정 기록: 2-18(AI 생략 키워드), 2-19(Codex 검토 반영 7건 + 재검토 4건, 나중으로 둔 것 목록).
+
 ## 0. 프로젝트 목표
 
 충청북도교육청 업무 메신저 **"충북소통메신저"**(Windows PC 프로그램, 충북교육정보원 운영)로 받은 메시지를
@@ -216,6 +234,68 @@
 - 고침(`eztalk_parse.parse_view`): 이름 뒤 3줄 중 '/' 2개 이상인 소속 줄과 '- ' 붙은 같은 줄은 본문 후보에서 뺌, '받는사람' 목록 구역은 뺌, ※ 안내문 뒤에 글이 있으면 그 뒤만 본문 후보.
   (`eztalk_collector`): 새로 뜬 보기 창이 본문 없음 또는 시각 없음이면 넘기고 다시 읽음(최대 5번). stats 를 창 찾기보다 먼저 만들어 시작 때 AttributeError 나던 것 고침.
 - 이미 잘못 저장된 쪽지는 자동으로 고쳐지지 않음 (메신저 창으로만 원문을 다시 읽을 수 있음).
+
+### 2-14. 능동 비서 '오늘 할 일 순서' + 중복 일정 제안 (브랜치 feature/today-plan, 0.10.0-beta.N) — 2026-11-11~
+- 계획: `docs/계획_능동비서_중복제안.md` (단계표·DB 규칙·Codex 검토 기록 27건). 시험판만 GitHub 에 (브랜치 + pre-release), main·정식 latest 는 사용자 승인 전엔 안 건드림.
+- 1단계 완료: 버전 0.10.0-beta.1 / `updater.check_latest` 가 태그 이름이 시험판(`-`)이면 건너뜀 (단, 이미 배포된 0.9.0 엔 이 방어가 없으니 Release 의 pre-release 표시는 꼭 확인) /
+  `Storage` 첫 백업: 0.9.0 DB(user_version 0)를 처음 열 때 구조 변경 전에 `data/backup/messages-before-0.10.db` 로 SQLite 백업, 실패하면 user_version 을 안 남겨 다음에 다시 시도, 동시에 열어도 먼저 만든 백업을 덮지 않음 (Sol 검토 2건 반영) /
+  `app/event_match.py` 중복 판정 규칙(same/maybe/different, AI 없음, Terra 작성·Claude 검토). 아직 어디서도 쓰지 않음 → 다음 A2a(event_sources·dup_of 저장).
+- A2a 완료: `Storage.suggest_event`(AI·메모 일정 제안의 새 입구: created/linked/asked/skipped, 한 트랜잭션) · `resolve_duplicate`(replace/separate/ignore) · 새 표 `event_sources`(일정↔원문 여러 개) · 새 칸 `calendar_events.dup_of`(ON DELETE SET NULL). Terra 작성, Sol 검토 3건 반영(같은 원문 속 오전·오후 회의, 묻는 중인 제안에 새 시각 채우기, add_message 실패 뒤 열린 트랜잭션 rollback). **아직 pipeline·화면은 옛 add_calendar_event 를 씀** → 다음 A2b(진입 경로 5곳 + confirm_all).
+- A2b 완료: pipeline `_suggest_events`(reanalyze 포함)·메모 정리·메모 다시 정리가 `suggest_event` 사용, `memo_to_event` 는 `Storage.add_event_from_user`(같은 일 1개면 그 일정 확정, 아니면 새로 확정 + 비슷한 AI 제안에 dup_of), `confirm_all` 은 dup_of 제안 건너뜀, `confirm` 은 dup_of 제안을 '따로 등록', API `resolve_duplicate`·`event_sources`, `_public` 에 dup_of. **화면(calendar.html)은 아직 dup_of 를 모름** → 다음 A2c(묻기 3버튼·관련 원문·MockAPI).
+- A2c 완료: 화면 — 묻기 제안에 '기존 일정과 같은 일 같아요' + 기존 일정·바뀐 것(날짜·시각·장소, 제목은 말만 바뀌는 경우가 많아 비교 안 함) + [바꾸기][따로 등록][무시], 일정 창에 '관련 원문 N건 더'(누르면 그 쪽지·메모로), 모두 확정 때 남겨 둔 건수 안내. `CalendarAPI.suggestions` 가 묻기 제안에 기존 일정(`dup`)을 붙여 줌. MockAPI 에 예시(id 9). 브라우저 미리보기로 확인. **Windows 실제 창·실제 쪽지로는 미확인.** 다음: A2d(날짜 바뀐 변경·취소 공지) 또는 beta.1 배포.
+- A2d 완료: 날짜 바뀐 공지('19일에서 20일로 연기' — 옛 날짜→새 날짜를 잇는 말이 있을 때만) → 그 일정에 '날짜가 바뀐 것 같아요' 묻기(`dup_kind='change'`), 취소 공지('20일 ○○ 취소' — 일정 이름 30글자 안에 취소 표현, '신청 취소·취소하지 않·취소 시' 제외, 후보 1개일 때만) → '(취소?) …' 묻기(`dup_kind='cancel'`, [일정 취소][그대로 두기], 취소는 지우지 않고 dismissed + 6초 [되돌리기]). 원문은 이 PC 안에서 비교만. `event_match.date_mentions`(연도·앞 날짜 문맥, '3.5시간·1~2일·3일간' 제외). Terra 작성, Sol 검토 7건 중 6건 반영.
+  - 알려진 한계(기각): 0.9.0 으로 되돌리면 '(취소?) …' 묻기 제안이 보통 제안으로 보이고 '모두 확정'에 확정될 수 있음 (자료 손실 없음, 막으려면 별도 표가 필요해 보류).
+- 0c 완료: `packaging/release.bat` 이 버전에 '-' 가 있으면 시험판으로 — main 에서는 거부, 커밋 안 한 변경·push 안 한 커밋·이미 있는 태그면 멈춤, gh 는 `--prerelease --latest=false --target <브랜치>`, 수동은 URL 에 `target=`(인코딩)·`prerelease=1` + 'pre-release 체크 확인' 안내. 이 PC 에 Inno Setup 6 을 winget(사용자 범위)으로 설치함, gh 는 없음.
+- 2026-11-11: 0.10.0-beta.1 설치 파일을 이 PC 에서 빌드(`cbm.exe --provider fake test` 정상), feature/today-plan push, GitHub pre-release 로 배포(수동 업로드).
+- A2 때 주의: 시각 없는 새 일정은 같은 날 오전·오후 같은 이름 회의 둘 다 same 으로 나옴 → 후보가 2개 이상이면 자동으로 묶지 말고 묻기.
+
+### 2-15. 달력 칸 높이 · 받은 소식 목록 순서 (feature/today-plan) — 2026-11-12
+- 달력 칸: Codex(astra)와 따로 연구 → 같은 결론. 구현은 Codex(gpt-5.6-terra), Claude 검토·실제 창 확인.
+  · 한 화면에 맞춤(기본 `calendar_layout: fit`): 6주 모두 보이되 주마다 '그 주 가장 많은 하루 일정 수'로 필요 높이를 정해 남는 높이를 바쁜 주에 나눔(`fitRowHeights`). 사용자 실제 11월(하루 11건)도 '+더' 없이 다 보임.
+  · 넓게 보기(`expanded`, `calendar_lines` 4/6/8): 바쁜 주가 그 줄 수만큼 커지고 `#gridScroll` 만 세로 스크롤, 오늘 주로 이동.
+  · (beta.2 사용자 제보 '칸 크기 조절이 안 됨') 원인: 넓게 N줄이 '일정이 N개 넘는 주만' 키워서 창 높이 700~900px 에서는 맞춤·4·6·8줄이 모두 같은 높이였음. 수정: 넓게 보기는 모든 주를 N줄 높이(창이 더 크면 고르게 나눈 높이)로 똑같이 맞춤 (`layoutGrid`).
+  · (beta.3 빌드 전 Codex 교차 검토) 넓게 보기에서 맨 아래로 스크롤한 채 주 경계를 위로 끌면 격자가 짧아지며 스크롤이 당겨져 경계가 마우스를 못 따라감 → 끄는 동안 #gridScroll 아래 여백으로 줄어든 높이를 채움(놓으면 지움). `set_prefs` 의 calendar_row_px 는 무한대도 거름(math.isfinite).
+  · (beta.3) 주 사이 경계 끌기: `addRowResizers`·`startRowDrag`. 끄는 경계가 마우스를 따라가게 위의 w+1주를 같은 높이로 바꿔 모든 주가 같은 높이(`calendar_layout: "custom"`, `calendar_row_px` 40~600, api.set_prefs 에서 검증). 경계 두 번 누르기 = 한 화면에 맞춤. ⚙ '창 위치·크기'는 접는 목록(`#placeList`)으로.
+  · '+N개 더' → 칸 옆 말풍선(`openDayPopover`), Esc·바깥 클릭·다시 그리기 때 닫힘, 아주 작은 창은 기존 모달. 칩 1개도 안 들어가면 날짜 옆 '·N'.
+  · `render()` = 자료(api.month+옆 패널) / `layoutGrid()` = 배치. 창 크기 변경은 ResizeObserver(#gridScroll)로 배치만. (Codex 가 없는 `#cal` 을 관찰해 첫 화면이 안 그려지던 것 → Claude 가 #gridScroll 로 고침)
+- 받은 소식: '전체(30일)'·'학교 업무'는 최신순(`Storage.feed(order='recent')`), '학교 업무'는 처리 완료 포함(흐리게). '처리 안 한 것'만 중요도순.
+  원인: 사용자가 모두 처리 완료 → 학교 업무(처리 안 한 것만) 0건, 전체는 중요도순이라 오늘 '참고' 쪽지가 맨 아래.
+
+- 2026-11-12 beta.2 빌드 중 발견: `win11toast.toast()` 가 알림이 닫힐 때까지 기다림 → 분석 줄(Runner 작업 스레드)이 알림마다 멈출 수 있었음 (v0.6 부터 있던 문제, `cbm test` 가 멈춰서 알게 됨).
+  `notifier.notify` 는 이제 백그라운드 스레드로 띄우고 바로 돌아옴(`wait=True` 는 시험용).
+
+### 2-16. 투명도 조절이 회색·흰색으로 변하던 문제 (0.10.0-beta.4) — 2026-11-12
+- 제보(친구): 투명도를 낮추면 바탕화면이 비치지 않고 회색·흰색이 됨.
+- 원인: pywebview 6.2.1 Windows(WinForms+WebView2)의 `transparent=True` 는 WebView2 배경만 투명하게 하고, 그 아래 WinForms 폼은 불투명(기본 회색) → CSS 배경 알파를 낮추면 회색 폼이 비침. (2-1b 의 '확인할 것 (1)' 답: 안 먹음)
+- 고침: `transparent=False` + 화면 배경은 불투명, 투명도 슬라이더는 창 전체 투명도(`Host.set_opacity` → `Win32.set_alpha`, WS_EX_LAYERED + SetLayeredWindowAttributes LWA_ALPHA, 0.3~1). 시작 때 prefs.opacity 적용. 글자도 함께 옅어짐(배경만 투명은 Windows 에서 불가). 브라우저 미리보기는 예전처럼 CSS 배경만 옅게.
+- 이 PC(Windows 10)에서 실제 창 55% 로 바탕화면이 비치는 것 확인.
+
+### 2-17. 능동 비서 '오늘 할 일 순서' (B1a·B1b·B2, 규칙만) — 2026-11-12
+- Codex 사용 한도(11/16 12:48 까지)로 사용자 승인 하에 Claude 가 직접 구현. **Codex 교차 검토 아직 안 받음** (16일 이후 받기).
+- `app/today_plan.py`: 오늘·내일 확정 일정 + 처리 안 한 소식(마감 -3~+7일, 또는 지난 정리 이후 새 소식 — 처음이면 최근 24시간, 참고·광고·AI 생략 제외) → 규칙 순서(마감 지남 → 오늘 마감(시각) → 오늘 일정 → 오늘 마감(시각 없음) → 앞으로 마감 → 내일 일정 → 새 소식). 이유 한 줄·총평·겹침/마감 지남 경고는 DB 값으로. 같은 메시지의 확정 일정이 있으면 일정 하나로. 최대 40개.
+- DB: `daily_plans`(날짜·회차 UNIQUE, running→done, 15분 지난 running 은 다시 맡음, manual 은 덮어씀, notified 0→1 한 번만), `todo_state`(일정 완료·내일로). 소식 [완료]는 `messages.done`.
+- 화면: '오늘' 탭(일정 옆, 첫 화면은 그대로 일정), [완료][내일로(다음 근무일)] + 6초 되돌리기, 확정할 일정, [다시 정리]. `live_view` 는 정리 뒤 완료·미룬 것·지워진 일정을 뺌.
+- `app/plan_scheduler.py`: 캘린더 프로세스에서 Runner 와 따로 1분마다, 아침~점심 전 = morning, 점심~18시 = noon, 근무일만(설정), 방해금지·알림 끄기 따름(정리는 함, 몰아서 안 보냄), 점심에 남은 할 일 0 이면 알림 생략. 설정 PLAN_ENABLED·PLAN_TIMES("08:30,12:40")·PLAN_WORKDAYS_ONLY (설정 화면 알림 탭).
+- 남은 것: B3 AI 순서 다듬기(PLAN_SCHEMA·이유 코드·가림·검증) — Codex Sol 검토 후. 실제 Windows 알림 표시·'오늘' 탭 실제 창 모습은 설치판에서 확인 필요.
+
+### 2-18. AI 생략 키워드 '감사합니다' 때문에 회의 공지가 AI 없이 넘어가던 문제 — 2026-11-13
+- 제보: 인사자문위원회 참석 안내 쪽지가 '[제목] …' 만 보이고 판단 보류 → [다시 분석] 하니 정상. 화면 아래 '분석: rule:AI 생략'.
+- 원인: v0.6 부터 `.env.example` 기본 `SKIP_AI_KEYWORDS` 에 '감사합니다' → 거의 모든 공문 쪽지가 키워드에 걸림. 사용자 PC 88건 중 22건이 AI 없이 '참고' (21건 감사합니다, 1건 급식). 일정 제안·알림·'오늘' 탭에서 빠짐.
+- 고침: 기본값에서 '감사합니다' 뺌 + `Pipeline.skip_ai` 는 키워드가 있어도 날짜·시각(`has_schedule_hint`: 11월 17일, 2026. 11. 17, 11. 17.(화), 17일(화), 08:30, 오후 3시, 3시 30분)이 보이면 AI 로. 설정 화면 설명 문구 추가. `tests/test_skip_ai.py`.
+  사본으로 보니 예전 22건 중 12건이 새 규칙으로 AI 로 감. 이미 설치한 PC 의 .env 는 그대로 → 설정 [모델] 탭에서 '감사합니다' 를 직접 지워야 함 (자동으로 고치지 않음).
+
+### 2-19. 정식판 전 Codex 검토(astra) 반영 — 오늘 할 일·알림·AI 생략 — 2026-11-13
+- 검토 10건 중 정식판 전 7건 고침 (1~4 는 Claude 가 코드로 재확인, 고치기 전 코드에서 새 테스트 12개 모두 실패 확인):
+  1. 마감 없는 할 일이 다음 정리에서 빠짐 → `collect` 가 지난 정리(`Storage.last_plan_before`)의 todo 를 `plan_messages(include_ids=)` 로 이어 받음 (마감이 창보다 오래 지난 것은 뺌).
+  2. '내일로' 미룬 일정·소식이 돌아오지 않음 → until<=오늘 인 snoozed 를 따로 가져옴 (`calendar_events_by_ids`).
+  3. 완료·미룬 일정의 원문 쪽지가 할 일로 재등장 → 연결 확인(`messages_linked_to_events`)에 숨긴 일정·todo_state 의 일정도 넣음.
+  4. AI 생략 날짜 인식 넓힘: 11/17, 11. 17., 11.17까지, 17일까지, 17일 15시, 15시까지 (3.5점·3일간·1시간 은 아님).
+  5. 정리 알림이 알림 범위(받을 곳·학교 업무만·긴급·중요)를 따름 (`plan_scheduler.item_allowed`, 할 일에 `school` 저장). 범위 안 할 일이 없으면 알림 안 함.
+  6. 15분 뒤 넘겨받은 실행을 옛 실행이 덮어쓰고 알림을 또 냄 → `finish_plan(claimed_at=)` 은 지금 맡은 실행만 저장, 실패 처리도 `release_plan(claimed_at)`.
+  7. 저장 뒤 알림 전에 꺼지면 그 회차 알림 영영 누락 → `tick` 이 끝난 회차의 notified=0 을 보면 한 번 알림 (방해금지로 안 보낸 것은 notified=1 이라 다시 안 보냄).
+- 남은 것(나중): 정리 시각 직전 완료→되돌리기 경계, 점심 시각 18시 이후 입력 막기, 화면 headline 건수 다시 계산.
+- 재검토(astra)로 더 고침: ① 40건 넘어 안 보인 할 일도 이어 받음(`data.carry_ids`) ② 마감이 오래 지난 새 소식·미뤘다 돌아온 소식을 버리던 것(1차 수정의 회귀) → '마감 지남'으로 보임 ③ '다시 정리'가 직전 수동 정리를 못 이어 받던 것 → `run_plan` 이 실행권 맡기 전에 지난 정리를 읽음 ④ 취소된 일정이 새 후속 소식까지 숨기던 것 → 연결 확인은 확정 일정만 ⑤ 날짜 인식: '11.17 15시'·'15시 마감' 추가, '1/2인분' 제외.
+- 재검토 중 나중으로 둔 것: 알림 전송 직전(notified=1 뒤) 꺼지면 그 알림 누락(아주 짧은 틈), 복구 알림이 그 사이 완료한 일도 보여 줌, 정리 중 절전으로 날짜가 바뀌면 어제 정리를 오늘 알림, 0.10 이전 저장 정리엔 school 키가 없어 복구 알림에서 빠짐, 미뤘다 돌아온 지난 일정의 정렬·이유 문구.
 
 ## 3. 지켜야 할 설계 규칙
 

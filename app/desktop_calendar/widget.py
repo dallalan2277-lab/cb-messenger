@@ -98,6 +98,16 @@ class Win32:
         st = int(self.user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE) or 0)
         self.user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (st | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW)
 
+    def set_alpha(self, hwnd, alpha: float):
+        """창 전체 투명도 (0.3~1). WebView2 창은 '배경만 투명'이 Windows 에서 안 돼서(뒤에 회색 바탕이 비침)
+        창 전체를 겹침 창(WS_EX_LAYERED)으로 만들어 바탕화면이 비쳐 보이게 함 — 글자도 같이 옅어짐."""
+        GWL_EXSTYLE, WS_EX_LAYERED, LWA_ALPHA = -20, 0x80000, 0x2
+        a = max(0.3, min(1.0, float(alpha)))
+        st = int(self.user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE) or 0)
+        if not st & WS_EX_LAYERED:
+            self.user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, st | WS_EX_LAYERED)
+        return bool(self.user32.SetLayeredWindowAttributes(hwnd, 0, int(round(a * 255)), LWA_ALPHA))
+
     def foreground_class(self) -> tuple[int, str]:
         h = self.user32.GetForegroundWindow()
         buf = self.ct.create_unicode_buffer(64)
@@ -170,6 +180,7 @@ class Host:
             mon = min(int(p.get("monitor", 0)), len(areas) - 1)
             geom = initial_geometry(areas[mon], p.get("fraction", 0.66), p.get("anchor", "right"))
         self.w32.place(self.hwnd, *geom)
+        self.set_opacity(p.get("opacity", 0.92))
         self.w32.to_bottom(self.hwnd)
         threading.Thread(target=self._keep_on_desktop, daemon=True).start()
 
@@ -197,6 +208,15 @@ class Host:
         self.api.set_prefs({"x": x, "y": y, "w": w, "h": h})
 
     # -- JS 에서 부르는 것들
+    def set_opacity(self, alpha=0.92):
+        if not self.hwnd:
+            return False
+        try:
+            return self.w32.set_alpha(self.hwnd, alpha)
+        except (TypeError, ValueError, OSError) as e:
+            log.debug("set_opacity: %s", e)
+            return False
+
     def begin_drag(self, dpr=1.0):
         self._dragging = True
         self._drag = (self.w32.rect(self.hwnd), float(dpr or 1.0))
@@ -351,7 +371,9 @@ def run(settings, with_watch: bool = False):
     window = webview.create_window(
         TITLE, url=str(HERE / "calendar.html"), js_api=api,
         width=1200, height=800, frameless=True, easy_drag=False, resizable=True,
-        transparent=True, background_color="#12161E", focus=True,
+        # transparent=True 는 Windows(WinForms+WebView2)에서 진짜로 비치지 않고 회색 폼 바탕이 비침 → 끄고,
+        # 투명도는 창 전체 투명도(Host.set_opacity)로
+        transparent=False, background_color="#12161E", focus=True,
     )
     host.window = window
 
@@ -359,6 +381,8 @@ def run(settings, with_watch: bool = False):
         try:
             if icon:
                 icon.stop()
+            if getattr(host, "_plan", None):
+                host._plan.stop()
             from . import settings_window
             settings_window.close_open()   # 설정 창이 열려 있으면 함께 닫음
         finally:
@@ -376,5 +400,10 @@ def run(settings, with_watch: bool = False):
                 api._runner = Runner(settings, on_change=host.refresh).start()   # 쪽지 감시 + 메일 확인 + AI
             except Exception as e:  # noqa: BLE001
                 log.error("감시를 시작하지 못했습니다: %s", e)
+        try:   # 하루 2번 '오늘 할 일 순서' 정리·알림 (감시와 따로, 감시를 꺼도 동작)
+            from ..plan_scheduler import PlanScheduler
+            host._plan = PlanScheduler(settings.db_path, on_change=host.refresh).start()
+        except Exception as e:  # noqa: BLE001
+            log.error("오늘 할 일 정리를 시작하지 못했습니다: %s", e)
 
     webview.start(started, gui="edgechromium", debug=bool(os.getenv("CAL_DEBUG")))

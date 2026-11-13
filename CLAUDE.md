@@ -19,6 +19,8 @@ Claude Code 는 이 폴더(`cb-messenger-ai/`, 저장소 맨 위)에서 열 것.
 AI 는 **GPT 와 Claude 둘 다** 쓸 수 있어야 함 (구독 또는 API 키).
 
 ## 현재 상태 (v0.9.0, Python 약 5,900줄, 테스트 53개 통과)
+> 2026-11-13: 정식판 0.10.0 준비 중 (브랜치 `feature/today-plan`). **이어서 할 일은 `HANDOFF.md` 맨 위 '▶ 다른 PC 에서 이어서 할 일'.**
+
 | 기능 | 상태 |
 |---|---|
 | 소통메신저 쪽지 수집 (eztalk.exe 창 UI 자동화, Project Monday 방식) | 코드 완료 · **Windows 실사용 미확인** |

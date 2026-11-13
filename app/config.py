@@ -117,6 +117,10 @@ class Settings:
     notify_quiet_end: str = _f("NOTIFY_QUIET_END", "08:00")
     notify_preview: bool = field(default_factory=lambda: _bool("NOTIFY_PREVIEW", False))
     notify_sources: list[str] = field(default_factory=lambda: _list(_env("NOTIFY_SOURCES", "eztalk,mail")))
+    # 오늘 할 일 순서 (능동 비서): 하루 2번 정리·알림, 근무일만
+    plan_enabled: bool = field(default_factory=lambda: _bool("PLAN_ENABLED", True))
+    plan_times: list[str] = field(default_factory=lambda: _list(_env("PLAN_TIMES", "08:30,12:40")))
+    plan_workdays_only: bool = field(default_factory=lambda: _bool("PLAN_WORKDAYS_ONLY", True))
 
     # ---- 네이버 메일 ----
     mail_enabled: bool = field(default_factory=lambda: _bool("MAIL_ENABLED", False))
@@ -165,3 +169,36 @@ def save_env(updates: dict[str, str], path: Path = ENV_PATH) -> None:
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
     for k, v in updates.items():
         os.environ[k] = v
+
+
+# ---- 한 번만 하는 설정 정리 ----
+THANKS_MARKER = DATA_DIR / ".migrated_skip_thanks"
+
+
+def migrate_skip_thanks(env_path: Path = ENV_PATH, marker: Path | None = None) -> bool:
+    """예전 기본 AI 생략 키워드 '감사합니다' 를 이미 설치한 PC 의 .env 에서 한 번만 지움 (0.10.0).
+    거의 모든 공문 쪽지 끝에 붙는 말이라 회의·마감 쪽지가 AI 없이 '참고'로 넘어갔음.
+    표시 파일을 남겨, 사용자가 나중에 일부러 다시 넣으면 그대로 둠. 지웠으면 True."""
+    marker = THANKS_MARKER if marker is None else marker
+    if marker.exists():
+        return False
+    changed = False
+    try:
+        if env_path.exists():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                s = line.strip()
+                if s.startswith("#") or "=" not in s or s.split("=", 1)[0].strip() != "SKIP_AI_KEYWORDS":
+                    continue
+                tokens = [t.strip() for t in s.split("=", 1)[1].split(",") if t.strip()]
+                if "감사합니다" in tokens:
+                    save_env({"SKIP_AI_KEYWORDS": ",".join(t for t in tokens if t != "감사합니다")}, env_path)
+                    changed = True
+                break
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("0.10.0: SKIP_AI_KEYWORDS 에서 '감사합니다' 정리함\n", encoding="utf-8")
+    except OSError:
+        return False   # 다음에 켤 때 다시 시도
+    return changed
+
+
+migrate_skip_thanks()

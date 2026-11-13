@@ -22,6 +22,14 @@
     --ok: #81c995;
     --radius: 10px;
     --font: "Pretendard", "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", sans-serif;
+    /* 달력 칸 안쪽 치수: JS의 줄 수 계산도 이 값을 그대로 읽는다. */
+    --chip-h: 20px;
+    --chip-gap: 3px;
+    --cell-head-h: 24px;
+    --cell-pad-top: 6px;
+    --cell-pad-bottom: 4px;
+    --cell-events-gap: 3px;
+    --cell-border: 1px;
   }
   body.light {
     --bg: rgba(250, 250, 252, 0.90);
@@ -89,15 +97,26 @@
   .cal { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 4px 10px 10px 12px; }
   .dow { display: grid; grid-template-columns: repeat(7, 1fr); padding: 6px 0 4px; flex: none; }
   .dow div { text-align: left; padding-left: 8px; color: var(--dim); font-size: 12px; }
-  .grid { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(6, 1fr); gap: 4px; min-height: 0; }
+  #gridScroll { flex: 1; min-height: 0; overflow-y: hidden; overscroll-behavior: contain; }
+  #gridScroll.expanded { overflow-y: auto; }
+  #gridScroll::-webkit-scrollbar, .side::-webkit-scrollbar, .menu::-webkit-scrollbar { width: 6px; height: 6px; }
+  #gridScroll::-webkit-scrollbar-track, .side::-webkit-scrollbar-track, .menu::-webkit-scrollbar-track { background: transparent; }
+  #gridScroll::-webkit-scrollbar-thumb, .side::-webkit-scrollbar-thumb, .menu::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 999px; }
+  #gridScroll, .side, .menu { scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; min-height: 0; position: relative; }
+  /* 주 사이 경계: 위아래로 끌면 칸 높이가 바뀜 (모든 주가 같이) */
+  .row-resizer { position: absolute; left: 0; right: 0; height: 8px; cursor: row-resize; z-index: 2; touch-action: none; }
+  .row-resizer::after { content: ""; position: absolute; left: 40%; right: 40%; top: 3px; height: 2px; border-radius: 2px; background: var(--accent, #4c8dff); opacity: 0; transition: opacity .12s; }
+  .row-resizer:hover::after, body.row-resizing .row-resizer::after { opacity: 0.8; }
+  body.row-resizing, body.row-resizing * { cursor: row-resize !important; user-select: none; }
   .cell {
-    background: var(--panel); border-radius: var(--radius); padding: 6px 6px 4px; min-height: 0;
-    display: flex; flex-direction: column; overflow: hidden; cursor: default; border: 1px solid transparent;
+    background: var(--panel); border-radius: var(--radius); padding: var(--cell-pad-top) 6px var(--cell-pad-bottom); min-height: 0;
+    display: flex; flex-direction: column; overflow: hidden; cursor: default; border: var(--cell-border) solid transparent;
   }
   .cell:hover { border-color: var(--line); }
   .cell.out { opacity: 0.38; }
   .cell.today { border-color: var(--today); box-shadow: inset 0 0 0 1px var(--today); }
-  .cell-head { display: flex; align-items: baseline; gap: 6px; flex: none; }
+  .cell-head { display: flex; align-items: baseline; gap: 6px; height: var(--cell-head-h); flex: none; overflow: hidden; }
   .num { font-weight: 600; font-size: 14px; width: 24px; height: 24px; line-height: 24px; text-align: center; border-radius: 50%; }
   .today .num { background: var(--today); color: #fff; }
   body:not(.light) .today .num { color: #0b1a33; }
@@ -105,11 +124,13 @@
   .today.sun .num, .today.hol .num { color: #fff; }
   .sat .num { color: var(--sat); }
   .hname { color: var(--sun); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .event-count { border: 0; background: transparent; color: var(--dim); padding: 0 1px; font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
+  .event-count:hover, .event-count:focus { color: var(--accent); outline: none; }
   .add-hint { margin-left: auto; color: var(--faint); opacity: 0; font-size: 15px; cursor: pointer; padding: 0 4px; }
   .cell:hover .add-hint { opacity: 1; }
-  .evs { display: flex; flex-direction: column; gap: 3px; margin-top: 3px; min-height: 0; overflow: hidden; }
+  .evs { display: flex; flex-direction: column; gap: var(--chip-gap); margin-top: var(--cell-events-gap); min-height: 0; overflow: hidden; }
   .chip {
-    background: var(--chip); color: var(--chip-text); border-radius: 6px; padding: 2px 6px;
+    height: var(--chip-h); line-height: calc(var(--chip-h) - 6px); background: var(--chip); color: var(--chip-text); border-radius: 6px; padding: 2px 6px;
     font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
     border: 1px solid transparent; flex: none;
   }
@@ -117,7 +138,26 @@
   .chip .t { color: var(--dim); margin-right: 4px; font-variant-numeric: tabular-nums; }
   .chip.sugg { background: transparent; border: 1px dashed var(--sugg); color: var(--sugg); }
   .chip.sugg::before { content: "제안 "; font-size: 10px; opacity: 0.85; }
-  .more { color: var(--dim); font-size: 11px; padding-left: 4px; cursor: pointer; flex: none; }
+  .more { height: var(--chip-h); line-height: calc(var(--chip-h) - 2px); color: var(--dim); padding: 0 4px; cursor: pointer; flex: none; border: 0; background: transparent; text-align: left; font: inherit; font-size: 11px; }
+  .more:hover, .more:focus { color: var(--accent); outline: none; }
+
+  /* '+N개 더'를 누르면 칸 밖에 띄우는 일정 말풍선 */
+  .day-popover {
+    position: absolute; z-index: 30; width: min(310px, calc(100% - 12px)); max-height: 70%;
+    display: flex; flex-direction: column; overflow: hidden; background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.32); padding: 10px; user-select: text; -webkit-user-select: text;
+  }
+  body:not(.light) .day-popover { background: rgb(28, 32, 40); }
+  body.light .day-popover { background: rgb(250, 250, 252); }
+  .day-popover[hidden] { display: none; }
+  .day-pop-title { font-size: 13px; font-weight: 700; margin: 0 0 7px; flex: none; }
+  .day-pop-list { flex: 1 1 auto; overflow-y: auto; min-height: 0; margin: 0 -2px 8px; padding: 0 2px; }
+  .day-pop-event { display: flex; align-items: baseline; gap: 6px; width: 100%; padding: 6px 5px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+  .day-pop-event:hover, .day-pop-event:focus { background: var(--panel); outline: none; }
+  .day-pop-time { flex: none; min-width: 36px; color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .day-pop-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .day-pop-tag { flex: none; color: var(--sugg); border: 1px dashed var(--sugg); border-radius: 999px; padding: 0 4px; font-size: 10px; }
+  .day-pop-add { align-self: flex-start; flex: none; }
 
   .side {
     width: 320px; flex: none; border-left: 1px solid var(--line); padding: 12px 12px 12px 14px;
@@ -134,6 +174,24 @@
   .item.sugg { border: 1px dashed var(--sugg); }
   .item .acts { display: flex; gap: 6px; margin-top: 6px; }
   .item .acts .btn { padding: 3px 8px; font-size: 11px; }
+  .plan-head { font-size: 13px; color: var(--text); line-height: 1.45; }
+  .plan-meta { font-size: 11px; color: var(--faint); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .plan-warn { font-size: 11px; color: var(--sugg); border: 1px dashed var(--sugg); border-radius: 7px; padding: 5px 7px; line-height: 1.45; }
+  .prow { display: flex; gap: 8px; align-items: flex-start; padding: 7px 8px; border-radius: 8px; background: var(--panel); margin-bottom: 6px; cursor: pointer; border: 1px solid transparent; }
+  .prow:hover { border-color: var(--line); }
+  .prow .pno { flex: 0 0 20px; height: 20px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+  .prow.over .pno { background: #d93025; }
+  .prow .pbody { flex: 1; min-width: 0; }
+  .prow .ptitle { line-height: 1.35; overflow-wrap: anywhere; }
+  .prow .preason { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  .prow.over .preason { color: #f28b82; }
+  .prow .pacts { display: flex; gap: 4px; margin-top: 5px; }
+  .prow .pacts .btn { padding: 2px 7px; font-size: 11px; }
+  details.plan-later summary { cursor: pointer; font-size: 12px; color: var(--dim); }
+  .dupnote { margin-top: 4px; padding: 5px 7px; border-radius: 6px; background: var(--bg); font-size: 11px; color: var(--dim); line-height: 1.45; }
+  .dupnote b { color: var(--sugg); font-weight: 600; }
+  .dupnote .chg { color: var(--text); font-weight: 600; }
+  .srclist { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
   .empty { color: var(--faint); font-size: 12px; padding: 4px 2px; }
   .tabs { display: flex; gap: 4px; background: var(--panel); padding: 3px; border-radius: 10px; flex: none; }
   .tab { flex: 1; text-align: center; padding: 6px 0; border-radius: 8px; cursor: pointer; color: var(--dim); font-size: 12px; }
@@ -305,6 +363,7 @@
   .grip.sw { left: 0; bottom: 0; width: 18px; height: 18px; cursor: nesw-resize; }
   .toast { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(0,0,0,0.75); color: #fff; padding: 7px 14px; border-radius: 999px; font-size: 12px; display: none; z-index: 20; }
   .toast.on { display: block; }
+  .toast button { margin-left: 10px; background: none; border: 1px solid rgba(255,255,255,0.6); color: #fff; border-radius: 999px; padding: 1px 9px; font-size: 11px; cursor: pointer; }
 
   @media (max-width: 600px) {
     .top { gap: 4px; padding: 7px 7px 6px; }
@@ -346,11 +405,12 @@
   <div class="main">
     <div class="cal">
       <div class="dow" id="dow"></div>
-      <div class="grid" id="grid"></div>
+      <div id="gridScroll"><div class="grid" id="grid"></div></div>
     </div>
     <aside class="side" id="side">
       <div class="tabs">
         <div class="tab on" data-tab="sched">일정</div>
+        <div class="tab" data-tab="today">오늘<span class="n" id="todayN" style="display:none"></span></div>
         <div class="tab" data-tab="feed">받은 소식<span class="n" id="feedN" style="display:none"></span></div>
         <div class="tab" id="memoTab" data-tab="memo" hidden>메모</div>
       </div>
@@ -363,6 +423,19 @@
           <h3>다가오는 일정 (2주)</h3>
           <div id="upList"></div>
         </section>
+      </div>
+      <div class="pane hidden" id="paneToday">
+        <div class="plan-head" id="planHead"></div>
+        <div id="planWarn"></div>
+        <section>
+          <h3>무엇부터 할까요</h3>
+          <div id="planList"></div>
+        </section>
+        <section id="planSuggSec" hidden>
+          <h3>확정할 일정</h3>
+          <div id="planSugg"></div>
+        </section>
+        <div class="plan-meta"><span id="planMeta"></span><span style="flex:1"></span><button class="btn" id="planRerun" type="button">다시 정리</button></div>
       </div>
       <div class="pane hidden" id="paneFeed">
         <div class="chips" id="feedFilt">
@@ -384,17 +457,28 @@
   </div>
 
   <div class="menu" id="menu">
-    <div class="sec">위치 · 크기</div>
-    <button class="mi" data-snap="right">오른쪽 2/3</button>
-    <button class="mi" data-snap="left">왼쪽 2/3</button>
-    <button class="mi" data-snap="center">가운데 2/3</button>
-    <button class="mi" data-snap="full">화면 가득</button>
-    <button class="mi" id="nextMon">다른 모니터로 옮기기</button>
     <div class="sec">보기</div>
-    <div class="rng">배경 투명도 <input type="range" id="opacity" min="40" max="100" step="2"></div>
+    <button class="mi" id="calendarLayout"></button>
+    <div class="mlist" id="calendarLayoutList">
+      <button class="mi" data-calendar-layout="fit">한 화면에 맞춤</button>
+      <button class="mi" data-calendar-layout="expanded" data-calendar-lines="4">넓게 4줄</button>
+      <button class="mi" data-calendar-layout="expanded" data-calendar-lines="6">넓게 6줄</button>
+      <button class="mi" data-calendar-layout="expanded" data-calendar-lines="8">넓게 8줄</button>
+      <div class="note">주와 주 사이 경계를 위아래로 끌어도 칸 높이를 바꿀 수 있어요. 경계를 두 번 누르면 '한 화면에 맞춤'으로 돌아가요.</div>
+    </div>
     <button class="mi" id="weekStart"></button>
     <button class="mi" id="toggleSugg"></button>
     <button class="mi" id="theme"></button>
+    <div class="sec">창</div>
+    <div class="rng">배경 투명도 <input type="range" id="opacity" min="40" max="100" step="2"></div>
+    <button class="mi" id="placeBtn">창 위치·크기 ▾</button>
+    <div class="mlist" id="placeList">
+      <button class="mi" data-snap="right">오른쪽 2/3</button>
+      <button class="mi" data-snap="left">왼쪽 2/3</button>
+      <button class="mi" data-snap="center">가운데 2/3</button>
+      <button class="mi" data-snap="full">화면 가득</button>
+      <button class="mi" id="nextMon">다른 모니터로 옮기기</button>
+    </div>
     <div class="sec">메일 · 알림 · AI</div>
     <button class="mi" id="modelBtn">AI 모델: … ▾</button>
     <div class="mlist" id="modelList"></div>
@@ -427,6 +511,7 @@
   </div>
 
   <div class="scrim" id="scrim2"><div class="dialog" id="dialog2"></div></div>
+  <div class="day-popover" id="dayPopover" role="dialog" aria-modal="false" hidden></div>
 
   <div class="grip e" data-dir="e"></div><div class="grip s" data-dir="s"></div>
   <div class="grip w" data-dir="w"></div><div class="grip sw" data-dir="sw"></div>
@@ -452,7 +537,7 @@ function MockAPI() {
   const t = new Date(); const pad = (n) => String(n).padStart(2, "0");
   const ds = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const add = (n) => { const d = new Date(t); d.setDate(d.getDate() + n); return ds(d); };
-  let id = 10; let p = { week_start: 0, show_suggested: true, theme: "dark", opacity: 0.92 };
+  let id = 10; let p = { week_start: 0, show_suggested: true, theme: "dark", opacity: 0.92, calendar_layout: "fit", calendar_lines: 6, calendar_row_px: 0 };
   let evs = [
     { id: 1, title: "학업성적관리위원회", date: add(3), start_time: "15:30", end_time: "16:30", location: "본관 2층 회의실", note: "담임 전원 참석", status: "suggested", origin: "ai", message_id: 1, sender: "교무부장" },
     { id: 2, title: "학교폭력 실태조사 입력 마감", date: add(0), start_time: "16:00", end_time: "", location: "", note: "", status: "confirmed", origin: "ai", message_id: 2, sender: "교감" },
@@ -462,9 +547,26 @@ function MockAPI() {
     { id: 6, title: "교내 와이파이 점검", date: add(2), start_time: "12:30", end_time: "13:20", location: "", note: "", status: "confirmed", origin: "ai", message_id: 4, sender: "정보부" },
     { id: 7, title: "체육대회 준비 회의", date: add(1), start_time: "16:00", end_time: "", location: "체육관", note: "", status: "confirmed", origin: "manual", message_id: null, sender: "" },
     { id: 8, title: "생활기록부 점검", date: add(1), start_time: "", end_time: "", location: "", note: "", status: "confirmed", origin: "manual", message_id: null, sender: "" },
+    { id: 10, title: "(취소?) 체육대회 준비 회의", date: add(1), start_time: "16:00", end_time: "", location: "", note: "취소 안내로 보여요", status: "suggested", origin: "ai", message_id: 7, sender: "체육부", dup_of: 7, dup_kind: "cancel" },
+    { id: 9, title: "학업성적관리위원회 개최", date: add(3), start_time: "16:00", end_time: "", location: "교무실", note: "시각 변경 안내", status: "suggested", origin: "ai", message_id: 5, sender: "교무부장", dup_of: 1 },
   ];
   const hol = { "2026-11-11": "", "2026-12-25": "성탄절", "2027-01-01": "신정" };
   const ts = (n, h) => add(n) + `T${h}:00`;
+  const todoMock = {}; let planMadeAt = "";
+  const mockPlan = (rerun) => {
+    if (rerun || !planMadeAt) planMadeAt = ts(0, "08:30").replace("T", " ");
+    const items = [
+      { no: 1, kind: "todo", ref_id: 2, title: "학교폭력 실태조사 참여율 입력", reason: "마감 오늘 16:00 · 회신·제출 필요", sender: "교감", overdue: false },
+      { no: 2, kind: "event", ref_id: 2, title: "학교폭력 실태조사 입력 마감", reason: "오늘 16:00", sender: "교감" },
+      { no: 3, kind: "event", ref_id: 4, title: "학부모 상담", reason: "내일 14:00", sender: "" },
+      { no: 4, kind: "todo", ref_id: 11, title: "[공문] 2학기 교육과정 운영 실태 점검 자료 제출", reason: "마감 " + add(5).slice(5).replace("-", "/") + " · 회신·제출 필요", sender: "충북교육청" },
+      { no: 5, kind: "todo", ref_id: 1, title: "학업성적관리위원회 회의 참석 요청", reason: "참석 · 중요", sender: "교무부장" },
+    ].filter((x) => !todoMock[x.kind + x.ref_id]);
+    return { headline: `할 일 ${items.length}건 · 오늘 일정 1건 · 오늘까지 마감 1건 · 확정할 일정 1건`, items,
+      suggested: [{ kind: "suggested", ref_id: 3, title: "AI 디지털교과서 연수 신청 마감", reason: "내일 종일 · 확정 필요", sender: "충북교육청 연수원" }],
+      warnings: [{ kind: "overlap", nos: [2, 3], text: "16:00 학교폭력 실태조사 입력 마감 과(와) 16:00 체육대회 준비 회의 시간이 겹쳐요" }],
+      source: "rule", saved: true, finished_at: planMadeAt };
+  };
   const feedItems = [
     { id: 2, source: "eztalk", sender: "교감", subject: "", received_at: ts(0, "09:10"), importance: "긴급", category: "처리 필요", school_relevance: "학교 업무", summary: "학교폭력 실태조사 학급별 참여율을 오늘 16시까지 업무포털에 입력", action_items: ["업무포털에 참여율 입력"], deadline: add(0), done: false },
     { id: 11, source: "mail", sender: "충북교육청 <notice@cbe.go.kr>", subject: "[공문] 2학기 교육과정 운영 실태 점검 자료 제출", received_at: ts(0, "08:40"), importance: "중요", category: "처리 필요", school_relevance: "학교 업무", summary: "학년별 교육과정 운영 실태 점검표를 금요일까지 제출 요청", action_items: ["점검표 작성·제출"], deadline: add(5), done: false },
@@ -473,6 +575,17 @@ function MockAPI() {
     { id: 13, source: "mail", sender: "연수원 <edu@cbe.go.kr>", subject: "AI 디지털교과서 직무연수 신청 안내", received_at: ts(-1, "11:20"), importance: "참고", category: "참고", school_relevance: "학교 업무", summary: "15시간 직무연수 신청을 금요일까지 받음", action_items: [], deadline: "", done: true },
   ];
   const query = new URLSearchParams(location.search);
+  if (query.get("busy") === "1") {
+    // 미리보기에서 한 화면 맞춤과 넓게 보기를 비교할 수 있는, 이번 달의 가상 일정들
+    [[5, 5], [13, 7], [21, 11]].forEach(([day, count]) => {
+      const busyDate = ds(new Date(t.getFullYear(), t.getMonth(), day));
+      for (let n = 0; n < count; n++) {
+        evs.push({ id: ++id, title: `가상 일정 ${n + 1}`, date: busyDate,
+          start_time: `${String(8 + n).padStart(2, "0")}:00`, end_time: "", location: "", note: "",
+          status: n % 4 === 0 ? "suggested" : "confirmed", origin: "manual", message_id: null, sender: "" });
+      }
+    });
+  }
   const memoEnabled = query.get("memo") !== "off";
   const memoImageAi = query.get("imageai") !== "off";
   const makeMemoImage = () => {
@@ -524,20 +637,50 @@ function MockAPI() {
       return { year: y, month: m, today: ds(t), weeks, suggested_count: evs.filter((e) => e.status === "suggested").length };
     },
     upcoming: async () => evs.filter((e) => e.status !== "dismissed" && e.date >= ds(t) && e.date <= add(14)).sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time)),
-    suggestions: async () => evs.filter((e) => e.status === "suggested"),
+    suggestions: async () => evs.filter((e) => e.status === "suggested").map((e) => {
+      const o = e.dup_of && evs.find((x) => x.id === e.dup_of);
+      return o ? { ...e, dup: { ...o } } : { ...e, dup_of: null };
+    }),
+    today_plan: async () => mockPlan(false),
+    today_plan_run: async () => mockPlan(true),
+    todo_done: async (k, i) => { todoMock[k + i] = "done"; return { ok: true }; },
+    todo_snooze: async (k, i) => { todoMock[k + i] = "snoozed"; return { ok: true, until: add(1) }; },
+    todo_undo: async (k, i) => { delete todoMock[k + i]; return { ok: true }; },
+    resolve_duplicate: async (i, act) => {
+      const e = evs.find((x) => x.id === i); const o = e && evs.find((x) => x.id === e.dup_of);
+      if (!e || !o) return { ok: false, error: "기존 일정을 찾을 수 없어요." };
+      if (e.dup_kind === "cancel") {
+        if (act === "cancel_event") { const prev = o.status; o.status = "dismissed"; evs = evs.filter((x) => x.id !== i); return { ok: true, event_id: o.id, prev_status: prev }; }
+        if (act === "keep") { e.status = "dismissed"; return { ok: true, event_id: i }; }
+        return { ok: false, error: "취소 안내는 일정 취소 또는 그대로 두기를 골라 주세요." };
+      }
+      if (act === "replace") { ["title", "date", "start_time", "end_time", "location"].forEach((k) => { if (e[k]) o[k] = e[k]; });
+        if (o.status === "dismissed") o.status = "confirmed"; evs = evs.filter((x) => x.id !== i); return { ok: true, event_id: o.id }; }
+      if (act === "separate") { e.dup_of = null; e.status = "confirmed"; return { ok: true, event_id: i }; }
+      if (act === "ignore") { e.status = "dismissed"; return { ok: true, event_id: i }; }
+      return { ok: false, error: "처리 방법을 확인해 주세요." };
+    },
+    restore_event: async (i, st) => { const o = evs.find((x) => x.id === i); if (!o || o.status !== "dismissed") return { ok: false }; o.status = st; return { ok: true }; },
+    event_sources: async (i) => i === 1 ? [
+      { kind: "message", ref_id: 1, relation: "origin", sender: "교무부장", received_at: ds(t) + "T08:45:00" },
+      { kind: "message", ref_id: 6, relation: "same", sender: "교무부장", received_at: ds(t) + "T10:12:00" }] : [],
     message: async (mid) => ({ source: "eztalk", sender: "교무부장", received_at: ds(t) + "T08:45:00", importance: "중요",
       body: "선생님들, 2학기 학업성적관리위원회 회의를 진행합니다. 담임 선생님들은 모두 참석 부탁드립니다.", summary: "학업성적관리위원회 회의 참석 요청" }),
     add: async (d) => { evs.push({ ...d, id: ++id, status: "confirmed", origin: "manual", sender: "" }); return { ok: true, id }; },
     update: async (i, d) => { Object.assign(evs.find((e) => e.id === i), d); return { ok: true }; },
     delete: async (i) => { evs = evs.filter((e) => e.id !== i); return { ok: true }; },
-    confirm: async (i) => { evs.find((e) => e.id === i).status = "confirmed"; return { ok: true }; },
+    confirm: async (i) => { const e = evs.find((x) => x.id === i);
+      if (e.dup_kind === "cancel") return { ok: false, error: "취소 안내는 [일정 취소] 또는 [그대로 두기]로 골라 주세요." };
+      e.status = "confirmed"; e.dup_of = null; return { ok: true }; },
     dismiss: async (i) => { evs.find((e) => e.id === i).status = "dismissed"; return { ok: true }; },
-    confirm_all: async () => { let n = 0; evs.forEach((e) => { if (e.status === "suggested") { e.status = "confirmed"; n++; } }); return { ok: true, count: n }; },
+    confirm_all: async () => { let n = 0, skipped = 0; evs.forEach((e) => { if (e.status !== "suggested") return;
+      if (e.dup_of && evs.some((x) => x.id === e.dup_of)) { skipped++; return; } e.status = "confirmed"; n++; }); return { ok: true, count: n, skipped }; },
     export_ics: async () => ({ ok: true, path: "(미리보기)", count: evs.length }),
     update_check: async () => ({ current: "0.7.0", available: true, latest: "0.7.1", notes: "- 업데이트 기능 추가\n- 버그 수정", html_url: "", error: "", disabled: false }),
     update_install: async () => ({ ok: false, error: "미리보기에서는 설치하지 않습니다." }),
     win: async () => ({ ok: false }),
-    feed: async (f, src) => feedItems.filter((x) => (f === "all" || !x.done) && (f !== "school" || x.school_relevance === "학교 업무") && (!src || x.source === src)),
+    feed: async (f, src) => feedItems.filter((x) => (f !== "open" || !x.done) && (f !== "school" || x.school_relevance === "학교 업무") && (!src || x.source === src))
+      .sort((a, b) => f === "open" ? 0 : b.received_at.localeCompare(a.received_at)),
     reanalyze: async (i) => { await new Promise((r) => setTimeout(r, 1200)); const x = feedItems.find((y) => y.id === i); if (x) x._redone = true; return { ok: true, model: "claude_cli:opus" }; },
     item: async (i) => { const x = feedItems.find((y) => y.id === i); const ev = evs.filter((e) => e.message_id === i && e.status !== "dismissed");
       const det = (x.id === 2 || x._redone) ? ["요청: 학급별 학교폭력 실태조사 참여율 입력", "마감: 오늘 16:00", "방법: 업무포털 → 학교폭력 실태조사 메뉴", "문의: 교감"] : [];
@@ -857,54 +1000,346 @@ function confirmUndoImport(info) {
 }
 
 let renderSeq = 0;
-async function render() {
-  const seq = ++renderSeq;
-  const data = await api.month(cur.y, cur.m);
-  if (seq !== renderSeq) return;          // 더 새로 그리는 중이면 이 결과는 버림
-  $("title").innerHTML = `${data.year}년 ${data.month}월`;
+let monthData = null;
+let dayPopoverState = null;
+let layoutObserver = null;
+let layoutTimer = null;
+
+const ROW_PX_MIN = 40, ROW_PX_MAX = 600;
+function currentLayout() { return ["expanded", "custom"].includes(prefs.calendar_layout) ? prefs.calendar_layout : "fit"; }
+function currentRowPx() { const v = Number(prefs.calendar_row_px); return Number.isFinite(v) && v >= ROW_PX_MIN ? Math.min(ROW_PX_MAX, v) : 0; }
+function currentLines() { return [4, 6, 8].includes(Number(prefs.calendar_lines)) ? Number(prefs.calendar_lines) : 6; }
+function cssPx(style, name, fallback) { return Number.parseFloat(style.getPropertyValue(name)) || fallback; }
+function calendarMetrics() {
+  const s = getComputedStyle(document.documentElement);
+  return {
+    chipH: cssPx(s, "--chip-h", 20), chipGap: cssPx(s, "--chip-gap", 3),
+    headH: cssPx(s, "--cell-head-h", 24), padTop: cssPx(s, "--cell-pad-top", 6),
+    padBottom: cssPx(s, "--cell-pad-bottom", 4), eventsGap: cssPx(s, "--cell-events-gap", 3),
+    border: cssPx(s, "--cell-border", 1),
+  };
+}
+function rowHeightForLines(lines, m) {
+  const n = Math.max(1, lines);
+  return m.padTop + m.padBottom + m.border * 2 + m.headH + m.eventsGap + n * m.chipH + (n - 1) * m.chipGap;
+}
+function weekEventCounts(weeks) { return weeks.map((week) => Math.max(0, ...week.map((d) => (d.events || []).length))); }
+function fitRowHeights(counts, availableRows, m) {
+  const min = rowHeightForLines(1, m);
+  const allMin = min * counts.length;
+  if (availableRows <= allMin) return counts.map(() => Math.max(0, availableRows / counts.length));
+  const needs = counts.map((count) => Math.max(0, rowHeightForLines(Math.max(1, count), m) - min));
+  const needTotal = needs.reduce((sum, n) => sum + n, 0);
+  const rest = availableRows - allMin;
+  if (!needTotal) return counts.map(() => min + rest / counts.length);
+  if (rest >= needTotal) return needs.map((need) => min + need + (rest - needTotal) / counts.length);
+  return needs.map((need) => min + rest * need / needTotal);
+}
+function chipCapacity(rowHeight, m) {
+  const usable = rowHeight - m.padTop - m.padBottom - m.border * 2 - m.headH - m.eventsGap;
+  return Math.max(0, Math.floor((usable + m.chipGap + 0.01) / (m.chipH + m.chipGap)));
+}
+function isTodayMonth() {
+  const now = new Date(); return cur.y === now.getFullYear() && cur.m === now.getMonth() + 1;
+}
+function drawCalendarHeader(data) {
+  $("title").textContent = `${data.year}년 ${data.month}월`;
   const names = prefs.week_start === 1 ? DOW_MON : DOW_SUN;
   $("dow").innerHTML = names.map((n) => `<div style="color:${n === "일" ? "var(--sun)" : n === "토" ? "var(--sat)" : ""}">${n}</div>`).join("");
-  const grid = $("grid"); grid.innerHTML = "";
-  const rowH = grid.clientHeight / 6;
-  const maxChips = Math.max(1, Math.floor((rowH - 36) / 21));
-  data.weeks.flat().forEach((d) => {
-    const cell = document.createElement("div");
-    const cls = ["cell"];
-    if (!d.in_month) cls.push("out");
-    if (d.date === data.today) cls.push("today");
-    if (d.weekday === 6) cls.push("sun");
-    if (d.weekday === 5) cls.push("sat");
-    if (d.holiday) cls.push("hol");
-    cell.className = cls.join(" ");
-    const shown = d.events.slice(0, d.events.length > maxChips ? maxChips - 1 : maxChips);
-    const rest = d.events.length - shown.length;
-    cell.innerHTML =
-      `<div class="cell-head"><span class="num">${d.day}</span>${d.holiday ? `<span class="hname">${esc(d.holiday)}</span>` : ""}<span class="add-hint" title="이 날 일정 추가">+</span></div>` +
-      `<div class="evs">${shown.map((e) => `<div class="chip ${e.status === "suggested" ? "sugg" : ""}" data-id="${e.id}" title="${esc(e.title)}">${e.start_time ? `<span class="t">${e.start_time}</span>` : ""}${esc(e.title)}</div>`).join("")}` +
-      `${rest > 0 ? `<div class="more" data-date="${d.date}">+${rest}개 더</div>` : ""}</div>`;
-    cell.addEventListener("dblclick", (ev) => { if (!ev.target.closest(".chip")) openNew(d.date); });
-    cell.querySelector(".add-hint").addEventListener("click", () => openNew(d.date));
-    cell.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => openEdit(d.events.find((e) => e.id == c.dataset.id))));
-    const more = cell.querySelector(".more");
-    if (more) more.addEventListener("click", () => showDay(d));
-    grid.appendChild(cell);
-  });
-  const b = $("suggBadge");
-  b.textContent = `AI 제안 ${data.suggested_count}건`;
-  b.classList.toggle("on", data.suggested_count > 0);
-  await renderSide();
+  const badge = $("suggBadge");
+  badge.textContent = `AI 제안 ${data.suggested_count}건`;
+  badge.classList.toggle("on", data.suggested_count > 0);
 }
 
+function addCalendarCell(grid, d, weekIndex, rowHeight, m) {
+  const events = d.events || [];
+  const capacity = chipCapacity(rowHeight, m);
+  const overflow = events.length > capacity;
+  const shown = capacity ? events.slice(0, overflow ? Math.max(0, capacity - 1) : capacity) : [];
+  const rest = events.length - shown.length;
+  const compactCount = events.length && capacity < 1;
+  const cell = document.createElement("div");
+  const cls = ["cell"];
+  if (!d.in_month) cls.push("out");
+  if (d.date === monthData.today) cls.push("today");
+  if (d.weekday === 6) cls.push("sun");
+  if (d.weekday === 5) cls.push("sat");
+  if (d.holiday) cls.push("hol");
+  cell.className = cls.join(" ");
+  cell.dataset.week = weekIndex;
+  const countHtml = compactCount ? `<button type="button" class="event-count" aria-label="${d.day}일 일정 ${events.length}건 보기">·${events.length}</button>` : "";
+  const chipHtml = shown.map((e) => `<div class="chip ${e.status === "suggested" ? "sugg" : ""}" data-id="${e.id}" title="${esc(e.title)}">${e.start_time ? `<span class="t">${e.start_time}</span>` : ""}${esc(e.title)}</div>`).join("");
+  const moreHtml = rest > 0 && capacity > 0 ? `<button type="button" class="more" data-date="${d.date}">+${rest}개 더</button>` : "";
+  cell.innerHTML =
+    `<div class="cell-head"><span class="num">${d.day}</span>${countHtml}${d.holiday ? `<span class="hname">${esc(d.holiday)}</span>` : ""}<span class="add-hint" title="이 날 일정 추가">+</span></div>` +
+    `<div class="evs">${chipHtml}${moreHtml}</div>`;
+  cell.addEventListener("dblclick", (ev) => { if (!ev.target.closest(".chip, .more, .event-count, .add-hint")) openNew(d.date); });
+  cell.querySelector(".add-hint").addEventListener("click", () => openNew(d.date));
+  cell.querySelectorAll(".chip").forEach((chip) => chip.addEventListener("click", () => openEdit(events.find((e) => e.id == chip.dataset.id))));
+  const opener = cell.querySelector(".more, .event-count");
+  if (opener) opener.addEventListener("click", () => openDayPopover(d, opener));
+  grid.appendChild(cell);
+}
+
+function scrollToTodayWeek() {
+  const gridScroll = $("gridScroll");
+  const todayCell = $("grid").querySelector(`.cell.today`);
+  if (!todayCell) { gridScroll.scrollTop = 0; return; }
+  const outer = gridScroll.getBoundingClientRect(); const cell = todayCell.getBoundingClientRect();
+  if (cell.top < outer.top || cell.bottom > outer.bottom) gridScroll.scrollTop += cell.top - outer.top - 4;
+}
+
+/* 주 사이 경계 끌기: 끄는 경계가 마우스를 그대로 따라가도록, 그 위의 주들(w+1개)이 같은 높이로 늘고 준다.
+   모든 주가 같은 높이가 되고(직접 맞춤), 놓으면 그 높이를 기억한다. 경계를 두 번 누르면 '한 화면에 맞춤'. */
+let rowDrag = null;
+function addRowResizers(grid, heights, gap) {
+  let top = 0;
+  heights.forEach((h, w) => {
+    top += h;
+    const last = w === heights.length - 1;
+    const bar = document.createElement("div");
+    bar.className = "row-resizer";
+    bar.title = "끌어서 칸 높이 바꾸기 (두 번 누르면 한 화면에 맞춤)";
+    bar.style.top = `${(last ? top - 8 : top + gap / 2 - 4).toFixed(2)}px`;
+    bar.addEventListener("pointerdown", (ev) => startRowDrag(ev, w, heights, gap));
+    bar.addEventListener("dblclick", (ev) => { ev.stopPropagation(); setPref({ calendar_layout: "fit" }); });
+    grid.appendChild(bar);
+    top += gap;
+  });
+}
+function startRowDrag(ev, w, heights, gap) {
+  if (ev.button !== 0) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const gridTop = $("grid").getBoundingClientRect().top;
+  const minRow = rowHeightForLines(1, calendarMetrics());
+  const before = { layout: prefs.calendar_layout, px: prefs.calendar_row_px };
+  rowDrag = { moved: false, pending: false, px: 0 };
+  // 끄는 동안 격자가 짧아져도 스크롤 위치가 저절로 당겨지지 않게, 줄어든 만큼 아래 여백을 잠시 둔다.
+  // (안 그러면 스크롤을 내린 채 위로 끌 때 gridTop 기준이 어긋나 경계가 마우스를 못 따라감)
+  const gridScroll = $("gridScroll");
+  const startGridH = $("grid").offsetHeight;
+  document.body.classList.add("row-resizing");
+  const onMove = (e) => {
+    const boundary = e.clientY - gridTop;                 // 격자 맨 위에서 끄는 경계까지
+    const h = Math.round(Math.max(minRow, Math.min(ROW_PX_MAX, (boundary - gap * w) / (w + 1))));
+    if (!rowDrag.moved && Math.abs(e.clientY - ev.clientY) < 3) return;
+    rowDrag.moved = true; rowDrag.px = h;
+    if (rowDrag.pending) return; rowDrag.pending = true;
+    requestAnimationFrame(() => {
+      if (!rowDrag) return;
+      rowDrag.pending = false;
+      prefs.calendar_layout = "custom"; prefs.calendar_row_px = rowDrag.px;
+      const n = heights.length;
+      gridScroll.style.paddingBottom = `${Math.max(0, startGridH - (n * rowDrag.px + (n - 1) * gap)).toFixed(2)}px`;
+      layoutGrid();
+    });
+  };
+  const onUp = async () => {
+    document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onUp);
+    document.body.classList.remove("row-resizing");
+    gridScroll.style.paddingBottom = "";
+    const done = rowDrag; rowDrag = null;
+    if (!done || !done.moved) return;
+    try {
+      prefs = await api.set_prefs({ calendar_layout: "custom", calendar_row_px: done.px });
+    } catch (_) { prefs.calendar_layout = before.layout; prefs.calendar_row_px = before.px; }
+    menuLabels(); layoutGrid();
+  };
+  document.addEventListener("pointermove", onMove); document.addEventListener("pointerup", onUp);
+  document.addEventListener("pointercancel", onUp);
+}
+
+/* 이 함수는 이미 받은 monthData만 배치한다. 크기 변경 때 API를 다시 부르지 않는다. */
+function layoutGrid(options = {}) {
+  if (!monthData) return;
+  closeDayPopover(false);
+  const grid = $("grid"); const gridScroll = $("gridScroll");
+  const oldScrollTop = Number.isFinite(options.scrollTop) ? options.scrollTop : gridScroll.scrollTop;
+  const weeks = monthData.weeks || [];
+  const metrics = calendarMetrics();
+  const gap = Number.parseFloat(getComputedStyle(grid).rowGap) || 4;
+  const available = Math.max(0, gridScroll.clientHeight);
+  const availableRows = Math.max(0, available - gap * Math.max(0, weeks.length - 1));
+  const counts = weekEventCounts(weeks);
+  const fitHeights = fitRowHeights(counts, availableRows, metrics);
+  const layout = currentLayout();
+  const expanded = layout !== "fit";   // 넓게 보기·직접 맞춤은 격자가 길어지면 스크롤
+  // 넓게 보기: 모든 주를 'N줄 들어가는 높이'로 똑같이 맞춘다 (창이 더 크면 남는 높이를 고르게).
+  // 예전에는 일정이 N개 넘는 주만 키워서, 일정이 적은 달은 4·6·8줄을 골라도 화면이 그대로였다.
+  // 직접 맞춤(경계 끌기): 모든 주를 끈 높이 그대로 (창보다 작으면 아래가 비어도 됨).
+  const minRow = rowHeightForLines(1, metrics);
+  const expandedRow = layout === "custom" && currentRowPx()
+    ? Math.max(minRow, currentRowPx())
+    : Math.max(rowHeightForLines(currentLines(), metrics), weeks.length ? availableRows / weeks.length : 0);
+  const heights = expanded ? weeks.map(() => expandedRow) : fitHeights;
+  const gridHeight = expanded
+    ? heights.reduce((sum, height) => sum + height, 0) + gap * Math.max(0, heights.length - 1)
+    : available;
+  gridScroll.classList.toggle("expanded", expanded);
+  grid.style.gridTemplateRows = heights.map((height) => `${Math.max(0, height).toFixed(2)}px`).join(" ");
+  grid.style.height = `${Math.max(0, gridHeight).toFixed(2)}px`;
+  grid.innerHTML = "";
+  weeks.forEach((week, weekIndex) => week.forEach((d) => addCalendarCell(grid, d, weekIndex, heights[weekIndex], metrics)));
+  addRowResizers(grid, heights, gap);
+  const finishScroll = () => {
+    if (!expanded) { gridScroll.scrollTop = 0; return; }
+    if (options.scroll === "top") { gridScroll.scrollTop = 0; return; }
+    if (options.scroll === "today") { scrollToTodayWeek(); return; }
+    gridScroll.scrollTop = Math.max(0, Math.min(oldScrollTop, gridScroll.scrollHeight - gridScroll.clientHeight));
+  };
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(finishScroll); else setTimeout(finishScroll, 0);
+}
+
+async function render(options = {}) {
+  closeDayPopover(false);
+  const seq = ++renderSeq;
+  const oldScrollTop = $("gridScroll") ? $("gridScroll").scrollTop : 0;
+  // 자료를 가져오는 일(month + 옆 패널)과, 화면에 다시 배치하는 일(layoutGrid)을 분리한다.
+  const [data] = await Promise.all([api.month(cur.y, cur.m), renderSide()]);
+  if (seq !== renderSeq) return;          // 더 새로 그리는 중이면 이 결과는 버림
+  monthData = data;
+  drawCalendarHeader(data);
+  layoutGrid({ scroll: options.scroll || "keep", scrollTop: oldScrollTop });
+}
+
+function scheduleGridLayout() {
+  clearTimeout(layoutTimer);
+  layoutTimer = setTimeout(() => { if (monthData) layoutGrid({ scroll: "keep" }); }, 120);
+}
+
+function closeDayPopover(restoreFocus = true) {
+  const pop = $("dayPopover");
+  if (!pop || !dayPopoverState) return;
+  const opener = dayPopoverState.opener;
+  dayPopoverState = null;
+  pop.hidden = true; pop.innerHTML = ""; pop.style.left = ""; pop.style.top = ""; pop.style.visibility = "";
+  if (restoreFocus && opener && document.body.contains(opener)) opener.focus({ preventScroll: true });
+}
+
+function positionDayPopover(anchor) {
+  const pop = $("dayPopover"); const frame = $("frame");
+  const frameRect = frame.getBoundingClientRect(); const anchorRect = anchor.getBoundingClientRect();
+  const margin = 6; const width = pop.offsetWidth; const height = pop.offsetHeight;
+  let left = anchorRect.right - frameRect.left + margin;
+  let top = anchorRect.top - frameRect.top;
+  if (left + width > frame.clientWidth - margin) left = anchorRect.left - frameRect.left - width - margin;
+  if (top + height > frame.clientHeight - margin) top = anchorRect.bottom - frameRect.top - height;
+  left = Math.max(margin, Math.min(left, frame.clientWidth - width - margin));
+  top = Math.max(margin, Math.min(top, frame.clientHeight - height - margin));
+  pop.style.left = `${left}px`; pop.style.top = `${top}px`;
+}
+
+function openDayPopover(day, opener) {
+  const frame = $("frame");
+  // 매우 작은 창에서는 말풍선보다 기존 전체 목록 창이 더 읽기 쉽다.
+  if (frame.clientWidth < 300 || frame.clientHeight < 230) { closeDayPopover(false); showDay(day); return; }
+  closeDayPopover(false);
+  const pop = $("dayPopover");
+  const events = day.events || [];
+  pop.innerHTML = `<div class="day-pop-title">${fmtDate(day.date)} 일정 ${events.length}건</div>` +
+    `<div class="day-pop-list">${events.map((e) => `<button type="button" class="day-pop-event" data-id="${e.id}"><span class="day-pop-time">${esc(e.start_time || "종일")}</span><span class="day-pop-name">${esc(e.title)}</span>${e.status === "suggested" ? `<span class="day-pop-tag">제안</span>` : ""}</button>`).join("")}</div>` +
+    `<button type="button" class="btn primary day-pop-add">+ 이 날 일정 추가</button>`;
+  const maxHeight = Math.max(120, Math.min(frame.clientHeight - 12, Math.floor(frame.clientHeight * 0.7)));
+  pop.style.maxHeight = `${maxHeight}px`; pop.style.visibility = "hidden"; pop.hidden = false;
+  dayPopoverState = { opener };
+  positionDayPopover(opener);
+  pop.style.visibility = "";
+  pop.querySelectorAll(".day-pop-event").forEach((button) => button.addEventListener("click", () => {
+    const event = events.find((e) => e.id == button.dataset.id); closeDayPopover(false); openEdit(event);
+  }));
+  pop.querySelector(".day-pop-add").addEventListener("click", () => { closeDayPopover(false); openNew(day.date); });
+  const first = pop.querySelector(".day-pop-event") || pop.querySelector(".day-pop-add");
+  if (first) setTimeout(() => first.focus(), 0);
+}
+
+// '기존 일정과 같은 일인가요?' 제안: 기존 일정과 바뀐 부분을 굵게
+function dupNoteHtml(e) {
+  const o = e.dup; if (!o) return "";
+  const part = (label, a, b) => (b && a !== b) ? `<span class="chg">${label} ${esc(a || "없음")} → ${esc(b)}</span>` : "";
+  const changes = [part("날짜", fmtDate(o.date), fmtDate(e.date)), part("시각", o.start_time, e.start_time),
+    part("장소", o.location, e.location)].filter(Boolean);   // 제목은 말만 바뀐 경우가 많아 비교하지 않음
+  if (e.dup_kind === "cancel") return `<div class="dupnote"><b>이 일정이 취소된 것 같아요</b><br>
+    대상: ${fmtDate(o.date)} ${o.start_time || "종일"} ${esc(o.title)}${o.location ? " · " + esc(o.location) : ""}<br>
+    [일정 취소]를 누르면 달력에서 빠져요. 바로 뒤에 [되돌리기]로 되살릴 수 있어요.</div>`;
+  const head = e.dup_kind === "change" ? "날짜가 바뀐 것 같아요" : "기존 일정과 같은 일 같아요";
+  return `<div class="dupnote"><b>${head}</b>${o.status === "dismissed" ? " (전에 무시한 일정)" : ""}<br>
+    기존: ${fmtDate(o.date)} ${o.start_time || "종일"} ${esc(o.title)}${o.location ? " · " + esc(o.location) : ""}
+    ${changes.length ? "<br>바뀐 것: " + changes.join(", ") : "<br>새로 알게 된 내용이 있어요."}</div>`;
+}
+const DUP_ACTS = `<button class="btn okc" data-act="replace" title="기존 일정을 이 내용으로 고칩니다">바꾸기</button><button class="btn" data-act="separate" title="다른 일로 보고 따로 넣습니다">따로 등록</button><button class="btn ghost" data-act="ignore" title="이 제안을 버립니다 (기존 일정은 그대로)">무시</button>`;
+const CANCEL_ACTS = `<button class="btn danger" data-act="cancel_event" title="대상 일정을 달력에서 뺍니다 (되살릴 수 있게 '무시'로)">일정 취소</button><button class="btn ghost" data-act="keep" title="안내를 버리고 일정은 그대로 둡니다">그대로 두기</button>`;
+const dupActs = (e) => e.dup_kind === "cancel" ? CANCEL_ACTS : DUP_ACTS;
+const DUP_DONE = { replace: "기존 일정을 새 내용으로 바꿨습니다.", separate: "따로 등록했습니다.", ignore: "제안을 무시했습니다. 기존 일정은 그대로예요.",
+  cancel_event: "일정을 취소해 달력에서 뺐습니다.", keep: "일정을 그대로 두었습니다." };
+
 function itemHtml(e, withActs) {
+  const dup = withActs && e.dup_of && e.dup;
   return `<div class="item ${e.status === "suggested" ? "sugg" : ""}" data-id="${e.id}">
     <div class="when">${fmtDate(e.date)} ${e.start_time || "종일"}${e.end_time ? "~" + e.end_time : ""}${e.location ? " · " + esc(e.location) : ""}</div>
     <div class="what">${esc(e.title)}</div>
     ${e.sender ? `<div class="from">쪽지: ${esc(e.sender)}</div>` : ""}
-    ${withActs ? `<div class="acts"><button class="btn okc" data-act="confirm">확정</button><button class="btn" data-act="edit">고치기</button><button class="btn ghost" data-act="dismiss">무시</button></div>` : ""}
+    ${dup ? dupNoteHtml(e) : ""}
+    ${withActs ? `<div class="acts">${dup ? dupActs(e) : `<button class="btn okc" data-act="confirm">확정</button><button class="btn" data-act="edit">고치기</button><button class="btn ghost" data-act="dismiss">무시</button>`}</div>` : ""}
   </div>`;
 }
 
+async function resolveDup(e, act) {
+  const r = await api.resolve_duplicate(e.id, act);
+  if (r && r.ok && act === "cancel_event" && r.prev_status) {
+    // [일정 취소]는 6초 동안 되돌릴 수 있게
+    toastUndo(DUP_DONE[act], async () => { await api.restore_event(r.event_id, r.prev_status); toast("일정을 되살렸습니다."); render(); });
+  } else {
+    toast(r && r.ok ? DUP_DONE[act] : ((r && r.error) || "처리하지 못했습니다."));
+  }
+  render();
+}
+
+function toastUndo(msg, undo) {
+  const t = $("toast"); t.textContent = msg;
+  const b = document.createElement("button"); b.textContent = "되돌리기";
+  b.onclick = () => { t.classList.remove("on"); undo(); };
+  t.appendChild(b); t.classList.add("on"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("on"), 6000);
+}
+
 let sideTab = "sched", feedF = "open", feedS = "";
+
+/* ---------- 오늘 할 일 순서 (능동 비서) ---------- */
+const TODO_DONE_MSG = { done: "완료했어요.", snooze: "다음 근무일로 미뤘어요." };
+function planRowHtml(x, acts) {
+  return `<div class="prow ${x.overdue ? "over" : ""}" data-k="${esc(x.kind)}" data-id="${x.ref_id}">
+    <div class="pno">${x.no || "·"}</div>
+    <div class="pbody"><div class="ptitle">${esc(x.title)}</div>
+      <div class="preason">${esc(x.reason || "")}${x.sender ? " · " + esc(x.sender.replace(/\s*<[^>]+>/, "")) : ""}</div>
+      ${acts ? `<div class="pacts"><button class="btn okc" data-act="done">완료</button><button class="btn ghost" data-act="snooze">내일로</button></div>` : ""}
+    </div></div>`;
+}
+async function renderToday(fresh) {
+  let p;
+  try { p = fresh ? await api.today_plan_run() : await api.today_plan(); } catch (ex) { $("planHead").textContent = "오늘 할 일을 불러오지 못했어요."; return; }
+  p = p || { items: [], suggested: [], warnings: [] };
+  $("planHead").textContent = p.headline || "오늘 챙길 일이 없어요";
+  $("planWarn").innerHTML = (p.warnings || []).map((w) => `<div class="plan-warn">⚠ ${esc(w.text || "")}</div>`).join("");
+  $("planList").innerHTML = (p.items || []).length ? p.items.map((x) => planRowHtml(x, true)).join("")
+    : `<div class="empty">지금은 할 일이 없어요. 새 소식이 오면 다시 정리해요.</div>`;
+  $("planSuggSec").hidden = !(p.suggested || []).length;
+  $("planSugg").innerHTML = (p.suggested || []).map((x) => planRowHtml({ ...x, no: "" }, false)).join("");
+  const made = (p.finished_at || p.made_at || "").replace("T", " ").slice(5, 16);
+  $("planMeta").textContent = p.saved === false ? "아직 정리 전 · 지금 자료로 본 순서"
+    : `${made} 정리 · ${p.source === "ai" ? "AI 정리" : "규칙 정리"}`;
+  setTodayCount((p.items || []).length);
+  document.querySelectorAll("#paneToday .prow").forEach((el) => el.addEventListener("click", async (ev) => {
+    const kind = el.dataset.k, id = Number(el.dataset.id), act = ev.target.dataset.act;
+    if (act === "done" || act === "snooze") {
+      const r = act === "done" ? await api.todo_done(kind, id) : await api.todo_snooze(kind, id);
+      if (r && r.ok) toastUndo(TODO_DONE_MSG[act], async () => { await api.todo_undo(kind, id); renderToday(); });
+      return renderToday();
+    }
+    if (kind === "todo") return openItem(id);
+    const evs = await api.upcoming(2); const e = evs.find((x) => x.id === id); if (e) openEdit(e);
+  }));
+}
+function setTodayCount(n) { const b = $("todayN"); b.textContent = n; b.style.display = n ? "" : "none"; }
 const SRC_ICON = { mail: "✉", eztalk: "💬" };
 const fmtTime = (iso) => { if (!iso) return ""; const [d, t] = iso.split("T"); const today = new Date(); const pad = (n) => String(n).padStart(2, "0");
   const ds = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`; return (d === ds ? "" : fmtDate(d) + " ") + (t || "").slice(0, 5); };
@@ -1199,7 +1634,7 @@ async function renderFeed() {
         ${r.school_relevance === "학교 업무" ? '<span class="tagl school">학교</span>' : ""}<span class="tagl">${esc(r.importance)}</span><span class="tm">${fmtTime(r.received_at)}</span></div>
       ${r.subject ? `<div class="subj">${esc(r.subject)}</div>` : ""}
       <div class="sum">${esc(r.summary)}${r.action_items && r.action_items.length ? " · 할 일: " + esc(r.action_items[0]) : ""}</div></div>`).join("")
-    : `<div class="empty">${feedF === "all" ? "최근 30일 동안 받은 소식이 없습니다." : "처리할 소식이 없습니다. 👍"}</div>`;
+    : `<div class="empty">${feedF === "all" ? "최근 30일 동안 받은 소식이 없습니다." : feedF === "school" ? "최근 30일 동안 학교 업무로 판단된 소식이 없습니다." : "처리할 소식이 없습니다. 👍"}</div>`;
   $("feedList").querySelectorAll(".fi").forEach((el) => el.addEventListener("click", () => openItem(Number(el.dataset.mid))));
   const warn = [st.messenger_error, st.mail_error, st.ai_last_error, st.ai_fallback_error].filter(Boolean);
   $("statusBar").innerHTML = `💬 쪽지: ${esc(st.messenger || "꺼짐")}<br>✉ 메일: ${esc(st.mail || "꺼짐")}${st.mail_last_check ? ` · 마지막 ${esc(st.mail_last_check)}` : ""}
@@ -1260,6 +1695,8 @@ async function renderSide() {
   if ($("side").classList.contains("hidden")) return;
   if (sideTab === "feed") return renderFeed();
   if (sideTab === "memo") return renderMemo();
+  if (sideTab === "today") return renderToday();
+  if (typeof api.today_plan === "function") api.today_plan().then((p) => setTodayCount(((p && p.items) || []).length)).catch(() => {});
   const [sugg, up] = await Promise.all([api.suggestions(), api.upcoming(14)]);
   $("suggList").innerHTML = sugg.length ? sugg.map((e) => itemHtml(e, true)).join("") : `<div class="empty">새 제안이 없습니다.</div>`;
   $("confirmAll").style.display = sugg.length > 1 ? "" : "none";
@@ -1272,6 +1709,7 @@ async function renderSide() {
       const act = ev.target.dataset.act;
       if (act === "confirm") { await api.confirm(e.id); toast("캘린더에 확정했습니다."); return render(); }
       if (act === "dismiss") { await api.dismiss(e.id); toast("제안을 무시했습니다."); return render(); }
+      if (DUP_DONE[act]) return resolveDup(e, act);
       openEdit(e);
     });
   });
@@ -1314,6 +1752,9 @@ function openNew(date) {
 
 async function openEdit(e) {
   if (!e) return;
+  if (e.dup_of && !e.dup && e.status === "suggested") {   // 달력 칸에서 연 묻기 제안 → 비교할 기존 일정 가져오기
+    try { const s = (await api.suggestions()).find((x) => x.id === e.id); if (s) e = { ...e, dup: s.dup, dup_of: s.dup_of }; } catch (err) { /* 그대로 */ }
+  }
   editing = e; showFields();
   $("dlgTitle").innerHTML = `일정 ${e.status === "suggested" ? '<span class="tag">AI 제안 — 확인해 주세요</span>' : ""}`;
   fill(e);
@@ -1333,11 +1774,32 @@ async function openEdit(e) {
       <button class="btn" id="toMemo">메모 보기 ›</button></div>`);
     $("toMemo").onclick = () => { closeDlg(); openMemoDetail(e.memo_id); };
   }
+  // 같은 일로 묶인 다른 원문들 (말만 바꿔 다시 온 쪽지 등)
+  let srcs = [];
+  try { srcs = (await api.event_sources(e.id)) || []; } catch (err) { srcs = []; }
+  const others = srcs.filter((x) => !(x.kind === "message" && x.ref_id === e.message_id) && !(x.kind === "memo" && x.ref_id === e.memo_id));
+  if (others.length) {
+    const REL = { same: "같은 내용", change: "바뀐 내용", ignored: "무시한 제안", origin: "처음 원문" };
+    $("origBox").insertAdjacentHTML("beforeend", `<div class="orig-head"><b>관련 원문 ${others.length}건 더</b>
+      <span class="muted">같은 일로 보고 이 일정에 묶었어요</span></div>
+      <div class="srclist">${others.map((x, i) => `<button class="evlink" data-src="${i}">${x.kind === "memo" ? "📝 메모" : "💬 " + esc(x.sender || "")}
+        ${esc((x.received_at || x.created_at || "").replace("T", " ").slice(0, 16))} · ${REL[x.relation] || ""}</button>`).join("")}</div>`);
+    $("origBox").querySelectorAll("[data-src]").forEach((b) => b.onclick = () => {
+      const x = others[+b.dataset.src]; closeDlg(); x.kind === "memo" ? openMemoDetail(x.ref_id) : openItem(x.ref_id); });
+  }
   const sug = e.status === "suggested";
-  $("dlgActions").innerHTML = (sug ? `<button class="btn okc" id="aConfirm">확정</button>` : `<button class="btn primary" id="aSave">저장</button>`) +
-    (sug ? `<button class="btn" id="aDismiss">무시</button>` : "") +
+  const dup = sug && e.dup_of && e.dup;
+  if (dup) $("origBox").insertAdjacentHTML("afterbegin", dupNoteHtml(e));
+  $("dlgActions").innerHTML = (dup ? dupActs(e).replace(/data-act="(\w+)"/g, 'id="aDup_$1"') :
+    (sug ? `<button class="btn okc" id="aConfirm">확정</button>` : `<button class="btn primary" id="aSave">저장</button>`) +
+    (sug ? `<button class="btn" id="aDismiss">무시</button>` : "")) +
     `<div class="spacer"></div><button class="btn danger" id="aDel">삭제</button><button class="btn" id="aClose">닫기</button>`;
-  if (sug) {
+  if (dup) {
+    Object.keys(DUP_DONE).forEach((act) => { const b = $("aDup_" + act); if (!b) return;
+      b.onclick = async () => {
+        if (e.dup_kind === "cancel") { closeDlg(); return resolveDup(e, act); }   // 취소 안내는 고칠 내용이 없음
+        if (await save(true)) { closeDlg(); resolveDup(e, act); } }; });
+  } else if (sug) {
     $("aConfirm").onclick = async () => { if (await save(true)) { await api.confirm(e.id); toast("확정했습니다."); render(); } };
     $("aDismiss").onclick = async () => { await api.dismiss(e.id); closeDlg(); toast("제안을 무시했습니다."); render(); };
   } else {
@@ -1367,13 +1829,26 @@ function closeDlg() { $("scrim").classList.remove("on"); editing = null; }
 function applyOpacity(o) {
   const a = Math.max(0.3, Math.min(1, Number(o) || 0.92));
   const light = prefs.theme === "light";
+  // 실제 창(pywebview): Windows 에서는 배경만 투명하게 할 수 없어(뒤에 회색이 비침) 창 전체 투명도로 —
+  // 화면 배경은 불투명하게 두고 창이 통째로 비치게 함. 브라우저 미리보기: 예전처럼 배경색만 옅게.
+  const inApp = !!(window.pywebview && window.pywebview.api);
+  const bgA = inApp ? 1 : a;
   // body 에 넣어야 함: 밝은 테마는 body.light 가 --bg 를 다시 정해서, html 에 넣은 값은 가려짐
-  document.body.style.setProperty("--bg", light ? `rgba(250,250,252,${a})` : `rgba(18,22,30,${a})`);
+  document.body.style.setProperty("--bg", light ? `rgba(250,250,252,${bgA})` : `rgba(18,22,30,${bgA})`);
+  if (inApp) { clearTimeout(applyOpacity._t); applyOpacity._t = setTimeout(() => api.win("set_opacity", a), 30); }
 }
 function menuLabels() {
   $("weekStart").textContent = `주 시작: ${prefs.week_start === 1 ? "월요일" : "일요일"} (바꾸기)`;
   $("toggleSugg").textContent = `AI 제안 일정 ${prefs.show_suggested ? "보이는 중 (숨기기)" : "숨김 (보이기)"}`;
   $("theme").textContent = `테마: ${prefs.theme === "light" ? "밝게" : "어둡게"} (바꾸기)`;
+  $("calendarLayout").textContent = currentLayout() === "expanded"
+    ? `칸 크기: 넓게 보기 (한 칸 ${currentLines()}줄) ▾`
+    : currentLayout() === "custom" ? "칸 크기: 직접 맞춤 (경계를 끌어서) ▾" : "칸 크기: 한 화면에 맞춤 ▾";
+  $("calendarLayoutList").querySelectorAll("[data-calendar-layout]").forEach((button) => {
+    const lines = Number(button.dataset.calendarLines || 6);
+    button.classList.toggle("sel", button.dataset.calendarLayout === currentLayout() &&
+      (currentLayout() === "fit" || lines === currentLines()));
+  });
   $("opacity").value = Math.round((prefs.opacity || 0.92) * 100);
   document.body.classList.toggle("light", prefs.theme === "light");
   applyOpacity(prefs.opacity);
@@ -1419,20 +1894,42 @@ function drawModelList() {
 }
 
 function bindUI() {
-  $("prev").onclick = () => { cur.m--; if (cur.m < 1) { cur.m = 12; cur.y--; } render(); };
-  $("next").onclick = () => { cur.m++; if (cur.m > 12) { cur.m = 1; cur.y++; } render(); };
-  $("todayBtn").onclick = () => { const t = new Date(); cur = { y: t.getFullYear(), m: t.getMonth() + 1 }; render(); };
+  const moveMonth = (delta) => {
+    cur.m += delta;
+    if (cur.m < 1) { cur.m = 12; cur.y--; }
+    if (cur.m > 12) { cur.m = 1; cur.y++; }
+    render({ scroll: isTodayMonth() ? "today" : "top" });
+  };
+  $("prev").onclick = () => moveMonth(-1);
+  $("next").onclick = () => moveMonth(1);
+  $("todayBtn").onclick = () => { const t = new Date(); cur = { y: t.getFullYear(), m: t.getMonth() + 1 }; render({ scroll: "today" }); };
   $("addBtn").onclick = () => { const t = new Date(); openNew(`${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`); };
   $("sideBtn").onclick = () => { $("side").classList.toggle("hidden"); render(); };
   $("suggBadge").onclick = () => { $("side").classList.remove("hidden"); render(); };
-  $("confirmAll").onclick = async () => { const r = await api.confirm_all(); toast(`${r.count}건 확정했습니다.`); render(); };
+  $("confirmAll").onclick = async () => { const r = await api.confirm_all();
+    toast(`${r.count}건 확정했습니다.` + (r.skipped ? ` 기존 일정과 같은지 확인할 제안 ${r.skipped}건은 남겨 두었어요.` : "")); render(); };
   $("menuBtn").onclick = (ev) => { ev.stopPropagation(); $("menu").classList.toggle("on"); if ($("menu").classList.contains("on")) loadModels(false); };
   $("modelBtn").onclick = (ev) => { ev.stopPropagation(); const l = $("modelList"); l.classList.toggle("on"); if (l.classList.contains("on")) drawModelList(); };
   document.addEventListener("click", (ev) => { if (!ev.target.closest("#menu")) $("menu").classList.remove("on"); });
+  document.addEventListener("pointerdown", (ev) => {
+    if (!dayPopoverState || !(ev.target instanceof Element)) return;
+    if (!ev.target.closest("#dayPopover, .more, .event-count")) closeDayPopover();
+  });
+  $("gridScroll").addEventListener("scroll", () => closeDayPopover(), { passive: true });
+  $("placeBtn").onclick = (ev) => { ev.stopPropagation(); $("placeList").classList.toggle("on"); };
   document.querySelectorAll("[data-snap]").forEach((b) => b.onclick = () => api.win("snap", b.dataset.snap));
   $("nextMon").onclick = () => api.win("next_monitor");
   $("opacity").oninput = (ev) => { prefs.opacity = ev.target.value / 100; applyOpacity(prefs.opacity); };
   $("opacity").onchange = (ev) => api.set_prefs({ opacity: ev.target.value / 100 });
+  $("calendarLayout").onclick = (ev) => { ev.stopPropagation(); $("calendarLayoutList").classList.toggle("on"); };
+  $("calendarLayoutList").querySelectorAll("[data-calendar-layout]").forEach((button) => button.onclick = async (ev) => {
+    ev.stopPropagation();
+    const layout = button.dataset.calendarLayout;
+    const changes = { calendar_layout: layout };
+    if (layout === "expanded") changes.calendar_lines = Number(button.dataset.calendarLines);
+    $("calendarLayoutList").classList.remove("on");
+    await setPref(changes);
+  });
   $("weekStart").onclick = () => setPref({ week_start: prefs.week_start === 1 ? 0 : 1 });
   $("toggleSugg").onclick = () => setPref({ show_suggested: !prefs.show_suggested });
   $("theme").onclick = () => setPref({ theme: prefs.theme === "light" ? "dark" : "light" });
@@ -1450,7 +1947,9 @@ function bindUI() {
   document.querySelectorAll(".tab").forEach((t) => t.onclick = () => {
     sideTab = t.dataset.tab; document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === t));
     $("paneSched").classList.toggle("hidden", sideTab !== "sched"); $("paneFeed").classList.toggle("hidden", sideTab !== "feed");
+    $("paneToday").classList.toggle("hidden", sideTab !== "today");
     $("paneMemo").classList.toggle("hidden", sideTab !== "memo"); renderSide(); });
+  $("planRerun").onclick = async () => { $("planRerun").disabled = true; try { await renderToday(true); toast("지금 자료로 다시 정리했어요."); } finally { $("planRerun").disabled = false; } };
   document.querySelectorAll("#feedFilt [data-f]").forEach((c) => c.onclick = () => { feedF = c.dataset.f; document.querySelectorAll("#feedFilt [data-f]").forEach((x) => x.classList.toggle("on", x === c)); renderFeed(); });
   document.querySelectorAll("#feedFilt [data-s]").forEach((c) => c.onclick = () => { feedS = c.dataset.s; document.querySelectorAll("#feedFilt [data-s]").forEach((x) => x.classList.toggle("on", x === c)); renderFeed(); });
   const memoDrop = $("memoDrop");
@@ -1481,10 +1980,14 @@ function bindUI() {
     if (result && result.data_url) openMemoNew({ imageDataUrl: result.data_url });
   };
   document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape") { closeDlg(); $("menu").classList.remove("on"); closeDialog2(); }
+    if (ev.key === "Escape") { closeDayPopover(); closeDlg(); $("menu").classList.remove("on"); closeDialog2(); }
     if (ev.key === "Enter" && $("scrim").classList.contains("on") && ev.target.tagName === "INPUT") save();
   });
-  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 120); });
+  window.addEventListener("resize", scheduleGridLayout);
+  if (window.ResizeObserver) {
+    layoutObserver = new ResizeObserver(scheduleGridLayout);
+    layoutObserver.observe($("gridScroll"));   // 달력 격자 영역 크기가 바뀌면 배치만 다시 (자료는 다시 안 받음)
+  }
   bindDragAndResize();
 }
 
@@ -1524,7 +2027,7 @@ async function boot(realApi) {
   menuLabels();
   const t = new Date(); cur = { y: t.getFullYear(), m: t.getMonth() + 1 };
   bindUI();
-  await render();
+  await render({ scroll: "today" });
   refreshMemoStatus();              // 메모 기능 상태는 첫 화면을 그린 뒤에 (기다리지 않음)
   setTimeout(checkForUpdateSilently, 5000);
   setInterval(checkForUpdateSilently, 6 * 60 * 60 * 1000);

@@ -5,6 +5,7 @@ import logging
 import re
 
 from .analyzer import Analyzer
+from .event_match import classify
 from .config import Settings
 from .llm.factory import create_provider, parse_spec
 from .models import Analysis, Message
@@ -13,6 +14,28 @@ from .redact import redact
 from .storage import Storage
 
 log = logging.getLogger(__name__)
+
+# 날짜·시각처럼 '일정이 들어 있을 수 있는' 표시. 이게 있으면 생략 키워드가 있어도 AI 에 보냄.
+# (예전 기본 키워드 '감사합니다' 때문에 '11. 17.(화) 08:30 회의 … 감사합니다' 같은 공지가 AI 없이 '참고'로 넘어갔음)
+_SCHEDULE_HINT = re.compile(
+    r"\d{1,2}\s*월\s*\d{1,2}\s*일"                                    # 11월 17일
+    r"|\d{4}\s*[-./]\s*\d{1,2}\s*[-./]\s*\d{1,2}"                     # 2026. 11. 17 / 2026-11-17
+    r"|\d{1,2}\s*[./]\s*\d{1,2}\s*\.?\s*\(\s*[월화수목금토일]\s*\)"   # 11. 17.(화) / 11/17(화)
+    r"|\d{1,2}\s*일\s*\(\s*[월화수목금토일]\s*\)"                      # 17일(화)
+    r"|(?<![\d./])\d{1,2}\s*/\s*\d{1,2}(?![\d/])(?!\s*(?:인분|개|명|컵|쪽|장|배|씩|분량))"  # 11/17 (1/2인분 은 아님)
+    r"|(?<![\d.])\d{1,2}\s*\.\s*\d{1,2}\s*\.(?!\d)"                   # 11. 17. / 11.17.
+    r"|(?<![\d.])\d{1,2}\s*\.\s*\d{1,2}\s*(?:까지|부터|일|\(|\d{1,2}\s*시)"  # 11.17까지 / 11.17 15시
+    r"|(?<!\d)\d{1,2}\s*일\s*(?:까지|부터|오전|오후|\d{1,2}\s*시)"      # 17일까지 / 17일 15시
+    r"|(?<!\d)\d{1,2}\s*:\s*\d{2}(?!\d)"                              # 08:30
+    r"|(?:오전|오후)\s*\d{1,2}\s*시"                                   # 오후 3시
+    r"|(?<!\d)\d{1,2}\s*시\s*\d{1,2}\s*분"                             # 3시 30분
+    r"|(?<!\d)\d{1,2}\s*시\s*(?:까지|부터|에|정각|마감|~)"             # 15시까지 / 15시 마감 ('1시간' 은 아님)
+)
+
+
+def has_schedule_hint(text: str) -> bool:
+    """본문에 날짜·시각이 보이면 True (AI 생략 키워드보다 우선)."""
+    return bool(_SCHEDULE_HINT.search(text or ""))
 
 
 class Pipeline:
@@ -52,11 +75,14 @@ class Pipeline:
         return True
 
     def skip_ai(self, m: Message) -> bool:
-        """토큰 절약: 너무 짧거나 생략 키워드가 있는 메시지는 AI 없이 '참고' 처리."""
+        """토큰 절약: 너무 짧거나 생략 키워드가 있는 메시지는 AI 없이 '참고' 처리.
+        단, 날짜·시각이 보이는 메시지는 키워드가 있어도 AI 에 보냄 (일정을 놓치지 않게)."""
         body = m.body.strip()
         if self.s.skip_ai_min_chars and len(body) < self.s.skip_ai_min_chars:
             return True
-        return any(k in body for k in self.s.skip_ai_keywords)
+        if not any(k in body for k in self.s.skip_ai_keywords):
+            return False
+        return not has_schedule_hint(body)
 
     def text_for_ai(self, m: Message) -> str:
         return redact(m.body, self.s.redact_names) if self.s.redact_enabled else m.body
@@ -98,6 +124,7 @@ class Pipeline:
             self.storage.add_analysis(a)
             if self._archive_on(m):
                 self.archiver.save_analysis(m, a)
+            self._check_cancellation(m)
             return a
         try:
             a = self.analyzer.analyze(m, text_for_ai=self.text_for_ai(m))
@@ -124,19 +151,32 @@ class Pipeline:
             del self.notified[:-50]
         return ok
 
+    def _check_cancellation(self, m: Message) -> dict | None:
+        """'○일 ○○ 취소' 쪽지면 그 일정에 '취소된 것 같아요' 묻기 제안 (이 PC 안에서 원문 비교만, AI 안 씀)"""
+        if not self.s.calendar_auto_suggest or not m.id:
+            return None
+        return self.storage.detect_cancellation(message_id=m.id, text=m.body, ref_date=(m.received_at or "")[:10])
+
     def _suggest_events(self, m: Message, a: Analysis) -> int:
-        """AI 가 뽑은 일정을 바탕화면 캘린더에 '제안'(또는 바로 확정)으로 올림"""
+        """AI 가 뽑은 일정을 바탕화면 캘린더에 '제안'(또는 바로 확정)으로 올림.
+        취소 안내를 먼저 확인해서, 취소된 그 일정을 AI 가 또 일정으로 뽑았으면 제안하지 않음."""
         if not self.s.calendar_auto_suggest:
             return 0
+        cancel = self._check_cancellation(m)
+        cancelled = self.storage.get_calendar_event(cancel["dup_of"]) if cancel else None
         n = 0
         status = "confirmed" if self.s.calendar_auto_confirm else "suggested"
         for e in a.events:
             if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", e.date or ""):
                 continue
+            if cancelled and classify(vars(e), cancelled)[0] == "same":   # 시각이 다른 오후 일정 등은 그대로 제안
+                continue
             note = e.note or a.summary
-            if self.storage.add_calendar_event(title=e.title, date=e.date, start_time=e.start_time,
-                                               end_time=e.end_time, location=e.location, note=note,
-                                               status=status, origin="ai", message_id=m.id):
+            result = self.storage.suggest_event(title=e.title, date=e.date, start_time=e.start_time,
+                                                end_time=e.end_time, location=e.location, note=note,
+                                                status=status, origin="ai", message_id=m.id,
+                                                source_text=m.body, source_date=(m.received_at or "")[:10])
+            if result["action"] in ("created", "asked"):
                 n += 1
         return n
 

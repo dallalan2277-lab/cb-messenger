@@ -1,0 +1,348 @@
+"""오늘 할 일 순서 (규칙 단계, AI 없음) — 가상 예시만."""
+from datetime import datetime
+
+import pytest
+
+from app import today_plan as tp
+from app.models import Analysis, Message
+from app.storage import Storage
+
+NOW = datetime(2026, 11, 12, 9, 0)        # 목요일 09:00
+TODAY, TOMORROW = "2026-11-12", "2026-11-13"
+
+
+@pytest.fixture
+def db():
+    st = Storage(":memory:")
+    yield st
+    st.close()
+
+
+_n = [0]
+
+
+def msg(db, *, deadline="", importance="중요", category="처리 필요", received="2026-11-11 15:00",
+        subject="", summary="가상 안내", actions=None, provider="fake", done=False):
+    _n[0] += 1
+    m = Message(sender=f"가상 보낸이{_n[0]}", body="가상 본문", received_at=received, source="eztalk",
+                external_id=f"x{_n[0]}", subject=subject)
+    db.add_message(m)
+    db.add_analysis(Analysis(message_id=m.id, importance=importance, category=category, summary=summary,
+                             action_items=actions or [], deadline=deadline, provider=provider))
+    if done:
+        db.set_done(m.id)
+    return m.id
+
+
+def event(db, title, day=TODAY, time="", status="confirmed", end=""):
+    return db.add_calendar_event(title=title, date=day, start_time=time, end_time=end, status=status)
+
+
+def kinds(items):
+    return [(it.kind, it.ref_id) for it in items]
+
+
+def test_only_today_tomorrow_confirmed_events_and_suggestions_apart(db):
+    a = event(db, "가상 회의", time="14:00")
+    b = event(db, "가상 연수", day=TOMORROW)
+    event(db, "모레 일정", day="2026-11-14")
+    s = event(db, "가상 제안", time="10:00", status="suggested")
+    items, sugg, overflow = tp.collect(db, NOW)
+    assert kinds(items) == [("event", a), ("event", b)]
+    assert [x.ref_id for x in sugg] == [s] and sugg[0].reason == "오늘 10:00 · 확정 필요"
+    assert overflow == 0
+
+
+def test_deadline_window_and_unreadable_deadline(db):
+    past = msg(db, deadline="2026-11-09")              # 3일 전 → 마감 지남
+    too_old = msg(db, deadline="2026-11-08")           # 4일 전 → 빠짐
+    soon = msg(db, deadline="2026-11-19")              # 7일 뒤 → 들어감
+    far = msg(db, deadline="2026-11-20")               # 8일 뒤 → 빠짐
+    bad = msg(db, deadline="다음 주 화요일")              # 못 읽음 → 빠짐 (지난 정리 이후 새 소식이 아니면)
+    items, _, _ = tp.collect(db, NOW, last_plan_at="2026-11-12 08:00:00")
+    ids = {it.ref_id for it in items}
+    assert past in ids and soon in ids
+    assert not ({too_old, far, bad} & ids)
+    assert next(it for it in items if it.ref_id == past).overdue
+
+
+def test_new_messages_since_last_plan_skip_fyi_and_rule(db):
+    new = msg(db, received="2026-11-12 08:30")
+    msg(db, received="2026-11-12 08:31", category="참고", importance="참고")
+    msg(db, received="2026-11-12 08:32", category="광고·소식")
+    msg(db, received="2026-11-12 08:33", provider="rule")            # AI 생략
+    msg(db, received="2026-11-12 08:34", done=True)                  # 처리 완료
+    old = msg(db, received="2026-11-11 10:00")                       # 지난 정리 전
+    items, _, _ = tp.collect(db, NOW, last_plan_at="2026-11-12 08:00:00")
+    assert [it.ref_id for it in items] == [new]
+    assert old not in [it.ref_id for it in items]
+
+
+def test_done_and_snoozed(db):
+    e = event(db, "가상 회의", time="14:00")
+    m1 = msg(db, deadline=TODAY)
+    m2 = msg(db, deadline=TOMORROW)
+    db.set_todo("event", e, "done")
+    db.set_todo("message", m1, "snoozed", until=TOMORROW)
+    db.set_todo("message", m2, "snoozed", until=TODAY)          # 오늘까지 미룸 → 오늘부터 다시 보임
+    items, _, _ = tp.collect(db, NOW)
+    assert [it.ref_id for it in items] == [m2]
+    db.clear_todo("message", m1)
+    assert m1 in [it.ref_id for it in tp.collect(db, NOW)[0]]
+
+
+def test_message_with_confirmed_event_is_one_item(db):
+    m = msg(db, deadline=TODAY, received="2026-11-12 08:30")
+    db.suggest_event(title="가상 협의회", date=TODAY, start_time="15:00", status="confirmed", message_id=m)
+    items, _, _ = tp.collect(db, NOW, last_plan_at="2026-11-12 08:00:00")
+    assert [it.kind for it in items] == ["event"]
+
+
+def test_rule_order_and_reasons(db):
+    later = msg(db, deadline="2026-11-14", summary="가상 보고서 제출 안내", actions=["보고서 제출"])
+    overdue = msg(db, deadline="2026-11-11 17:00")
+    today_t = msg(db, deadline="2026-11-12 16:00", actions=["설문 회신"])
+    today_n = msg(db, deadline=TODAY)
+    ev = event(db, "가상 회의", time="14:00")
+    ev_t = event(db, "가상 연수", day=TOMORROW, time="09:00")
+    fresh = msg(db, received="2026-11-12 08:50", importance="긴급")
+    items, _, _ = tp.collect(db, NOW, last_plan_at="2026-11-12 08:00:00")
+    T, E = "todo", "event"
+    assert kinds(items) == [(T, overdue), (T, today_t), (E, ev), (T, today_n), (T, later), (E, ev_t), (T, fresh)]
+    assert [it.no for it in items] == list(range(1, 8))
+    r = {(it.kind, it.ref_id): it.reason for it in items}
+    assert r[(T, overdue)] == "마감 지남 11/11(수) 17:00"
+    assert r[(T, today_t)] == "마감 오늘 16:00 · 회신·제출 필요"
+    assert r[(E, ev)] == "오늘 14:00" and r[(E, ev_t)] == "내일 09:00"
+    assert r[(T, later)] == "마감 11/14(토) · 회신·제출 필요"
+    assert r[(T, fresh)] == "긴급"
+
+
+def test_overflow_cap(db):
+    for i in range(tp.MAX_ITEMS + 5):
+        msg(db, deadline=TOMORROW)
+    items, _, overflow = tp.collect(db, NOW)
+    assert len(items) == tp.MAX_ITEMS and overflow == 5
+    plan = tp.build_plan(db, NOW, "morning")
+    assert "그 밖에 5건" in plan["headline"]
+
+
+def test_warnings_overlap_and_overdue(db):
+    event(db, "가상 회의", time="14:00")                  # 끝 시각 없음 → 1시간
+    event(db, "가상 상담", time="14:30", end="15:00")
+    event(db, "가상 점검", time="16:00")
+    msg(db, deadline="2026-11-10")
+    plan = tp.build_plan(db, NOW, "morning")
+    kinds_ = sorted(w["kind"] for w in plan["warnings"])
+    assert kinds_ == ["overdue", "overlap"]
+    overlap = next(w for w in plan["warnings"] if w["kind"] == "overlap")
+    titles = {x["no"]: x["title"] for x in plan["items"]}
+    assert {titles[n] for n in overlap["nos"]} == {"가상 회의", "가상 상담"}
+
+
+def test_plan_has_no_ai_text_and_db_values_only(db):
+    msg(db, deadline=TODAY, summary="가상 요약", subject="가상 제목")
+    plan = tp.build_plan(db, NOW, "morning")
+    assert plan["source"] == "rule"
+    assert plan["items"][0]["title"] == "가상 제목"
+    assert "action" not in plan["items"][0]
+
+
+def test_claim_once_and_stale_and_manual(db):
+    assert db.claim_plan(TODAY, "morning", "2026-11-12 08:30:00")
+    assert not db.claim_plan(TODAY, "morning", "2026-11-12 08:31:00")      # 다른 쪽이 정리 중
+    assert db.claim_plan(TODAY, "morning", "2026-11-12 08:46:00")          # 15분 넘게 running → 다시
+    db.finish_plan(TODAY, "morning", {"items": []}, "rule", "2026-11-12 08:47:00")
+    assert not db.claim_plan(TODAY, "morning", "2026-11-12 09:30:00")      # 끝난 회차는 다시 안 함
+    assert db.claim_plan(TODAY, "manual", "2026-11-12 10:00:00")
+    db.finish_plan(TODAY, "manual", {"items": []}, "rule", "2026-11-12 10:00:01")
+    assert db.claim_plan(TODAY, "manual", "2026-11-12 10:05:00")           # 수동은 다시 가능
+
+
+def test_two_connections_claim_only_one(tmp_path):
+    path = str(tmp_path / "p.db")
+    a, b = Storage(path), Storage(path)
+    try:
+        results = [a.claim_plan(TODAY, "noon", "2026-11-12 12:40:00"),
+                   b.claim_plan(TODAY, "noon", "2026-11-12 12:40:01")]
+        assert results.count(True) == 1
+    finally:
+        a.close()
+        b.close()
+
+
+def test_run_plan_saves_and_notified_once(db):
+    msg(db, deadline=TODAY)
+    data = tp.run_plan(db, NOW, "morning")
+    assert data and data["items"]
+    assert tp.run_plan(db, NOW, "morning") is None
+    saved = db.get_plan(TODAY, "morning")
+    assert saved["source"] == "rule" and saved["data"]["headline"] == data["headline"]
+    assert db.mark_plan_notified(TODAY, "morning")
+    assert not db.mark_plan_notified(TODAY, "morning")
+
+
+def test_noon_plan_uses_morning_finish_as_since(db):
+    tp.run_plan(db, NOW, "morning")                             # 09:00 에 끝남
+    early = msg(db, received="2026-11-12 08:00")                # 아침 정리 전에 받은 것
+    late = msg(db, received="2026-11-12 11:00")                 # 아침 정리 뒤에 받은 것
+    noon = datetime(2026, 11, 12, 12, 40)
+    data = tp.run_plan(db, noon, "noon")
+    ids = [x["ref_id"] for x in data["items"]]
+    assert late in ids and early not in ids
+
+
+def test_live_view_hides_done_and_snoozed_after_plan(db):
+    m1 = msg(db, deadline=TODAY)
+    m2 = msg(db, deadline=TODAY)
+    e = event(db, "가상 회의", time="14:00")
+    tp.run_plan(db, NOW, "morning")
+    db.set_done(m1)
+    db.set_todo("message", m2, "snoozed", until=TOMORROW)
+    view = tp.live_view(db, NOW)
+    assert [x["ref_id"] for x in view["items"]] == [e] and view["saved"]
+    db.delete_calendar_event(e)                                  # 지워진 일정도 빠짐
+    assert tp.live_view(db, NOW)["items"] == []
+
+
+def test_live_view_without_saved_plan_is_preview(db):
+    msg(db, deadline=TODAY)
+    view = tp.live_view(db, NOW)
+    assert view["saved"] is False and len(view["items"]) == 1
+    assert db.get_plan(TODAY) is None
+
+
+def test_old_version_sql_still_works_with_new_tables(db):
+    db.conn.execute("INSERT INTO calendar_events(title, date, start_time, end_time, location, note, status, origin, "
+                    "message_id, memo_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    ("가상", TODAY, "", "", "", "", "confirmed", "manual", None, None))
+    db.conn.commit()
+    assert len(db.calendar_events(TODAY, TODAY)) == 1
+
+
+def test_calendar_api_today_tab(tmp_path, monkeypatch):
+    from app.desktop_calendar.api import CalendarAPI
+    st = Storage(str(tmp_path / "t.db"))
+    api = CalendarAPI(st, tmp_path / "prefs.json")
+    monkeypatch.setattr(CalendarAPI, "_now", staticmethod(lambda: NOW))
+    m = msg(st, deadline=TODAY)
+    e = event(st, "가상 회의", time="14:00")
+    view = api.today_plan()
+    assert view["saved"] is False and len(view["items"]) == 2
+    view = api.today_plan_run()
+    assert view["saved"] is True and st.get_plan(TODAY, "manual")
+    assert api.todo_done("todo", m)["ok"] and st.is_done(m)
+    assert [x["ref_id"] for x in api.today_plan()["items"]] == [e]
+    snoozed = api.todo_snooze("event", e)
+    assert snoozed["until"] == TOMORROW                    # 목요일 → 금요일
+    assert api.today_plan()["items"] == []
+    api.todo_undo("todo", m)
+    api.todo_undo("event", e)
+    assert not st.is_done(m) and len(api.today_plan()["items"]) == 2
+    with pytest.raises(ValueError):
+        api.todo_done("이상한 종류", 1)
+
+
+def test_next_workday_skips_weekend_and_holidays():
+    from datetime import date
+    assert tp.next_workday(date(2026, 11, 13), {}) == date(2026, 11, 16)                 # 금 → 월
+    assert tp.next_workday(date(2026, 12, 24), {"2026-12-25": "성탄절"}) == date(2026, 12, 28)
+
+
+def test_first_plan_counts_last_day_messages_as_new(db):
+    recent = msg(db, received="2026-11-11 15:00")          # 18시간 전
+    msg(db, received="2026-11-10 08:00")                   # 이틀 전 → 새 소식 아님
+    data = tp.run_plan(db, NOW, "morning")
+    assert [x["ref_id"] for x in data["items"]] == [recent]
+
+
+def test_new_since_last_plan_with_t_format_received_at(db):
+    """실제 수집기는 받은 시각을 '2026-11-12T08:10:00' 처럼 T 로 씀 — 같은 날이라도 정리 전에 받은 것은 새 소식 아님"""
+    before = msg(db, received="2026-11-12T08:10:00")
+    after = msg(db, received="2026-11-12T08:40:00")
+    items, _, _ = tp.collect(db, NOW, last_plan_at="2026-11-12 08:30:00")
+    ids = [it.ref_id for it in items]
+    assert after in ids and before not in ids
+
+
+# ---- Codex 검토(2026-11-13)로 고친 것 ----
+
+def test_undated_todo_from_morning_plan_stays_at_noon(db):
+    m = msg(db, received="2026-11-12 08:00")                     # 마감 없음, 아침 정리 전에 받음
+    assert m in [x["ref_id"] for x in tp.run_plan(db, NOW, "morning")["items"]]
+    noon = datetime(2026, 11, 12, 12, 40)
+    assert m in [x["ref_id"] for x in tp.run_plan(db, noon, "noon")["items"]]   # 완료 전까지 이어짐
+    db.set_done(m)
+    assert m not in [x["ref_id"] for x in tp.run_plan(db, noon, "manual")["items"]]
+
+
+def test_snoozed_friday_items_come_back_on_monday(db):
+    fri, mon = "2026-11-13", "2026-11-16"
+    e = event(db, "가상 금요 회의", day=fri, time="10:00")
+    m = msg(db, received="2026-11-01 09:00")                     # 마감 없음, 오래전에 받음
+    db.set_todo("event", e, "snoozed", until=mon)
+    db.set_todo("message", m, "snoozed", until=mon)
+    assert kinds(tp.collect(db, datetime(2026, 11, 14, 9, 0))[0]) == []      # 토요일: 아직 숨김
+    ids = kinds(tp.collect(db, datetime(2026, 11, 16, 9, 0))[0])
+    assert ("event", e) in ids and ("todo", m) in ids
+
+
+def test_done_event_does_not_come_back_as_its_message(db):
+    m = msg(db, deadline=TODAY, received="2026-11-12 08:30")
+    r = db.suggest_event(title="가상 협의회", date=TODAY, start_time="15:00", status="confirmed", message_id=m)
+    eid = r["event_id"] if isinstance(r, dict) else r
+    db.set_todo("event", eid, "done")
+    assert kinds(tp.collect(db, NOW, last_plan_at="2026-11-12 08:00:00")[0]) == []
+
+
+def test_stale_run_cannot_overwrite_newer_owner(db):
+    assert db.claim_plan(TODAY, "morning", "2026-11-12 09:00:00")              # A 가 맡음 → 멈춤
+    assert db.claim_plan(TODAY, "morning", "2026-11-12 09:20:00")              # 15분 지나 B 가 넘겨받음
+    assert db.finish_plan(TODAY, "morning", {"items": []}, "rule", "2026-11-12 09:20:05",
+                          claimed_at="2026-11-12 09:20:00")
+    assert db.mark_plan_notified(TODAY, "morning")
+    assert not db.finish_plan(TODAY, "morning", {"items": [1]}, "rule", "2026-11-12 09:21:00",
+                              claimed_at="2026-11-12 09:00:00")              # A 가 깨어나도 못 덮어씀
+    saved = db.get_plan(TODAY, "morning")
+    assert saved["data"] == {"items": []} and saved["notified"] == 1
+
+
+# ---- Codex 재검토(2026-11-13)로 고친 것 ----
+
+def test_overflow_todos_are_carried_to_next_plan(db):
+    ids = [msg(db, received=f"2026-11-12 08:{i:02d}") for i in range(tp.MAX_ITEMS + 1)]
+    morning = tp.run_plan(db, NOW, "morning")
+    shown = [x["ref_id"] for x in morning["items"]]
+    assert morning["overflow"] == 1 and len(shown) == tp.MAX_ITEMS
+    for i in shown:
+        db.set_done(i)
+    hidden_one = (set(ids) - set(shown)).pop()
+    noon = tp.run_plan(db, datetime(2026, 11, 12, 12, 40), "noon")
+    assert [x["ref_id"] for x in noon["items"]] == [hidden_one]
+
+
+def test_old_deadline_new_or_snoozed_message_is_kept_as_overdue(db):
+    new = msg(db, deadline="2026-11-01", received="2026-11-12 08:30")       # 오늘 받았는데 마감이 한참 지남
+    old = msg(db, deadline="2026-11-12", received="2026-11-10 09:00")      # 목요일 마감
+    db.set_todo("message", old, "snoozed", until="2026-11-16")              # 월요일로 미룸
+    items, _, _ = tp.collect(db, NOW, last_plan_at="2026-11-12 08:00:00")
+    assert any(it.ref_id == new and it.overdue for it in items)
+    mon_items, _, _ = tp.collect(db, datetime(2026, 11, 16, 9, 0), last_plan_at="2026-11-16 08:00:00")
+    assert any(it.ref_id == old and it.overdue for it in mon_items)
+
+
+def test_manual_replan_keeps_previous_manual_items(db):
+    m = msg(db, received="2026-11-11 15:00")                                 # 전날 받음, 마감 없음
+    assert m in [x["ref_id"] for x in tp.run_plan(db, NOW, "manual")["items"]]
+    later = datetime(2026, 11, 12, 16, 0)
+    assert m in [x["ref_id"] for x in tp.run_plan(db, later, "manual")["items"]]
+
+
+def test_cancelled_event_does_not_hide_follow_up_message(db):
+    e = event(db, "가상 회의", day=TOMORROW, time="10:00")
+    db.set_todo("event", e, "snoozed", until="2026-11-16")
+    follow = msg(db, deadline=TODAY, received="2026-11-12 08:30", subject="가상 회의 취소·자료 제출")
+    db.conn.execute("INSERT INTO event_sources(event_id, kind, ref_id) VALUES (?, 'message', ?)", (e, follow))
+    db.conn.execute("UPDATE calendar_events SET status='dismissed' WHERE id=?", (e,))
+    db.conn.commit()
+    assert ("todo", follow) in kinds(tp.collect(db, NOW, last_plan_at="2026-11-12 08:00:00")[0])

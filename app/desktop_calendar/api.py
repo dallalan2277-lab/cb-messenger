@@ -11,6 +11,7 @@ import functools
 import io
 import json
 import logging
+import math
 import re
 import threading
 import time
@@ -70,6 +71,9 @@ DEFAULT_PREFS = {
     "week_start": 0,         # 0 = 일요일, 1 = 월요일
     "show_suggested": True,
     "theme": "dark",         # dark | light
+    "calendar_layout": "fit", # fit | expanded | custom(주 사이 경계를 끌어서 맞춤)
+    "calendar_lines": 6,       # expanded 일 때 칸마다 보일 줄 수: 4 | 6 | 8
+    "calendar_row_px": 0,      # custom 일 때 한 주(줄)의 높이(px, 40~600). 0 = 아직 안 정함
     "last_import": None,     # 마지막으로 파일에서 가져온 묶음 {batch, name, count, at} — 되돌리기용
 }
 
@@ -112,7 +116,21 @@ class CalendarAPI:
     @_locked
     def set_prefs(self, changes: dict) -> dict:
         p = self.get_prefs()
-        p.update({k: v for k, v in (changes or {}).items() if k in DEFAULT_PREFS})
+        changes = {k: v for k, v in (changes or {}).items() if k in DEFAULT_PREFS}
+        if "calendar_layout" in changes and changes["calendar_layout"] not in ("fit", "expanded", "custom"):
+            changes["calendar_layout"] = DEFAULT_PREFS["calendar_layout"]
+        if ("calendar_lines" in changes
+                and (not isinstance(changes["calendar_lines"], int)
+                     or isinstance(changes["calendar_lines"], bool)
+                     or changes["calendar_lines"] not in (4, 6, 8))):
+            changes["calendar_lines"] = DEFAULT_PREFS["calendar_lines"]
+        if "calendar_row_px" in changes:
+            v = changes["calendar_row_px"]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                changes["calendar_row_px"] = DEFAULT_PREFS["calendar_row_px"]
+            else:
+                changes["calendar_row_px"] = int(min(600, max(40, round(v))))
+        p.update(changes)
         self._prefs_path.parent.mkdir(parents=True, exist_ok=True)
         self._prefs_path.write_text(json.dumps(p, ensure_ascii=False, indent=1), encoding="utf-8")
         return p
@@ -149,8 +167,18 @@ class CalendarAPI:
     @_locked
     def suggestions(self) -> list[dict]:
         t = date.today() - timedelta(days=7)
-        return [_public(e) for e in self._storage.calendar_events(t.isoformat(), "9999-12-31")
-                if e["status"] == "suggested"]
+        out = []
+        for e in self._storage.calendar_events(t.isoformat(), "9999-12-31"):
+            if e["status"] != "suggested":
+                continue
+            d = _public(e)
+            if e.get("dup_of"):   # '기존 일정과 같은 일인가요?' 제안 → 비교할 기존 일정도 같이
+                r = self._storage.conn.execute("SELECT * FROM calendar_events WHERE id=?", (e["dup_of"],)).fetchone()
+                d["dup"] = _public(dict(r)) if r else None
+                if not r:
+                    d["dup_of"] = None
+            out.append(d)
+        return out
 
     @_locked
     def message(self, message_id: int) -> dict | None:
@@ -163,11 +191,13 @@ class CalendarAPI:
     # ---------- 받은 소식 (쪽지·메일 통합 목록) ----------
     @_locked
     def feed(self, filt: str = "open", source: str = "", limit: int = 80) -> list[dict]:
-        """filt: open(처리 안 한 것) | school(학교 업무, 처리 안 한 것) | all(처리 완료 포함, 최근 30일)"""
+        """filt: open(처리 안 한 것, 중요도순) | school(학교 업무 전체·처리 완료 포함, 최신순) | all(전체, 최신순)
+        — 모두 최근 30일. 처리 완료한 것은 화면에서 흐리게 보임."""
         since = (date.today() - timedelta(days=30)).isoformat()
         rows = self._storage.feed(source=source if source in ("mail", "eztalk") else "",
-                                  only_open=filt != "all", school_only=filt == "school",
-                                  limit=int(limit), since=since)
+                                  only_open=filt == "open", school_only=filt == "school",
+                                  limit=int(limit), since=since,
+                                  order="importance" if filt == "open" else "recent")
         for r in rows:
             r["sender_short"] = re.sub(r"\s*<[^>]+>", "", r["sender"]).strip() or r["sender"]
         return rows
@@ -221,6 +251,61 @@ class CalendarAPI:
     @_locked
     def set_done(self, message_id: int, done: bool = True) -> dict:
         return {"ok": self._storage.set_done(int(message_id), bool(done))}
+
+    # ---------- 오늘 할 일 순서 (능동 비서) ----------
+    @staticmethod
+    def _now() -> datetime:
+        from ..notify_policy import SEOUL
+        return datetime.now(SEOUL).replace(tzinfo=None)
+
+    @_locked
+    def today_plan(self) -> dict:
+        """'오늘' 탭: 오늘 마지막 정리(완료·미룬 것은 뺌). 정리가 아직 없으면 지금 규칙으로 만든 미리보기."""
+        from .. import today_plan as tp
+        return tp.live_view(self._storage, self._now())
+
+    @_locked
+    def today_plan_run(self) -> dict:
+        """[다시 정리] — 지금 자료로 다시 정리해서 저장 (알림은 보내지 않음)"""
+        from .. import today_plan as tp
+        now = self._now()
+        tp.run_plan(self._storage, now, "manual")
+        return tp.live_view(self._storage, now)
+
+    @staticmethod
+    def _todo_kind(kind) -> str:
+        if kind in ("event", "suggested"):
+            return "event"
+        if kind in ("todo", "message"):
+            return "message"
+        raise ValueError("할 일 종류를 확인해 주세요.")
+
+    @_locked
+    def todo_done(self, kind: str, ref_id: int) -> dict:
+        """[완료]: 소식은 '처리 완료'(받은 소식 탭과 같음), 일정은 오늘 할 일에서만 뺌(달력엔 그대로)"""
+        k = self._todo_kind(kind)
+        if k == "message":
+            return {"ok": self._storage.set_done(int(ref_id), True)}
+        self._storage.set_todo("event", int(ref_id), "done")
+        return {"ok": True}
+
+    @_locked
+    def todo_snooze(self, kind: str, ref_id: int) -> dict:
+        """[내일로]: 다음 근무일(주말·공휴일 건너뜀)까지 오늘 할 일에서 숨김"""
+        from .. import today_plan as tp
+        until = tp.next_workday(self._now().date(), load_holidays()).isoformat()
+        self._storage.set_todo(self._todo_kind(kind), int(ref_id), "snoozed", until)
+        return {"ok": True, "until": until}
+
+    @_locked
+    def todo_undo(self, kind: str, ref_id: int) -> dict:
+        """[되돌리기]: 완료·내일로를 취소"""
+        k = self._todo_kind(kind)
+        cleared = self._storage.clear_todo(k, int(ref_id))
+        if k == "message":
+            self._storage.set_done(int(ref_id), False)
+            cleared = True
+        return {"ok": cleared}
 
     def status(self) -> dict:
         r = self._runner
@@ -629,7 +714,7 @@ class CalendarAPI:
                 status="ok",
             )
             for event in result.events:
-                self._storage.add_calendar_event(
+                self._storage.suggest_event(
                     title=event.title,
                     date=event.date,
                     start_time=event.start_time,
@@ -639,6 +724,8 @@ class CalendarAPI:
                     status="suggested",
                     origin="memo",
                     memo_id=memo_id,
+                    source_text=text,
+                    source_date=(self._storage.get_memo(memo_id).get("created_at") or "")[:10],
                 )
         self._memo_refresh()
         return {"ok": True, "error": "", "memo": self.memo_get(memo_id)}
@@ -798,7 +885,7 @@ class CalendarAPI:
         with self._lock:
             self._storage.update_memo(memo_id, **changes)
             for event in result.events:
-                self._storage.add_calendar_event(
+                self._storage.suggest_event(
                     title=event.title,
                     date=event.date,
                     start_time=event.start_time,
@@ -808,6 +895,8 @@ class CalendarAPI:
                     status="suggested",
                     origin="memo",
                     memo_id=memo_id,
+                    source_text=text,
+                    source_date=(row.get("created_at") or "")[:10],
                 )
         self._memo_refresh()
         return {"ok": True, "error": "", "memo": self.memo_get(memo_id)}
@@ -838,27 +927,9 @@ class CalendarAPI:
         except (TypeError, ValueError) as e:
             return {"ok": False, "error": str(e)}
         with self._lock:
-            same = self._storage.find_calendar_event(event["date"], event["title"], event["start_time"])
-            if same:
-                # 같은 날·제목·시각 일정이 이미 있음 (AI 제안이었거나 무시했던 것 포함) → 새로 만들지 않고 확정
-                # 사람이 적어 넣은 끝 시각·장소는 살리고, 비어 있던 메모(note)는 채움
-                merge = {"status": "confirmed"}
-                if event.get("end_time"):
-                    merge["end_time"] = event["end_time"]
-                if not (same.get("note") or "").strip() and event.get("note"):
-                    merge["note"] = event["note"]
-                self._storage.update_calendar_event(same["id"], **merge)
-                if not same.get("memo_id"):
-                    self._storage.conn.execute("UPDATE calendar_events SET memo_id=? WHERE id=?", (memo_id, same["id"]))
-                    self._storage.conn.commit()
-                event_id, existed = same["id"], True
-            else:
-                event_id = self._storage.add_calendar_event(**event, status="confirmed", origin="memo", memo_id=memo_id)
-                existed = False
-        if not event_id:
-            return {"ok": False, "error": "일정을 넣지 못했습니다."}
+            result = self._storage.add_event_from_user(event, memo_id=memo_id)
         self._memo_refresh()
-        return {"ok": True, "error": "", "id": event_id, "existed": existed}
+        return {"ok": True, "error": "", **result}
 
     def memo_delete(self, memo_id: int) -> dict:
         try:
@@ -896,7 +967,25 @@ class CalendarAPI:
 
     @_locked
     def confirm(self, event_id: int) -> dict:
-        return {"ok": self._storage.update_calendar_event(int(event_id), status="confirmed")}
+        event_id = int(event_id)
+        row = self._storage.conn.execute("SELECT dup_of, dup_kind FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        if row and row["dup_kind"] == "cancel":
+            return {"ok": False, "error": "취소 안내는 [일정 취소] 또는 [그대로 두기]로 골라 주세요."}
+        if row and row["dup_of"] is not None:
+            return self._storage.resolve_duplicate(event_id, "separate")
+        return {"ok": self._storage.update_calendar_event(event_id, status="confirmed")}
+
+    @_locked
+    def resolve_duplicate(self, event_id: int, action: str) -> dict:
+        return self._storage.resolve_duplicate(int(event_id), action)
+
+    @_locked
+    def restore_event(self, event_id: int, status: str = "confirmed") -> dict:
+        return {"ok": self._storage.restore_event(int(event_id), str(status or ""))}
+
+    @_locked
+    def event_sources(self, event_id: int) -> list[dict]:
+        return self._storage.event_sources(int(event_id))
 
     @_locked
     def dismiss(self, event_id: int) -> dict:
@@ -904,8 +993,14 @@ class CalendarAPI:
 
     @_locked
     def confirm_all(self) -> dict:
-        n = sum(1 for e in self.suggestions() if self._storage.update_calendar_event(e["id"], status="confirmed"))
-        return {"ok": True, "count": n}
+        n = skipped = 0
+        for e in self.suggestions():
+            if e["dup_of"] is not None and self._storage.conn.execute(
+                    "SELECT 1 FROM calendar_events WHERE id=?", (e["dup_of"],)).fetchone():
+                skipped += 1
+            elif self._storage.update_calendar_event(e["id"], status="confirmed"):
+                n += 1
+        return {"ok": True, "count": n, "skipped": skipped}
 
     # ---------- 다른 캘린더 파일에서 일정 가져오기 ----------
     _IMPORT_TYPES = ("일정 파일 (*.ics;*.xlsx;*.csv;*.tsv;*.txt)", "모든 파일 (*.*)")
@@ -1017,7 +1112,7 @@ class CalendarAPI:
 
 def _public(e: dict) -> dict:
     keys = ("id", "title", "date", "start_time", "end_time", "location", "note", "status", "origin", "message_id",
-            "memo_id")
+            "memo_id", "dup_of", "dup_kind")
     out = {k: e.get(k) for k in keys}
     out["sender"] = e.get("msg_sender") or ""
     return out
