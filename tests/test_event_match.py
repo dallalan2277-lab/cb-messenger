@@ -21,7 +21,9 @@ def event(title, time="", place="", date="2026-11-20"):
     (event("교직원 회의", place="시청각실"), event("교직원 회의", place="도서관"), "maybe"),
     (event("2학기 학부모 상담"), event("학부모 상담"), "same"),
     (event("학부모 상담"), event("1학년 학부모 상담"), "maybe"),
-    (event("2026학년도 회의"), event("회의"), "same"),
+    # 정리하면 '회의'(2글자)만 남음 → 시각이 양쪽에 있고 같을 때만 자동으로 같은 일 (beta.6, PR #4 Gemini 지적)
+    (event("2026학년도 회의"), event("회의"), "maybe"),
+    (event("2026학년도 회의", "15:00"), event("회의", "15:00"), "same"),
     (event("1학년 학부모 상담"), event("3학년 학부모 상담"), "different"),
     (event("교과협의회"), event("학년협의회"), "different"),
     (event("1차 협의회"), event("2차 협의회"), "different"),

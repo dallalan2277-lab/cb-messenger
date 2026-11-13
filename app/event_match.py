@@ -127,6 +127,11 @@ def classify(new: dict, old: dict) -> tuple[str, float, str]:
     if place_rel(new.get("location"), old.get("location")) == "differ":
         return "maybe", score, "장소가 달라 확인이 필요해요."
     if left == right:
+        if len(left) < MIN_CONTAINMENT_LENGTH:
+            # '회의'·'출장' 처럼 짧은 제목은 같은 날 다른 일이 흔함 → 양쪽 시각이 있고 같을 때만 자동으로 같은 일
+            nt, ot = _time_key(new.get("start_time")), _time_key(old.get("start_time"))
+            if not (nt and ot and nt == ot):
+                return "maybe", score, "제목이 짧아 같은 일인지 확인이 필요해요."
         return "same", score, "제목이 같고 시각과 장소가 충돌하지 않아요."
     return "maybe", score, "제목이 비슷해 확인이 필요해요."
 

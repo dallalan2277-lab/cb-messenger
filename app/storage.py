@@ -142,8 +142,10 @@ class Storage:
     def __init__(self, db_path: str):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         existed = db_path != ":memory:" and os.path.isfile(db_path) and os.path.getsize(db_path) > 0
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        # 캘린더·쪽지 감시·cbm 명령이 같은 DB 를 동시에 열 수 있음 → 잠겨 있으면 30초까지 기다림
+        self.conn = sqlite3.connect(db_path, timeout=30.0, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA busy_timeout = 30000")
         self.conn.execute("PRAGMA foreign_keys = ON")
         backup_ok = True
         if existed:
@@ -222,7 +224,12 @@ class Storage:
             have = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             for name, decl in cols:
                 if name not in have:
-                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+                    try:
+                        self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+                    except sqlite3.OperationalError as e:
+                        # 다른 프로그램이 같은 순간 먼저 칸을 추가한 경우 (첫 업그레이드 때 둘이 동시에 켜짐)
+                        if "duplicate column" not in str(e).lower():
+                            raise
         # 처음 원문(message_id·memo_id)을 원문 연결 표에도 채움. 매번 실행해서
         # 0.9.0 으로 되돌렸던 동안 생긴 일정도 다시 시험판을 열 때 채워짐 (이미 있으면 그대로)
         for kind, col in (("message", "message_id"), ("memo", "memo_id")):
@@ -523,10 +530,13 @@ class Storage:
             same = [row for row, kind in matches if kind == "same"]
             if len(same) == 1:
                 old = same[0]
+                # 기존 제안에 비어 있던 시작 시각·장소는 사용자가 메모에서 넣은 값으로 채움
                 self.conn.execute(
-                    "UPDATE calendar_events SET status='confirmed', end_time=?, note=?, memo_id=?, "
-                    "updated_at=datetime('now','localtime') WHERE id=?",
-                    (event.get("end_time") or old["end_time"],
+                    "UPDATE calendar_events SET status='confirmed', start_time=?, location=?, end_time=?, note=?, "
+                    "memo_id=?, updated_at=datetime('now','localtime') WHERE id=?",
+                    (old["start_time"] or event.get("start_time", ""),
+                     old["location"] or event.get("location", ""),
+                     event.get("end_time") or old["end_time"],
                      old["note"] if (old["note"] or "").strip() else event.get("note", ""),
                      old["memo_id"] or memo_id, old["id"]))
                 self.conn.execute("INSERT OR IGNORE INTO event_sources(event_id, kind, ref_id, relation) "
@@ -841,10 +851,20 @@ class Storage:
             return cur.rowcount > 0
 
     def release_plan(self, plan_date: str, slot: str, claimed_at: str) -> None:
-        """정리하다 실패: 내가 맡은 실행이면 다음 확인 때 다시 맡을 수 있게 놓아 줌"""
-        self.conn.execute("UPDATE daily_plans SET claimed_at=NULL WHERE plan_date=? AND slot=? "
-                          "AND state='running' AND claimed_at=?", (plan_date, slot, claimed_at))
-        self.conn.commit()
+        """정리하다 실패: 내가 맡은 실행이면 다음 확인 때 다시 맡을 수 있게 놓아 줌.
+        '다시 정리'(manual)는 맡을 때 끝난 정리를 running 으로 바꾸므로, 예전 결과가 있으면 done 으로 되돌림
+        (실패 한 번에 직전 수동 정리가 사라지지 않게). 정리 중 오류로 트랜잭션이 남아 있어도 풀리게."""
+        try:
+            if self.conn.in_transaction:
+                self.conn.rollback()
+            with self.conn:
+                self.conn.execute(
+                    "UPDATE daily_plans SET claimed_at=NULL, "
+                    "state=CASE WHEN finished_at IS NOT NULL THEN 'done' ELSE state END "
+                    "WHERE plan_date=? AND slot=? AND state='running' AND claimed_at=?",
+                    (plan_date, slot, claimed_at))
+        except sqlite3.Error as e:
+            log.warning("정리 실행권을 놓지 못했습니다 (%s %s): %s", plan_date, slot, e)
 
     def get_plan(self, plan_date: str, slot: str | None = None) -> dict | None:
         """그 날의 (회차) 정리. 회차를 안 주면 가장 최근에 끝난 것."""

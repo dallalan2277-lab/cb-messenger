@@ -63,18 +63,26 @@ def item_allowed(x: dict, prefs) -> bool:
     return imp == "긴급" if prefs.high_only else True
 
 
-def toast_for(plan: dict, slot: str, preview: bool, prefs=None) -> tuple[str, str] | None:
-    """알림 문구. 알림 범위에 드는 할 일만 세고 보여 줌. 점심 회차에 남은 할 일이 없으면 None (알림 생략)."""
+def toast_for(plan: dict, slot: str, preview: bool, prefs=None,
+              seen_suggested: set | None = None) -> tuple[str, str] | None:
+    """알림 문구. 알림 범위에 드는 할 일만 세고 보여 줌.
+    점심 회차: 확정할 일정은 아침 정리에 없던 것(seen_suggested 밖)만 셈 (같은 제안을 다시 알리지 않음).
+    남은 할 일도 새 제안도 없으면 None (알림 생략)."""
     all_items = plan.get("items") or []
     items = [x for x in all_items if item_allowed(x, prefs)]
     sugg = plan.get("suggested") or []
-    if slot == "noon" and not items:
-        return None
+    if slot == "noon":
+        seen = seen_suggested or set()
+        sugg = [x for x in sugg if x.get("ref_id") not in seen]
+        if not items and not sugg:
+            return None
     if not items and not sugg:
         if all_items:
             return None      # 할 일은 있지만 모두 알림 범위 밖 → 알리지 않음 ('오늘' 탭에는 보임)
         return "오늘 할 일", "오늘 챙길 일이 없어요."
     title = "오늘 할 일 순서" if slot == "morning" else "오후 할 일 순서"
+    if not items:   # 할 일은 없고 확정할 일정만 있음
+        return title, f"확정할 일정 {len(sugg)}건이 있어요. 캘린더 '오늘' 탭에서 보세요."
     if not preview:
         return title, f"{len(items)}건을 정리했어요. 캘린더 '오늘' 탭에서 보세요. (알림 미리보기 꺼짐)"
     lines = [f"{x.get('no')}. {x.get('title', '')} — {x.get('reason', '')}" for x in items[:2]]
@@ -113,7 +121,9 @@ class PlanScheduler:
                 from .desktop_calendar.api import load_holidays
                 self.holidays = load_holidays()
             except Exception:  # noqa: BLE001
-                self.holidays = {}
+                # 실패를 기억하지 않음 → 다음 확인 때 다시 읽어 봄 (한 번 실패로 공휴일에도 알림이 나가지 않게)
+                log.warning("공휴일 목록을 읽지 못했습니다. 다음 확인 때 다시 읽습니다.")
+                return {}
         return self.holidays
 
     def tick(self) -> dict | None:
@@ -136,19 +146,23 @@ class PlanScheduler:
         else:
             log.info("오늘 할 일 정리 (%s): %s", slot, plan.get("headline"))
         if st.mark_plan_notified(plan_date, slot):
-            self._notify(s, now, plan, slot)
+            seen = None
+            if slot == "noon":   # 아침 정리에서 이미 알린 확정할 일정
+                morning = st.get_plan(plan_date, "morning") or {}
+                seen = {x.get("ref_id") for x in ((morning.get("data") or {}).get("suggested") or [])}
+            self._notify(s, now, plan, slot, seen)
         try:
             self.on_change()
         except Exception:  # noqa: BLE001
             pass
         return plan
 
-    def _notify(self, s, now: datetime, plan: dict, slot: str) -> bool:
+    def _notify(self, s, now: datetime, plan: dict, slot: str, seen_suggested: set | None = None) -> bool:
         from .notify_policy import NotifyPrefs, in_quiet
         prefs = NotifyPrefs.from_settings(s)
         if not prefs.enabled or in_quiet(prefs, now):
             return False     # 정리는 했고, 알림만 안 보냄 (나중에 몰아서 보내지 않음)
-        text = toast_for(plan, slot, prefs.preview, prefs)
+        text = toast_for(plan, slot, prefs.preview, prefs, seen_suggested)
         if not text:
             return False
         send = self.notify_fn
