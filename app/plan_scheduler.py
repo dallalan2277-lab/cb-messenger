@@ -46,13 +46,33 @@ def due_slot(settings, now: datetime, holidays: dict) -> str | None:
     return None
 
 
-def toast_for(plan: dict, slot: str, preview: bool) -> tuple[str, str] | None:
-    """알림 문구. 점심 회차에 남은 할 일이 없으면 None (알림 생략)."""
-    items = plan.get("items") or []
+def item_allowed(x: dict, prefs) -> bool:
+    """알림 범위 설정(받을 곳·학교 업무만·긴급·중요만·긴급만)을 할 일 하나에 적용.
+    확정 일정·확정할 일정은 사용자가 넣거나 고를 일정이라 항상 포함."""
+    if prefs is None or x.get("kind") != "todo":
+        return True
+    if x.get("source") and x.get("source") not in prefs.sources and x.get("source") != "manual":
+        return False
+    imp = x.get("importance") or ""
+    if prefs.scope == "school":
+        if x.get("school") != "학교 업무":
+            return False
+        return imp == "긴급" if prefs.high_only else True
+    if prefs.scope == "important":
+        return imp == "긴급" if prefs.high_only else imp in ("긴급", "중요")
+    return imp == "긴급" if prefs.high_only else True
+
+
+def toast_for(plan: dict, slot: str, preview: bool, prefs=None) -> tuple[str, str] | None:
+    """알림 문구. 알림 범위에 드는 할 일만 세고 보여 줌. 점심 회차에 남은 할 일이 없으면 None (알림 생략)."""
+    all_items = plan.get("items") or []
+    items = [x for x in all_items if item_allowed(x, prefs)]
     sugg = plan.get("suggested") or []
     if slot == "noon" and not items:
         return None
     if not items and not sugg:
+        if all_items:
+            return None      # 할 일은 있지만 모두 알림 범위 밖 → 알리지 않음 ('오늘' 탭에는 보임)
         return "오늘 할 일", "오늘 챙길 일이 없어요."
     title = "오늘 할 일 순서" if slot == "morning" else "오후 할 일 순서"
     if not preview:
@@ -104,11 +124,18 @@ class PlanScheduler:
         if not slot:
             return None
         st = self._store()
+        plan_date = now.strftime("%Y-%m-%d")
         plan = tp.run_plan(st, now, slot)
         if plan is None:
-            return None
-        log.info("오늘 할 일 정리 (%s): %s", slot, plan.get("headline"))
-        if st.mark_plan_notified(now.strftime("%Y-%m-%d"), slot):
+            # 이미 끝난 회차인데 알림 처리 전에 프로그램이 꺼졌던 경우(notified=0) → 지금 한 번 알림
+            # (방해금지·알림 끄기로 안 보낸 것은 notified=1 이라 다시 보내지 않음)
+            saved = st.get_plan(plan_date, slot)
+            if not saved or saved.get("notified"):
+                return None
+            plan = saved.get("data") or {}
+        else:
+            log.info("오늘 할 일 정리 (%s): %s", slot, plan.get("headline"))
+        if st.mark_plan_notified(plan_date, slot):
             self._notify(s, now, plan, slot)
         try:
             self.on_change()
@@ -121,7 +148,7 @@ class PlanScheduler:
         prefs = NotifyPrefs.from_settings(s)
         if not prefs.enabled or in_quiet(prefs, now):
             return False     # 정리는 했고, 알림만 안 보냄 (나중에 몰아서 보내지 않음)
-        text = toast_for(plan, slot, prefs.preview)
+        text = toast_for(plan, slot, prefs.preview, prefs)
         if not text:
             return False
         send = self.notify_fn

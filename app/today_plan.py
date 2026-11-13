@@ -40,6 +40,7 @@ class PlanItem:
     sender: str = ""
     source: str = ""
     received_at: str = ""
+    school: str = ""          # 학교 업무 관련성 (알림 범위 판단용)
     action: str = ""          # 첫 번째 할 일 (이유 판단용, 화면엔 안 보냄)
     overdue: bool = False
     no: int = 0
@@ -95,31 +96,45 @@ def collect(storage, now: datetime, last_plan_at: str | None = None) -> tuple[li
             return True
         return st["state"] == "snoozed" and (st["until"] or "") > t0
 
+    # '내일로' 미뤘다가 오늘(또는 그 전) 돌아온 것 — 원래 날짜·받은 시각이 범위 밖이어도 다시 보여 줌
+    back = [(k, ref) for (k, ref), st in states.items() if st["state"] == "snoozed" and (st["until"] or "") <= t0]
+
     items: list[PlanItem] = []
     suggested: list[PlanItem] = []
-    event_ids = []
-    for e in storage.calendar_events(t0, t1):
+    events = storage.calendar_events(t0, t1)
+    seen = {e["id"] for e in events}
+    events += [e for e in storage.calendar_events_by_ids([ref for k, ref in back if k == "event"])
+               if e["id"] not in seen and e["status"] == "confirmed"]
+    # 같은 일을 원문 소식으로 다시 보이지 않게: 완료·미룬 일정도 연결 확인엔 넣음
+    link_ids = [e["id"] for e in events if e["status"] == "confirmed"] + [ref for k, ref in states if k == "event"]
+    for e in events:
         if e["status"] == "confirmed":
             if hidden("event", e["id"]):
                 continue
             items.append(PlanItem(kind="event", ref_id=e["id"], title=e["title"], date=e["date"],
                                   time=e.get("start_time") or "", end_time=e.get("end_time") or "",
                                   sender=e.get("msg_sender") or ""))
-            event_ids.append(e["id"])
         elif e["status"] == "suggested":
             suggested.append(PlanItem(kind="suggested", ref_id=e["id"], title=e["title"], date=e["date"],
                                       time=e.get("start_time") or "", end_time=e.get("end_time") or "",
                                       sender=e.get("msg_sender") or "",
                                       extra={"dup_of": e.get("dup_of"), "dup_kind": e.get("dup_kind") or ""}))
-    linked = storage.messages_linked_to_events(event_ids)
+    linked = storage.messages_linked_to_events(link_ids)
 
     since = last_plan_at or ""
     d_from = (today - timedelta(days=DEADLINE_PAST_DAYS)).isoformat()
     d_to = (today + timedelta(days=DEADLINE_AHEAD_DAYS)).isoformat()
-    for m in storage.plan_messages(since, d_from, d_to):
+    # 지난 정리에 있던 할 일은 완료할 때까지 이어 받음 (마감 없는 소식이 다음 정리에서 사라지지 않게)
+    last = storage.last_plan_before(now_iso(now)) if hasattr(storage, "last_plan_before") else None
+    carry = [x.get("ref_id") for x in ((last or {}).get("data") or {}).get("items", []) if x.get("kind") == "todo"]
+    carry += [ref for k, ref in back if k == "message"]
+    carry = [int(i) for i in carry if isinstance(i, int) and not isinstance(i, bool)]
+    for m in storage.plan_messages(since, d_from, d_to, include_ids=carry):
         if m["id"] in linked or hidden("message", m["id"]):
             continue
         d, _ = _deadline_parts(m.get("deadline") or "")
+        if d and d < d_from:
+            continue      # 이어 받은 것 중 마감이 한참 지난 것은 뺌 (새 소식처럼 보이지 않게)
         in_window = bool(d) and d_from <= d <= d_to
         if not in_window and (m.get("category") in SKIP_CATEGORIES):
             continue      # 마감 없는 새 소식 중 참고·광고는 할 일이 아님
@@ -130,7 +145,8 @@ def collect(storage, now: datetime, last_plan_at: str | None = None) -> tuple[li
                               deadline=(m.get("deadline") or "") if in_window else "",
                               importance=m.get("importance") or "", category=m.get("category") or "",
                               sender=m.get("sender") or "", source=m.get("source") or "",
-                              received_at=m.get("received_at") or "", action=str(actions[0]) if actions else ""))
+                              received_at=m.get("received_at") or "", school=m.get("school_relevance") or "",
+                              action=str(actions[0]) if actions else ""))
     for it in items:
         it.overdue = _is_overdue(it, now)
     ordered = rule_order(items, now)
@@ -274,7 +290,7 @@ def headline(items: list, suggested: list, overflow: int, now: datetime) -> str:
 
 
 _PUBLIC = ("no", "kind", "ref_id", "title", "date", "time", "end_time", "deadline", "importance",
-           "sender", "source", "overdue", "reason_code", "reason")
+           "sender", "source", "school", "overdue", "reason_code", "reason")
 
 
 def _public(it: PlanItem) -> dict:
@@ -307,12 +323,11 @@ def run_plan(storage, now: datetime, slot: str) -> dict | None:
     try:
         data = build_plan(storage, now, slot, since)
     except Exception:
-        # 다음 확인 때 다시 맡을 수 있게 (claimed_at 을 오래전으로)
-        storage.conn.execute("UPDATE daily_plans SET claimed_at=NULL WHERE plan_date=? AND slot=? AND state='running'",
-                             (plan_date, slot))
-        storage.conn.commit()
+        storage.release_plan(plan_date, slot, stamp)   # 다음 확인 때 다시 맡을 수 있게
         raise
-    storage.finish_plan(plan_date, slot, data, "rule", stamp)
+    # 내가 맡은 실행일 때만 저장 (멈춘 사이 다른 실행이 넘겨받았으면 그쪽 결과를 그대로 둠)
+    if not storage.finish_plan(plan_date, slot, data, "rule", stamp, claimed_at=stamp):
+        return None
     return data
 
 

@@ -826,13 +826,25 @@ class Storage:
             return cur.rowcount > 0
 
     def finish_plan(self, plan_date: str, slot: str, data: dict, source: str, now_iso: str,
-                    provider: str = "", model: str = "") -> None:
+                    provider: str = "", model: str = "", claimed_at: str | None = None) -> bool:
+        """정리 결과 저장. claimed_at 을 주면 그 시각에 맡은 실행만 저장할 수 있음
+        (멈췄던 실행이 15분 뒤 다른 실행에 넘어간 뒤 다시 깨어나 덮어쓰고 알림을 또 내지 않게)."""
         self._begin()
+        sql = ("UPDATE daily_plans SET state='done', finished_at=?, source=?, provider=?, model=?, data=?, notified=0 "
+               "WHERE plan_date=? AND slot=?")
+        args = [now_iso, source, provider, model, json.dumps(data, ensure_ascii=False), plan_date, slot]
+        if claimed_at is not None:
+            sql += " AND state='running' AND claimed_at=?"
+            args.append(claimed_at)
         with self.conn:
-            self.conn.execute(
-                "UPDATE daily_plans SET state='done', finished_at=?, source=?, provider=?, model=?, data=?, notified=0 "
-                "WHERE plan_date=? AND slot=?",
-                (now_iso, source, provider, model, json.dumps(data, ensure_ascii=False), plan_date, slot))
+            cur = self.conn.execute(sql, args)
+            return cur.rowcount > 0
+
+    def release_plan(self, plan_date: str, slot: str, claimed_at: str) -> None:
+        """정리하다 실패: 내가 맡은 실행이면 다음 확인 때 다시 맡을 수 있게 놓아 줌"""
+        self.conn.execute("UPDATE daily_plans SET claimed_at=NULL WHERE plan_date=? AND slot=? "
+                          "AND state='running' AND claimed_at=?", (plan_date, slot, claimed_at))
+        self.conn.commit()
 
     def get_plan(self, plan_date: str, slot: str | None = None) -> dict | None:
         """그 날의 (회차) 정리. 회차를 안 주면 가장 최근에 끝난 것."""
@@ -850,6 +862,29 @@ class Storage:
         except ValueError:
             d["data"] = {}
         return d
+
+    def last_plan_before(self, now_iso: str) -> dict | None:
+        """now_iso 전에 끝난 가장 최근 정리 (날짜·회차 상관없이). 지난번 할 일을 이어 받을 때 씀."""
+        r = self.conn.execute("SELECT * FROM daily_plans WHERE state='done' AND finished_at < ? "
+                              "ORDER BY finished_at DESC, id DESC LIMIT 1", (now_iso,)).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        try:
+            d["data"] = json.loads(d.get("data") or "{}")
+        except ValueError:
+            d["data"] = {}
+        return d
+
+    def calendar_events_by_ids(self, ids) -> list[dict]:
+        """id 로 일정 몇 개 (지운 것 제외). '내일로' 미뤘다가 돌아온 일정처럼 날짜 범위 밖인 것을 가져올 때."""
+        ids = [int(i) for i in ids]
+        if not ids:
+            return []
+        q = ",".join("?" * len(ids))
+        return [dict(r) for r in self.conn.execute(
+            "SELECT e.*, m.sender AS msg_sender FROM calendar_events e LEFT JOIN messages m ON m.id = e.message_id "
+            f"WHERE e.id IN ({q}) AND e.status != 'dismissed' ORDER BY e.date, e.start_time, e.id", ids)]
 
     def last_plan_finished_before(self, now_iso: str) -> str | None:
         r = self.conn.execute("SELECT MAX(finished_at) FROM daily_plans WHERE state='done' AND finished_at < ?",
@@ -882,18 +917,22 @@ class Storage:
         return {(r["kind"], r["ref_id"]): {"state": r["state"], "until": r["until"] or ""}
                 for r in self.conn.execute("SELECT kind, ref_id, state, until FROM todo_state")}
 
-    def plan_messages(self, since_iso: str, deadline_from: str, deadline_to: str) -> list[dict]:
+    def plan_messages(self, since_iso: str, deadline_from: str, deadline_to: str, include_ids=()) -> list[dict]:
         """오늘 할 일 후보 소식: 처리 안 했고(done=0), 가장 최근 분석이 AI 분석(규칙 생략 아님)이며,
-        마감이 deadline_from~deadline_to(YYYY-MM-DD) 이거나 since_iso 이후에 받은 것."""
+        마감이 deadline_from~deadline_to(YYYY-MM-DD) 이거나 since_iso 이후에 받은 것,
+        또는 include_ids (지난 정리에 있던 할 일·미뤘다가 오늘 돌아온 것)."""
+        ids = [int(i) for i in include_ids]
+        extra = f" OR m.id IN ({','.join('?' * len(ids))})" if ids else ""
         sql = ("SELECT m.id, m.sender, m.subject, m.source, m.received_at, "
                "a.importance, a.category, a.summary, a.action_items, a.deadline, a.provider, a.school_relevance "
                "FROM messages m JOIN analyses a ON a.id = (SELECT MAX(id) FROM analyses WHERE message_id = m.id) "
                "WHERE m.done = 0 AND a.provider != 'rule' AND ("
                "(a.deadline GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND substr(a.deadline, 1, 10) BETWEEN ? AND ?)"
                # 받은 시각은 수집기마다 '2026-11-12T10:00:00'(T) 모양 → 비교 전에 'YYYY-MM-DD HH:MM:SS' 로 맞춤
-               " OR (? != '' AND replace(substr(m.received_at, 1, 19), 'T', ' ') >= ?)) ORDER BY m.received_at DESC")
+               " OR (? != '' AND replace(substr(m.received_at, 1, 19), 'T', ' ') >= ?)" + extra +
+               ") ORDER BY m.received_at DESC")
         out = []
-        for r in self.conn.execute(sql, (deadline_from, deadline_to, since_iso or "", since_iso or "")):
+        for r in self.conn.execute(sql, (deadline_from, deadline_to, since_iso or "", since_iso or "", *ids)):
             d = dict(r)
             try:
                 d["action_items"] = json.loads(d["action_items"] or "[]")

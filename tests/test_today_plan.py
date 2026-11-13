@@ -263,3 +263,45 @@ def test_new_since_last_plan_with_t_format_received_at(db):
     items, _, _ = tp.collect(db, NOW, last_plan_at="2026-11-12 08:30:00")
     ids = [it.ref_id for it in items]
     assert after in ids and before not in ids
+
+
+# ---- Codex 검토(2026-11-13)로 고친 것 ----
+
+def test_undated_todo_from_morning_plan_stays_at_noon(db):
+    m = msg(db, received="2026-11-12 08:00")                     # 마감 없음, 아침 정리 전에 받음
+    assert m in [x["ref_id"] for x in tp.run_plan(db, NOW, "morning")["items"]]
+    noon = datetime(2026, 11, 12, 12, 40)
+    assert m in [x["ref_id"] for x in tp.run_plan(db, noon, "noon")["items"]]   # 완료 전까지 이어짐
+    db.set_done(m)
+    assert m not in [x["ref_id"] for x in tp.run_plan(db, noon, "manual")["items"]]
+
+
+def test_snoozed_friday_items_come_back_on_monday(db):
+    fri, mon = "2026-11-13", "2026-11-16"
+    e = event(db, "가상 금요 회의", day=fri, time="10:00")
+    m = msg(db, received="2026-11-01 09:00")                     # 마감 없음, 오래전에 받음
+    db.set_todo("event", e, "snoozed", until=mon)
+    db.set_todo("message", m, "snoozed", until=mon)
+    assert kinds(tp.collect(db, datetime(2026, 11, 14, 9, 0))[0]) == []      # 토요일: 아직 숨김
+    ids = kinds(tp.collect(db, datetime(2026, 11, 16, 9, 0))[0])
+    assert ("event", e) in ids and ("todo", m) in ids
+
+
+def test_done_event_does_not_come_back_as_its_message(db):
+    m = msg(db, deadline=TODAY, received="2026-11-12 08:30")
+    r = db.suggest_event(title="가상 협의회", date=TODAY, start_time="15:00", status="confirmed", message_id=m)
+    eid = r["event_id"] if isinstance(r, dict) else r
+    db.set_todo("event", eid, "done")
+    assert kinds(tp.collect(db, NOW, last_plan_at="2026-11-12 08:00:00")[0]) == []
+
+
+def test_stale_run_cannot_overwrite_newer_owner(db):
+    assert db.claim_plan(TODAY, "morning", "2026-11-12 09:00:00")              # A 가 맡음 → 멈춤
+    assert db.claim_plan(TODAY, "morning", "2026-11-12 09:20:00")              # 15분 지나 B 가 넘겨받음
+    assert db.finish_plan(TODAY, "morning", {"items": []}, "rule", "2026-11-12 09:20:05",
+                          claimed_at="2026-11-12 09:20:00")
+    assert db.mark_plan_notified(TODAY, "morning")
+    assert not db.finish_plan(TODAY, "morning", {"items": [1]}, "rule", "2026-11-12 09:21:00",
+                              claimed_at="2026-11-12 09:00:00")              # A 가 깨어나도 못 덮어씀
+    saved = db.get_plan(TODAY, "morning")
+    assert saved["data"] == {"items": []} and saved["notified"] == 1

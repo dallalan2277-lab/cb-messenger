@@ -22,6 +22,12 @@ def _skip(body, keywords=("식단표", "급식", "생일 축하", "감사합니�
     "내일 오후 3시 회의실에서 뵙겠습니다. 감사합니다",
     "12/3(수) 학년 협의회 있습니다 감사합니다",
     "3시 30분까지 제출 부탁드립니다. 감사합니다.",
+    "급식 의견은 11/17까지 제출해 주세요",
+    "급식 만족도 조사 11. 17.까지 부탁드립니다. 감사합니다",
+    "급식 신청은 17일 15시까지입니다 감사합니다",
+    "17일까지 회신 부탁드립니다. 감사합니다",
+    "15시까지 제출 바랍니다 감사합니다",
+    "11.17까지 입력 바랍니다 감사합니다",
 ])
 def test_keyword_message_with_date_or_time_goes_to_ai(body):
     assert has_schedule_hint(body)
@@ -33,6 +39,8 @@ def test_keyword_message_with_date_or_time_goes_to_ai(body):
     "이번 달 식단표 첨부합니다.",
     "생일 축하드립니다! 좋은 하루 보내세요",
     "회의는 1시간 정도 걸립니다. 감사합니다",   # '1시간' 은 시각이 아님
+    "만족도 3.5점 나왔습니다. 감사합니다",       # 소수는 날짜가 아님
+    "3일간 고생 많으셨습니다. 감사합니다",
 ])
 def test_keyword_message_without_schedule_is_still_skipped(body):
     assert _skip(body) is True

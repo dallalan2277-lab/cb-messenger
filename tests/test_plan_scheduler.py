@@ -54,12 +54,13 @@ def make(tmp_path, clock, **kw):
     return sch, sent
 
 
-def add_todo(st, deadline="2026-11-12", subject="가상 제출 안내"):
-    m = Message(sender="가상 보낸이", body="가상 본문", received_at="2026-11-11 10:00", source="eztalk",
+def add_todo(st, deadline="2026-11-12", subject="가상 제출 안내", school="학교 업무", source="eztalk",
+             received_at="2026-11-11 10:00"):
+    m = Message(sender="가상 보낸이", body="가상 본문", received_at=received_at, source=source,
                 external_id=subject, subject=subject)
     st.add_message(m)
     st.add_analysis(Analysis(message_id=m.id, importance="중요", category="처리 필요", summary="가상",
-                             deadline=deadline, provider="fake"))
+                             deadline=deadline, provider="fake", school_relevance=school))
     return m.id
 
 
@@ -143,3 +144,38 @@ def test_tick_error_is_kept_and_loop_continues(tmp_path, monkeypatch):
         time.sleep(0.02)
     sch.stop()
     assert "가상 오류" in sch.last_error
+
+
+# ---- Codex 검토(2026-11-13)로 고친 것 ----
+
+def test_crash_between_save_and_notify_sends_once_on_restart(tmp_path):
+    clock = Clock(*THU, 8, 31)
+    sch, sent = make(tmp_path, clock)
+    add_todo(sch._store())
+    ps.tp.run_plan(sch._store(), clock(), "morning")          # 저장까지만 하고 꺼진 것처럼
+    clock.now = datetime(*THU, 8, 40)
+    assert sch.tick() is not None and len(sent) == 1
+    assert sch.tick() is None and len(sent) == 1
+
+
+def test_quiet_skip_is_not_resent_after_restart(tmp_path):
+    clock = Clock(*THU, 8, 31)
+    sch, sent = make(tmp_path, clock, notify_quiet_start="08:00", notify_quiet_end="09:00")
+    add_todo(sch._store())
+    sch.tick()
+    clock.now = datetime(*THU, 9, 30)
+    sch2, sent2 = make(tmp_path, clock)
+    sch2.tick()
+    assert sent == [] and sent2 == []
+
+
+def test_toast_follows_notify_scope(tmp_path):
+    clock = Clock(*THU, 8, 31)
+    sch, sent = make(tmp_path, clock, notify_preview=True)
+    add_todo(sch._store(), subject="가상 일반 메일", school="관련 없음", source="mail")
+    sch.tick()
+    assert sent == []                                          # 학교 업무만 → 일반 메일은 알리지 않음
+    plan = sch._store().get_plan("2026-11-12", "morning")["data"]
+    from app.notify_policy import NotifyPrefs
+    assert toast_for(plan, "morning", True, NotifyPrefs(scope="all")) is not None
+    assert toast_for(plan, "morning", True, NotifyPrefs(scope="all", sources=("eztalk",))) is None
