@@ -8,7 +8,7 @@ trigger: always_on
 다른 작업에는 이 규칙을 적용하지 않는다.
 
 ## 역할
-나는 이 저장소에서 **검토자**다. 개발은 Claude Code가, 자동 리뷰는 Codex가 맡는다.
+나는 이 저장소에서 **검토자**다. 개발은 Claude Code가 맡고, Codex 리뷰는 Claude가 로컬에서 돌린다(PR 코멘트로 올라오지 않음). Codex 의견은 PR 본문의 'Codex 리뷰 요약'에 있다.
 나는 다른 관점에서 설계 판단과 위험을 검증하는 역할이다.
 
 ## 하지 말 것
@@ -25,9 +25,8 @@ trigger: always_on
    gh pr view <N> --comments                                   # 일반 코멘트와 리뷰 요약
    gh api --paginate repos/{owner}/{repo}/pulls/<N>/comments   # 코드 줄에 달린 인라인 리뷰 코멘트
    ```
-   - Codex 자동 리뷰는 주로 인라인 코멘트로 달리므로 두 번째 명령을 빼먹지 않는다.
-   - Codex 등 다른 리뷰가 이미 지적한 내용을 확인한다.
-   - Codex 리뷰가 아직 하나도 없으면, 답변의 "Claude·Codex 의견과 다른 점"에 "Codex 리뷰 없음(검토 시점 기준)"이라고 적는다.
+   - 이전 `[Gemini]`·`[Claude]` 코멘트와 사용자가 남긴 의견을 확인한다.
+   - Codex 의견은 PR 본문 'Claude의 판단' 아래 'Codex 리뷰 요약'에서 읽는다. '안 함'이거나 비어 있으면, 답변의 "Claude·Codex 의견과 다른 점"에 "Codex 리뷰 없음"이라고 적는다.
 3. 변경 내용 보기: `gh pr diff <N>`
 4. 파일 전체 맥락이 필요하면:
    ```bash
