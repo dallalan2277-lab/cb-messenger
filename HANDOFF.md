@@ -2,6 +2,18 @@
 
 > GPT, Claude 등 다른 AI에게 이 프로젝트를 넘길 때 **이 파일과 README.md 를 먼저 보여주세요.**
 
+## ▶ 다른 PC 에서 이어서 할 일 (2026-11-13 학교 PC 에서 멈춤)
+
+- 브랜치 **`feature/today-plan`** (버전 표기는 아직 `0.10.0-beta.5`). 시작: `git fetch` → `git switch feature/today-plan` → `git pull` → `python -m pytest -q` (471 통과·1 건너뜀이면 정상).
+- 사용자 요청: 지금까지의 시험판 내용을 **정식판 0.10.0 으로 GitHub 배포**. 그 전에 남은 것:
+  1. Codex 3차 검토 (2-19 의 재검토 반영 커밋 `358ddc0` 대상) — 사용자에게 할지 물어본 상태.
+  2. 사용자 결정 대기: 이미 설치한 PC `.env` 의 `SKIP_AI_KEYWORDS` 에서 '감사합니다' 를 업데이트 때 자동으로 한 번 지울지 (2-18). 지운다면 시작 때 1회 마이그레이션 + 테스트.
+  3. 배포: `app/__init__.py` → `0.10.0`, CLAUDE.md 상태표 갱신, `feature/today-plan` 을 main 에 빨리감기로 합침(main 은 이 브랜치의 조상), 설치판 빌드 후 `cbm.exe --provider fake test` 확인,
+     `packagingelease.bat`(main 에서) 또는 같은 단계 수동: SHA-256 파일 + `gh release create v0.10.0 ... --target main` (정식판 = Latest). beta 설치 PC 에도 0.10.0 이 업데이트로 뜸(`updater.is_newer` 확인함).
+- 사용자 지시: **설치 파일·GitHub 배포는 사용자가 말할 때만.** 코드는 이 PC 처럼 커밋하고, push 도 요청 받았을 때.
+- 이 PC 사용자 설정(.env)에 아직 '감사합니다' 가 있을 수 있음 → 설정 [모델] 탭에서 지우도록 안내함.
+- 자세한 수정 기록: 2-18(AI 생략 키워드), 2-19(Codex 검토 반영 7건 + 재검토 4건, 나중으로 둔 것 목록).
+
 ## 0. 프로젝트 목표
 
 충청북도교육청 업무 메신저 **"충북소통메신저"**(Windows PC 프로그램, 충북교육정보원 운영)로 받은 메시지를
