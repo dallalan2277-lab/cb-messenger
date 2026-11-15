@@ -26,3 +26,10 @@
 - gpt-6.1-*를 못 쓰는 계정(예: 학교 PC)에서는 6.1 Sol 대신 `gpt-6-astra`, 6.1 Terra 대신 `gpt-5.6-terra` (config 기본 모델은 `gpt-5.6-terra`, 사고 수준은 config 기본값 max).
 - 프로젝트 폴더의 CLAUDE.md에 다른 기준이 있으면 그쪽을 우선한다.
 참고: C:\Users\JWK\projects\test\codex-bench\RESULTS.md (2026-11-08, sol이 견고성·검증 점수 최고, luna는 가장 느리고 회귀 테스트 격리가 약했음)
+
+## AI 브릿지 작업 (어느 폴더 세션이든 공통, 2026-11-15)
+- 아르곤(Antigravity)·Codex에게 작업을 나눌 때는 비공개 저장소 `ai-bridge`(보통 `~/projects/ai-bridge`)를 쓴다. 프로젝트 저장소에는 협업 파일을 만들지 않는다.
+- 작업 명세·보고는 `ai-bridge/projects/<프로젝트>/tasks/T번호/`. 새 작업을 만들면 `ai-bridge/CURRENT_TASK.txt`를 갱신한다.
+- 아르곤에게 보낼 작업을 만든 **즉시** 백그라운드로 `python tools/claude/wait_argon.py projects/<프로젝트>/tasks/T번호`(ai-bridge에서)를 띄우고, READY면 바로 검토한다.
+- 사용자가 "브릿지 T번호 검토해 줘"라고 하면 그 폴더의 보고서를 읽고 검토한다.
+- 브릿지 작업을 시작할 때만 `ai-bridge/COLLABORATION.md`(특히 1·8절)를 읽는다. 평소에는 읽지 않는다.
