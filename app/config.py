@@ -171,6 +171,28 @@ def save_env(updates: dict[str, str], path: Path = ENV_PATH) -> None:
         os.environ[k] = v
 
 
+def _read_env_value(env_path: Path, key: str) -> str | None:
+    """.env 에서 key 값 하나 (따옴표·줄 끝 주석은 걷어 냄). 없으면 None."""
+    try:
+        from dotenv import dotenv_values
+        if key in (vals := dotenv_values(env_path)):
+            return vals[key] or ""
+        return None
+    except ImportError:
+        pass
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if s.startswith("export "):
+            s = s[7:].strip()
+        if s.startswith("#") or "=" not in s or s.split("=", 1)[0].strip() != key:
+            continue
+        v = s.split("=", 1)[1].strip()
+        if v[:1] in ("'", '"') and v[:1] in v[1:]:
+            return v[1:v.index(v[0], 1)]
+        return v.split(" #", 1)[0].strip()
+    return None
+
+
 # ---- 한 번만 하는 설정 정리 ----
 THANKS_MARKER = DATA_DIR / ".migrated_skip_thanks"
 
@@ -185,15 +207,12 @@ def migrate_skip_thanks(env_path: Path = ENV_PATH, marker: Path | None = None) -
     changed = False
     try:
         if env_path.exists():
-            for line in env_path.read_text(encoding="utf-8").splitlines():
-                s = line.strip()
-                if s.startswith("#") or "=" not in s or s.split("=", 1)[0].strip() != "SKIP_AI_KEYWORDS":
-                    continue
-                tokens = [t.strip() for t in s.split("=", 1)[1].split(",") if t.strip()]
+            value = _read_env_value(env_path, "SKIP_AI_KEYWORDS")
+            if value is not None:
+                tokens = [t.strip() for t in value.split(",") if t.strip()]
                 if "감사합니다" in tokens:
                     save_env({"SKIP_AI_KEYWORDS": ",".join(t for t in tokens if t != "감사합니다")}, env_path)
                     changed = True
-                break
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("0.10.0: SKIP_AI_KEYWORDS 에서 '감사합니다' 정리함\n", encoding="utf-8")
     except OSError:

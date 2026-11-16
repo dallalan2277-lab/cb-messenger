@@ -397,3 +397,28 @@ def test_live_view_renumbers_after_done(db):
     v = tp.live_view(db, NOW)
     assert [(x["ref_id"], x["no"]) for x in v["items"]] == [(m2, 1)]
     assert v["headline"].startswith("할 일 1건")
+
+
+# ---- 2026-11-16 Codex·아르곤 검토 반영 ----
+
+def test_live_view_preview_is_live_for_old_friday_plan(db):
+    mon = event(db, "가상 월요 회의", day="2026-11-16", time="08:30")
+    old = {"items": [], "suggested": [], "warnings": [], "headline": "오늘 챙길 일이 없어요", "overflow": 0}
+    assert db.claim_plan("2026-11-13", "morning", "2026-11-13 08:30:00")
+    db.finish_plan("2026-11-13", "morning", old, "rule", "2026-11-13 08:30:00")
+    v = tp.live_view(db, FRI, {})
+    assert [x["ref_id"] for x in v["upcoming"]] == [mon] and v["upcoming_label"] == "다음 근무일 11/16(월)"
+
+
+def test_live_view_rebuilds_overdue_warning_after_one_done(db):
+    a = msg(db, deadline="2026-11-11")
+    msg(db, deadline="2026-11-10")
+    tp.run_plan(db, NOW, "morning")
+    db.set_done(a)
+    v = tp.live_view(db, NOW)
+    w = [x for x in v["warnings"] if x["kind"] == "overdue"]
+    assert len(w) == 1 and w[0]["nos"] == [1] and "1건" in w[0]["text"]
+
+
+def test_headline_with_only_overflow_left():
+    assert tp.headline_from_public([], [], 3, NOW).startswith("할 일 0건 · 그 밖에 3건")

@@ -149,3 +149,11 @@ def test_migrate_skip_thanks_without_keyword(tmp_path):
     env.write_text("SKIP_AI_KEYWORDS=급식\n", encoding="utf-8")
     assert config.migrate_skip_thanks(env, marker) is False and marker.exists()
     assert env.read_text(encoding="utf-8") == "SKIP_AI_KEYWORDS=급식\n"
+
+
+def test_migrate_skip_thanks_quoted_value_and_comment(tmp_path):
+    env = tmp_path / ".env"
+    marker = tmp_path / ".marker"
+    env.write_text('SKIP_AI_KEYWORDS="식단표,감사합니다"  # 가상 주석\n', encoding="utf-8")
+    assert config.migrate_skip_thanks(env, marker) is True
+    assert "SKIP_AI_KEYWORDS=식단표" in env.read_text(encoding="utf-8")

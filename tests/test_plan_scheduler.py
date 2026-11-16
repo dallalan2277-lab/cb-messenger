@@ -189,3 +189,20 @@ def test_noon_toast_adds_next_workday_line_morning_does_not():
     assert "다음 근무일 일정 2건" in toast_for(plan, "noon", False)[1]
     assert "일정 2건" not in toast_for(plan, "morning", True)[1]
     assert "1건을 정리" in toast_for(plan, "morning", False)[1]          # 미리 보기 일정은 할 일 수에 안 셈
+
+
+def test_noon_toast_with_only_next_workday_events():
+    plan = {"items": [], "suggested": [], "upcoming": [{"kind": "event"}], "upcoming_label": "내일 11/17(화)"}
+    title, body = toast_for(plan, "noon", True)
+    assert "남은 할 일은 없어요" in body and "내일 일정 1건" in body
+    assert toast_for({**plan, "upcoming": []}, "noon", True) is None
+
+
+def test_failed_holiday_load_is_not_cached(tmp_path, monkeypatch):
+    import app.desktop_calendar.api as calapi
+    sch, _ = make(tmp_path, Clock(*THU, 8, 31))
+    sch.holidays = None
+    monkeypatch.setattr(calapi, "load_holidays", lambda: {})
+    assert sch._holidays() == {} and sch.holidays is None
+    monkeypatch.setattr(calapi, "load_holidays", lambda: {"2026-11-12": "가상"})
+    assert sch._holidays() == {"2026-11-12": "가상"}

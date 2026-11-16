@@ -177,6 +177,7 @@
   .plan-head { font-size: 13px; color: var(--text); line-height: 1.45; }
   .plan-meta { font-size: 11px; color: var(--faint); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .plan-up .prow { opacity: .72; }
+  .plan-up .pno { background: transparent; border: 1px solid var(--faint); color: var(--dim); }
   .plan-up h3 { font-weight: 500; }
   .plan-warn { font-size: 11px; color: var(--sugg); border: 1px dashed var(--sugg); border-radius: 7px; padding: 5px 7px; line-height: 1.45; }
   .prow { display: flex; gap: 8px; align-items: flex-start; padding: 7px 8px; border-radius: 8px; background: var(--panel); margin-bottom: 6px; cursor: pointer; border: 1px solid transparent; }
@@ -1333,7 +1334,7 @@ async function renderToday(fresh) {
   $("planSugg").innerHTML = (p.suggested || []).map((x) => planRowHtml({ ...x, no: "" }, false)).join("");
   // 다음 근무일 미리 보기: 할 일·번호·건수에 넣지 않음 (보기만)
   $("planUpSec").hidden = !(p.upcoming || []).length;
-  $("planUpTitle").textContent = `${p.upcoming_label || "다음 근무일"} 미리 보기`;
+  $("planUpTitle").textContent = `${p.upcoming_label || "다음 근무일"} 미리 보기 (보기만)`;
   $("planUp").innerHTML = (p.upcoming || []).map((x) => planRowHtml({ ...x, no: "" }, false)).join("");
   const made = (p.finished_at || p.made_at || "").replace("T", " ").slice(5, 16);
   $("planMeta").textContent = p.saved === false ? "아직 정리 전 · 지금 자료로 본 순서"

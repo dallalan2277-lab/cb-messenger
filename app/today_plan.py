@@ -307,7 +307,7 @@ def headline(items: list, suggested: list, overflow: int, now: datetime) -> str:
         parts.append(f"확정할 일정 {len(suggested)}건")
     if overflow:
         parts.append(f"그 밖에 {overflow}건")
-    return " · ".join(parts) if items or suggested else "오늘 챙길 일이 없어요"
+    return " · ".join(parts) if items or suggested or overflow else "오늘 챙길 일이 없어요"
 
 
 def headline_from_public(items: list, suggested: list, overflow: int, now: datetime) -> str:
@@ -324,8 +324,8 @@ def headline_from_public(items: list, suggested: list, overflow: int, now: datet
     if suggested:
         parts.append(f"확정할 일정 {len(suggested)}건")
     if overflow:
-        parts.append(f"그 밖에 {overflow}건")
-    return " · ".join(parts) if items or suggested else "오늘 챙길 일이 없어요"
+        parts.append(f"그 밖에 {overflow}건 ([다시 정리]로 보기)")
+    return " · ".join(parts) if items or suggested or overflow else "오늘 챙길 일이 없어요"
 
 
 _PUBLIC = ("no", "kind", "ref_id", "title", "date", "time", "end_time", "deadline", "importance",
@@ -336,6 +336,29 @@ def _public(it: PlanItem) -> dict:
     d = asdict(it)
     out = {k: d[k] for k in _PUBLIC}
     out.update({k: v for k, v in it.extra.items() if v not in (None, "")})
+    return out
+
+
+def upcoming_items(storage, now: datetime, holidays: dict | None = None) -> list:
+    """다음 근무일까지(내일~다음 근무일)의 확정 일정 — 지금 달력에서 바로 만듦 (완료·미룬 것은 뺌)"""
+    today = now.date()
+    t0 = today.isoformat()
+    t1 = next_workday(today, holidays or {}).isoformat()
+    states = storage.todo_states()
+    out = []
+    for e in storage.calendar_events((today + timedelta(days=1)).isoformat(), t1):
+        if e["status"] != "confirmed":
+            continue
+        st = states.get(("event", e["id"]))
+        if st and (st["state"] == "done" or (st["state"] == "snoozed" and (st["until"] or "") > t0)):
+            continue
+        out.append(PlanItem(kind="event", ref_id=e["id"], title=e["title"], date=e["date"],
+                            time=e.get("start_time") or "", end_time=e.get("end_time") or "",
+                            sender=e.get("msg_sender") or ""))
+    out.sort(key=lambda x: (x.date, x.time or "99:99", x.ref_id))
+    for it in out:
+        it.reason_code = rule_reason(it, now)
+        it.reason = reason_text(it, now)
     return out
 
 
@@ -417,13 +440,10 @@ def live_view(storage, now: datetime, holidays: dict | None = None) -> dict:
     # 예전(이 수정 전)에 저장한 정리엔 내일 일정이 할 일에 섞여 있음 → 날짜를 보고 미리 보기로 옮김
     later = [x for x in items if x.get("kind") == "event" and (x.get("date") or "") > t0]
     items = [x for x in items if x not in later]
-    upcoming = [x for x in data.get("upcoming", []) if still_open(x)]
-    have = {x.get("ref_id") for x in upcoming}
-    upcoming += [x for x in later if x.get("ref_id") not in have]
-    upcoming.sort(key=lambda x: (x.get("date") or "", x.get("time") or "99:99", x.get("ref_id") or 0))
-    if "upcoming_label" not in data:
-        day = upcoming[0]["date"] if upcoming else next_workday(now.date(), holidays or {}).isoformat()
-        data["upcoming_label"] = upcoming_label(day, now)
+    # 미리 보기는 저장된 정리 대신 지금 달력에서 바로 만듦 — 정리 뒤 새로 넣은 일정, 예전 금요일 정리에
+    # 없던 월요일 일정도 보이게 (예전 정리의 'later' 일정은 위에서 할 일에서만 뺌)
+    upcoming = [_public(it) for it in upcoming_items(storage, now, holidays)]
+    data["upcoming_label"] = upcoming_label(next_workday(now.date(), holidays or {}).isoformat(), now)
     # 번호는 1부터 다시 (완료·이동으로 빈 번호가 생기지 않게), 경고도 새 번호로
     renum = {}
     for i, x in enumerate(items, 1):
@@ -431,9 +451,14 @@ def live_view(storage, now: datetime, holidays: dict | None = None) -> dict:
         x["no"] = i
     warns = []
     for w in data.get("warnings", []):
+        if w.get("kind") == "overdue":
+            continue                      # 마감 지남 경고는 남은 항목으로 아래에서 다시 만듦
         nos = w.get("nos", [])
         if all(n in renum for n in nos):
             warns.append({**w, "nos": [renum[n] for n in nos]})
+    over = [x["no"] for x in items if x.get("overdue")]
+    if over:
+        warns.append({"kind": "overdue", "nos": over, "text": f"마감이 지난 일이 {len(over)}건 있어요"})
     data["items"], data["upcoming"], data["warnings"] = items, upcoming, warns
     data["suggested"] = [x for x in data.get("suggested", []) if still_open(x)]
     data["headline"] = headline_from_public(items, data["suggested"], int(data.get("overflow") or 0), now)

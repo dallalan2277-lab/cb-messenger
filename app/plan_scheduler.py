@@ -71,11 +71,15 @@ def toast_for(plan: dict, slot: str, preview: bool, prefs=None,
     all_items = plan.get("items") or []
     items = [x for x in all_items if item_allowed(x, prefs)]
     sugg = plan.get("suggested") or []
+    # 점심 알림에만: 다음 근무일 일정 건수 한 줄 (오후에 미리 준비할 수 있게, 할 일 수에는 안 셈)
+    up = len(plan.get("upcoming") or []) if slot == "noon" else 0
+    up_line = f"{(plan.get('upcoming_label') or '다음 근무일 -').rsplit(' ', 1)[0]} 일정 {up}건" if up else ""
     if slot == "noon":
         seen = seen_suggested or set()
         sugg = [x for x in sugg if x.get("ref_id") not in seen]
         if not items and not sugg:
-            return None
+            # 오늘 남은 할 일은 없어도 다음 근무일 일정이 있으면 그것만 알림
+            return ("오후 할 일 순서", f"오늘 남은 할 일은 없어요.\n{up_line}") if up_line else None
     if not items and not sugg:
         if all_items:
             return None      # 할 일은 있지만 모두 알림 범위 밖 → 알리지 않음 ('오늘' 탭에는 보임)
@@ -83,9 +87,6 @@ def toast_for(plan: dict, slot: str, preview: bool, prefs=None,
     title = "오늘 할 일 순서" if slot == "morning" else "오후 할 일 순서"
     if not items:   # 할 일은 없고 확정할 일정만 있음
         return title, f"확정할 일정 {len(sugg)}건이 있어요. 캘린더 '오늘' 탭에서 보세요."
-    # 점심 알림에만: 다음 근무일 일정 건수 한 줄 (오후에 미리 준비할 수 있게, 할 일 수에는 안 셈)
-    up = len(plan.get("upcoming") or []) if slot == "noon" else 0
-    up_line = f"{(plan.get('upcoming_label') or '다음 근무일 -').rsplit(' ', 1)[0]} 일정 {up}건" if up else ""
     if not preview:
         body = f"{len(items)}건을 정리했어요. 캘린더 '오늘' 탭에서 보세요. (알림 미리보기 꺼짐)"
         return title, body + (f"\n{up_line}" if up_line else "")
@@ -125,11 +126,14 @@ class PlanScheduler:
         if self.holidays is None:
             try:
                 from .desktop_calendar.api import load_holidays
-                self.holidays = load_holidays()
+                loaded = load_holidays()
             except Exception:  # noqa: BLE001
-                # 실패를 기억하지 않음 → 다음 확인 때 다시 읽어 봄 (한 번 실패로 공휴일에도 알림이 나가지 않게)
+                loaded = {}
+            if not loaded:
+                # 실패(파일 없음·깨짐 → 빈 목록)를 기억하지 않음 → 다음 확인 때 다시 읽어 봄
                 log.warning("공휴일 목록을 읽지 못했습니다. 다음 확인 때 다시 읽습니다.")
                 return {}
+            self.holidays = loaded
         return self.holidays
 
     def tick(self) -> dict | None:
