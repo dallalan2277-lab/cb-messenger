@@ -83,13 +83,19 @@ def toast_for(plan: dict, slot: str, preview: bool, prefs=None,
     title = "오늘 할 일 순서" if slot == "morning" else "오후 할 일 순서"
     if not items:   # 할 일은 없고 확정할 일정만 있음
         return title, f"확정할 일정 {len(sugg)}건이 있어요. 캘린더 '오늘' 탭에서 보세요."
+    # 점심 알림에만: 다음 근무일 일정 건수 한 줄 (오후에 미리 준비할 수 있게, 할 일 수에는 안 셈)
+    up = len(plan.get("upcoming") or []) if slot == "noon" else 0
+    up_line = f"{(plan.get('upcoming_label') or '다음 근무일 -').rsplit(' ', 1)[0]} 일정 {up}건" if up else ""
     if not preview:
-        return title, f"{len(items)}건을 정리했어요. 캘린더 '오늘' 탭에서 보세요. (알림 미리보기 꺼짐)"
+        body = f"{len(items)}건을 정리했어요. 캘린더 '오늘' 탭에서 보세요. (알림 미리보기 꺼짐)"
+        return title, body + (f"\n{up_line}" if up_line else "")
     lines = [f"{x.get('no')}. {x.get('title', '')} — {x.get('reason', '')}" for x in items[:2]]
     more = len(items) - len(lines)
     body = "\n".join(lines) + (f"\n그 밖에 {more}건" if more > 0 else "")
     if sugg:
         body += f"\n확정할 일정 {len(sugg)}건"
+    if up_line:
+        body += f"\n{up_line}"
     return title, body[:240]
 
 
@@ -135,7 +141,7 @@ class PlanScheduler:
             return None
         st = self._store()
         plan_date = now.strftime("%Y-%m-%d")
-        plan = tp.run_plan(st, now, slot)
+        plan = tp.run_plan(st, now, slot, self._holidays())
         if plan is None:
             # 이미 끝난 회차인데 알림 처리 전에 프로그램이 꺼졌던 경우(notified=0) → 지금 한 번 알림
             # (방해금지·알림 끄기로 안 보낸 것은 notified=1 이라 다시 보내지 않음)

@@ -176,6 +176,8 @@
   .item .acts .btn { padding: 3px 8px; font-size: 11px; }
   .plan-head { font-size: 13px; color: var(--text); line-height: 1.45; }
   .plan-meta { font-size: 11px; color: var(--faint); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .plan-up .prow { opacity: .72; }
+  .plan-up h3 { font-weight: 500; }
   .plan-warn { font-size: 11px; color: var(--sugg); border: 1px dashed var(--sugg); border-radius: 7px; padding: 5px 7px; line-height: 1.45; }
   .prow { display: flex; gap: 8px; align-items: flex-start; padding: 7px 8px; border-radius: 8px; background: var(--panel); margin-bottom: 6px; cursor: pointer; border: 1px solid transparent; }
   .prow:hover { border-color: var(--line); }
@@ -435,6 +437,10 @@
           <h3>확정할 일정</h3>
           <div id="planSugg"></div>
         </section>
+        <section id="planUpSec" class="plan-up" hidden>
+          <h3 id="planUpTitle">내일</h3>
+          <div id="planUp"></div>
+        </section>
         <div class="plan-meta"><span id="planMeta"></span><span style="flex:1"></span><button class="btn" id="planRerun" type="button">다시 정리</button></div>
       </div>
       <div class="pane hidden" id="paneFeed">
@@ -558,11 +564,12 @@ function MockAPI() {
     const items = [
       { no: 1, kind: "todo", ref_id: 2, title: "학교폭력 실태조사 참여율 입력", reason: "마감 오늘 16:00 · 회신·제출 필요", sender: "교감", overdue: false },
       { no: 2, kind: "event", ref_id: 2, title: "학교폭력 실태조사 입력 마감", reason: "오늘 16:00", sender: "교감" },
-      { no: 3, kind: "event", ref_id: 4, title: "학부모 상담", reason: "내일 14:00", sender: "" },
-      { no: 4, kind: "todo", ref_id: 11, title: "[공문] 2학기 교육과정 운영 실태 점검 자료 제출", reason: "마감 " + add(5).slice(5).replace("-", "/") + " · 회신·제출 필요", sender: "충북교육청" },
-      { no: 5, kind: "todo", ref_id: 1, title: "학업성적관리위원회 회의 참석 요청", reason: "참석 · 중요", sender: "교무부장" },
-    ].filter((x) => !todoMock[x.kind + x.ref_id]);
-    return { headline: `할 일 ${items.length}건 · 오늘 일정 1건 · 오늘까지 마감 1건 · 확정할 일정 1건`, items,
+      { no: 3, kind: "todo", ref_id: 11, title: "[공문] 2학기 교육과정 운영 실태 점검 자료 제출", reason: "마감 " + add(5).slice(5).replace("-", "/") + " · 회신·제출 필요", sender: "충북교육청" },
+      { no: 4, kind: "todo", ref_id: 1, title: "학업성적관리위원회 회의 참석 요청", reason: "참석 · 중요", sender: "교무부장" },
+    ].filter((x) => !todoMock[x.kind + x.ref_id]).map((x, i) => ({ ...x, no: i + 1 }));
+    const upcoming = [{ kind: "event", ref_id: 4, title: "학부모 상담", reason: "내일 14:00", sender: "" }];
+    return { headline: `할 일 ${items.length}건 · 오늘 일정 1건 · 오늘까지 마감 1건 · 확정할 일정 1건`, items, upcoming,
+      upcoming_label: "내일 " + add(1).slice(5).replace("-", "/"),
       suggested: [{ kind: "suggested", ref_id: 3, title: "AI 디지털교과서 연수 신청 마감", reason: "내일 종일 · 확정 필요", sender: "충북교육청 연수원" }],
       warnings: [{ kind: "overlap", nos: [2, 3], text: "16:00 학교폭력 실태조사 입력 마감 과(와) 16:00 체육대회 준비 회의 시간이 겹쳐요" }],
       source: "rule", saved: true, finished_at: planMadeAt };
@@ -1324,6 +1331,10 @@ async function renderToday(fresh) {
     : `<div class="empty">지금은 할 일이 없어요. 새 소식이 오면 다시 정리해요.</div>`;
   $("planSuggSec").hidden = !(p.suggested || []).length;
   $("planSugg").innerHTML = (p.suggested || []).map((x) => planRowHtml({ ...x, no: "" }, false)).join("");
+  // 다음 근무일 미리 보기: 할 일·번호·건수에 넣지 않음 (보기만)
+  $("planUpSec").hidden = !(p.upcoming || []).length;
+  $("planUpTitle").textContent = `${p.upcoming_label || "다음 근무일"} 미리 보기`;
+  $("planUp").innerHTML = (p.upcoming || []).map((x) => planRowHtml({ ...x, no: "" }, false)).join("");
   const made = (p.finished_at || p.made_at || "").replace("T", " ").slice(5, 16);
   $("planMeta").textContent = p.saved === false ? "아직 정리 전 · 지금 자료로 본 순서"
     : `${made} 정리 · ${p.source === "ai" ? "AI 정리" : "규칙 정리"}`;
@@ -1336,7 +1347,7 @@ async function renderToday(fresh) {
       return renderToday();
     }
     if (kind === "todo") return openItem(id);
-    const evs = await api.upcoming(2); const e = evs.find((x) => x.id === id); if (e) openEdit(e);
+    const evs = await api.upcoming(10); const e = evs.find((x) => x.id === id); if (e) openEdit(e);
   }));
 }
 function setTodayCount(n) { const b = $("todayN"); b.textContent = n; b.style.display = n ? "" : "none"; }

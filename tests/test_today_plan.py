@@ -42,13 +42,15 @@ def kinds(items):
     return [(it.kind, it.ref_id) for it in items]
 
 
-def test_only_today_tomorrow_confirmed_events_and_suggestions_apart(db):
+def test_only_today_events_are_todos_next_workday_is_preview(db):
     a = event(db, "가상 회의", time="14:00")
     b = event(db, "가상 연수", day=TOMORROW)
     event(db, "모레 일정", day="2026-11-14")
     s = event(db, "가상 제안", time="10:00", status="suggested")
-    items, sugg, overflow = tp.collect(db, NOW)
-    assert kinds(items) == [("event", a), ("event", b)]
+    up = []
+    items, sugg, overflow = tp.collect(db, NOW, upcoming_out=up)
+    assert kinds(items) == [("event", a)]                     # 내일 일정은 할 일이 아님
+    assert kinds(up) == [("event", b)] and up[0].reason == "내일 종일"
     assert [x.ref_id for x in sugg] == [s] and sugg[0].reason == "오늘 10:00 · 확정 필요"
     assert overflow == 0
 
@@ -108,12 +110,13 @@ def test_rule_order_and_reasons(db):
     fresh = msg(db, received="2026-11-12 08:50", importance="긴급")
     items, _, _ = tp.collect(db, NOW, last_plan_at="2026-11-12 08:00:00")
     T, E = "todo", "event"
-    assert kinds(items) == [(T, overdue), (T, today_t), (E, ev), (T, today_n), (T, later), (E, ev_t), (T, fresh)]
-    assert [it.no for it in items] == list(range(1, 8))
+    assert kinds(items) == [(T, overdue), (T, today_t), (E, ev), (T, today_n), (T, later), (T, fresh)]
+    assert (E, ev_t) not in kinds(items)                       # 내일 일정은 미리 보기로
+    assert [it.no for it in items] == list(range(1, 7))
     r = {(it.kind, it.ref_id): it.reason for it in items}
     assert r[(T, overdue)] == "마감 지남 11/11(수) 17:00"
     assert r[(T, today_t)] == "마감 오늘 16:00 · 회신·제출 필요"
-    assert r[(E, ev)] == "오늘 14:00" and r[(E, ev_t)] == "내일 09:00"
+    assert r[(E, ev)] == "오늘 14:00"
     assert r[(T, later)] == "마감 11/14(토) · 회신·제출 필요"
     assert r[(T, fresh)] == "긴급"
 
@@ -346,3 +349,51 @@ def test_cancelled_event_does_not_hide_follow_up_message(db):
     db.conn.execute("UPDATE calendar_events SET status='dismissed' WHERE id=?", (e,))
     db.conn.commit()
     assert ("todo", follow) in kinds(tp.collect(db, NOW, last_plan_at="2026-11-12 08:00:00")[0])
+
+
+
+# ---- 2026-11-16: 내일 일정이 '오늘' 탭 할 일에 섞이던 것 → 다음 근무일 미리 보기 ----
+
+FRI = datetime(2026, 11, 13, 9, 0)        # 금요일
+
+
+def test_friday_preview_shows_monday_not_saturday_only(db):
+    sat = event(db, "가상 토요 행사", day="2026-11-14", time="10:00")
+    mon = event(db, "가상 월요 회의", day="2026-11-16", time="08:30")
+    event(db, "가상 화요 연수", day="2026-11-17")
+    data = tp.build_plan(db, FRI, "morning", "2026-11-13 08:00:00", holidays={})
+    assert data["items"] == [] and data["headline"] == "오늘 챙길 일이 없어요"
+    assert [x["ref_id"] for x in data["upcoming"]] == [sat, mon]
+    assert data["upcoming_label"] == "다음 근무일 11/16(월)"
+
+
+def test_holiday_is_skipped_for_preview(db):
+    nxt = event(db, "가상 행사", day="2026-11-16")
+    data = tp.build_plan(db, FRI, "morning", "2026-11-13 08:00:00", holidays={"2026-11-16": "가상 공휴일"})
+    assert data["upcoming_date"] == "2026-11-17" and nxt in [x["ref_id"] for x in data["upcoming"]]
+
+
+def test_live_view_moves_tomorrow_events_out_of_old_saved_plan(db):
+    a = event(db, "가상 회의", time="14:00")
+    b = event(db, "가상 연수", day=TOMORROW, time="09:00")
+    old = {"items": [{"no": 1, "kind": "event", "ref_id": a, "date": TODAY, "time": "14:00", "title": "가상 회의"},
+                     {"no": 2, "kind": "event", "ref_id": b, "date": TOMORROW, "time": "09:00", "title": "가상 연수"}],
+           "suggested": [], "warnings": [{"kind": "overlap", "nos": [1, 2], "text": "가상"}],
+           "headline": "할 일 2건 · 오늘 일정 1건", "overflow": 0}
+    assert db.claim_plan(TODAY, "morning", "2026-11-12 08:30:00")
+    db.finish_plan(TODAY, "morning", old, "rule", "2026-11-12 08:30:00")
+    v = tp.live_view(db, NOW)
+    assert [x["ref_id"] for x in v["items"]] == [a] and [x["no"] for x in v["items"]] == [1]
+    assert [x["ref_id"] for x in v["upcoming"]] == [b]
+    assert v["headline"] == "할 일 1건 · 오늘 일정 1건" and v["warnings"] == []
+    assert v["upcoming_label"].startswith("내일 ")
+
+
+def test_live_view_renumbers_after_done(db):
+    m1 = msg(db, deadline=TODAY)
+    m2 = msg(db, deadline=TODAY)
+    tp.run_plan(db, NOW, "morning")
+    db.set_done(m1)
+    v = tp.live_view(db, NOW)
+    assert [(x["ref_id"], x["no"]) for x in v["items"]] == [(m2, 1)]
+    assert v["headline"].startswith("할 일 1건")

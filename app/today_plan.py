@@ -83,11 +83,15 @@ def _is_overdue(item: PlanItem, now: datetime) -> bool:
 
 
 def collect(storage, now: datetime, last_plan_at: str | None = None, prev_plan: dict | None = None,
-            carry_out: list | None = None) -> tuple[list, list, int]:
+            carry_out: list | None = None, holidays: dict | None = None,
+            upcoming_out: list | None = None) -> tuple[list, list, int]:
     """(할 일 목록, 확정할 일정 목록, 넘쳐서 뺀 수). 할 일 목록은 규칙 순서로 번호가 매겨져 있음.
+    할 일 목록의 일정은 **오늘 것만**. 다음 근무일(금요일이면 월요일)의 확정 일정은 upcoming_out 에 따로 담아 줌
+    (예전엔 내일 일정이 할 일에 섞여 '할 일 N건'에 세어졌음 — 2026-11-16 사용자 제보).
     prev_plan: 지난 정리(없으면 DB 에서 찾음). carry_out: 주면 40건 제한 전 모든 할 일 id 를 담아 줌(다음에 이어 받기용)."""
     today = now.date()
-    t0, t1 = today.isoformat(), (today + timedelta(days=1)).isoformat()
+    t0 = today.isoformat()
+    t1 = next_workday(today, holidays or {}).isoformat()     # 다음 근무일 (미리 보기·확정할 일정 범위)
     states = storage.todo_states()
 
     def hidden(kind, ref_id) -> bool:
@@ -112,13 +116,18 @@ def collect(storage, now: datetime, last_plan_at: str | None = None, prev_plan: 
     state_events = storage.calendar_events_by_ids([ref for k, ref in states if k == "event"])
     link_ids = ([e["id"] for e in events if e["status"] == "confirmed"]
                 + [e["id"] for e in state_events if e["status"] == "confirmed"])
+    upcoming: list[PlanItem] = []
     for e in events:
         if e["status"] == "confirmed":
             if hidden("event", e["id"]):
                 continue
-            items.append(PlanItem(kind="event", ref_id=e["id"], title=e["title"], date=e["date"],
-                                  time=e.get("start_time") or "", end_time=e.get("end_time") or "",
-                                  sender=e.get("msg_sender") or ""))
+            it = PlanItem(kind="event", ref_id=e["id"], title=e["title"], date=e["date"],
+                          time=e.get("start_time") or "", end_time=e.get("end_time") or "",
+                          sender=e.get("msg_sender") or "")
+            if e["date"] > t0:
+                upcoming.append(it)      # 다음 근무일 일정 → 미리 보기 (할 일·번호·건수에 안 넣음)
+            else:
+                items.append(it)
         elif e["status"] == "suggested":
             suggested.append(PlanItem(kind="suggested", ref_id=e["id"], title=e["title"], date=e["date"],
                                       time=e.get("start_time") or "", end_time=e.get("end_time") or "",
@@ -161,10 +170,13 @@ def collect(storage, now: datetime, last_plan_at: str | None = None, prev_plan: 
     ordered = rule_order(items, now)
     overflow = max(0, len(ordered) - MAX_ITEMS)
     ordered = ordered[:MAX_ITEMS]
-    for it in ordered + suggested:
+    upcoming.sort(key=lambda x: (x.date, x.time or "99:99", x.ref_id))
+    for it in ordered + suggested + upcoming:
         it.reason_code = rule_reason(it, now)
         it.reason = reason_text(it, now)
     suggested.sort(key=lambda x: (x.date, x.time or "99:99", x.ref_id))
+    if upcoming_out is not None:
+        upcoming_out.extend(upcoming)
     return ordered, suggested, overflow
 
 
@@ -298,6 +310,24 @@ def headline(items: list, suggested: list, overflow: int, now: datetime) -> str:
     return " · ".join(parts) if items or suggested else "오늘 챙길 일이 없어요"
 
 
+def headline_from_public(items: list, suggested: list, overflow: int, now: datetime) -> str:
+    """화면에 남은 항목(dict)으로 총평을 다시 만듦 (완료·이동 뒤 '할 일 N건' 이 그대로 남지 않게)"""
+    today = now.strftime("%Y-%m-%d")
+    deadlines = sum(1 for x in items if x.get("kind") == "todo"
+                    and (x.get("overdue") or _deadline_parts(x.get("deadline") or "")[0] == today))
+    events = sum(1 for x in items if x.get("kind") == "event" and x.get("date") == today)
+    parts = [f"할 일 {len(items)}건"]
+    if events:
+        parts.append(f"오늘 일정 {events}건")
+    if deadlines:
+        parts.append(f"오늘까지 마감 {deadlines}건")
+    if suggested:
+        parts.append(f"확정할 일정 {len(suggested)}건")
+    if overflow:
+        parts.append(f"그 밖에 {overflow}건")
+    return " · ".join(parts) if items or suggested else "오늘 챙길 일이 없어요"
+
+
 _PUBLIC = ("no", "kind", "ref_id", "title", "date", "time", "end_time", "deadline", "importance",
            "sender", "source", "school", "overdue", "reason_code", "reason")
 
@@ -309,11 +339,22 @@ def _public(it: PlanItem) -> dict:
     return out
 
 
+def upcoming_label(day: str, now: datetime) -> str:
+    """미리 보기 칸 제목: '내일 11/17(화)' 또는 (금요일이면) '다음 근무일 11/23(월)'"""
+    tomorrow = (now.date() + timedelta(days=1)).isoformat()
+    return ("내일 " if day == tomorrow else "다음 근무일 ") + _md(day)
+
+
 def build_plan(storage, now: datetime, slot: str, last_plan_at: str | None = None,
-               prev_plan: dict | None = None) -> dict:
+               prev_plan: dict | None = None, holidays: dict | None = None) -> dict:
     carry: list = []
-    items, suggested, overflow = collect(storage, now, last_plan_at, prev_plan, carry)
+    upcoming: list = []
+    items, suggested, overflow = collect(storage, now, last_plan_at, prev_plan, carry, holidays, upcoming)
+    next_day = next_workday(now.date(), holidays or {}).isoformat()
     return {
+        "upcoming": [_public(it) for it in upcoming],      # 다음 근무일까지의 확정 일정 (할 일 아님)
+        "upcoming_date": next_day,
+        "upcoming_label": upcoming_label(next_day, now),
         "carry_ids": carry,     # 화면엔 안 씀: 40건 넘어 안 보인 할 일도 다음 정리에 이어 받기용
         "slot": slot, "made_at": now_iso(now), "source": "rule",
         "headline": headline(items, suggested, overflow, now),
@@ -324,7 +365,7 @@ def build_plan(storage, now: datetime, slot: str, last_plan_at: str | None = Non
     }
 
 
-def run_plan(storage, now: datetime, slot: str) -> dict | None:
+def run_plan(storage, now: datetime, slot: str, holidays: dict | None = None) -> dict | None:
     """이 회차 정리를 맡아서(두 프로그램이 동시에 해도 한 번만) 만들고 저장. 못 맡으면 None."""
     plan_date = now.strftime("%Y-%m-%d")
     stamp = now_iso(now)
@@ -336,7 +377,7 @@ def run_plan(storage, now: datetime, slot: str) -> dict | None:
     if not storage.claim_plan(plan_date, slot, stamp):
         return None
     try:
-        data = build_plan(storage, now, slot, since, prev_plan=prev or {})
+        data = build_plan(storage, now, slot, since, prev_plan=prev or {}, holidays=holidays)
     except Exception:
         storage.release_plan(plan_date, slot, stamp)   # 다음 확인 때 다시 맡을 수 있게
         raise
@@ -346,13 +387,13 @@ def run_plan(storage, now: datetime, slot: str) -> dict | None:
     return data
 
 
-def live_view(storage, now: datetime) -> dict:
+def live_view(storage, now: datetime, holidays: dict | None = None) -> dict:
     """'오늘' 탭에 보일 것: 오늘 마지막 정리를 바탕으로, 그 뒤 완료·내일로 미룬 것은 빼고 보여 줌.
     정리가 아직 없으면 지금 규칙으로 바로 만들어 보여 줌(저장 안 함)."""
     plan = storage.get_plan(now.strftime("%Y-%m-%d"))
     if not plan:
         since = storage.last_plan_finished_before(now_iso(now)) or now_iso(now - timedelta(days=1))
-        data = build_plan(storage, now, "preview", since)
+        data = build_plan(storage, now, "preview", since, holidays=holidays)
         data["saved"] = False
         return data
     data = dict(plan["data"])
@@ -372,10 +413,30 @@ def live_view(storage, now: datetime) -> dict:
             return False
         return row["status"] == ("suggested" if x.get("kind") == "suggested" else "confirmed")
 
-    data["items"] = [x for x in data.get("items", []) if still_open(x)]
+    items = [x for x in data.get("items", []) if still_open(x)]
+    # 예전(이 수정 전)에 저장한 정리엔 내일 일정이 할 일에 섞여 있음 → 날짜를 보고 미리 보기로 옮김
+    later = [x for x in items if x.get("kind") == "event" and (x.get("date") or "") > t0]
+    items = [x for x in items if x not in later]
+    upcoming = [x for x in data.get("upcoming", []) if still_open(x)]
+    have = {x.get("ref_id") for x in upcoming}
+    upcoming += [x for x in later if x.get("ref_id") not in have]
+    upcoming.sort(key=lambda x: (x.get("date") or "", x.get("time") or "99:99", x.get("ref_id") or 0))
+    if "upcoming_label" not in data:
+        day = upcoming[0]["date"] if upcoming else next_workday(now.date(), holidays or {}).isoformat()
+        data["upcoming_label"] = upcoming_label(day, now)
+    # 번호는 1부터 다시 (완료·이동으로 빈 번호가 생기지 않게), 경고도 새 번호로
+    renum = {}
+    for i, x in enumerate(items, 1):
+        renum[x.get("no")] = i
+        x["no"] = i
+    warns = []
+    for w in data.get("warnings", []):
+        nos = w.get("nos", [])
+        if all(n in renum for n in nos):
+            warns.append({**w, "nos": [renum[n] for n in nos]})
+    data["items"], data["upcoming"], data["warnings"] = items, upcoming, warns
     data["suggested"] = [x for x in data.get("suggested", []) if still_open(x)]
-    keep = {x["no"] for x in data["items"]}
-    data["warnings"] = [w for w in data.get("warnings", []) if all(n in keep for n in w.get("nos", []))]
+    data["headline"] = headline_from_public(items, data["suggested"], int(data.get("overflow") or 0), now)
     data["saved"] = True
     data["finished_at"] = plan.get("finished_at")
     return data

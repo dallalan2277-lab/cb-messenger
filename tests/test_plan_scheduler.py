@@ -179,3 +179,13 @@ def test_toast_follows_notify_scope(tmp_path):
     from app.notify_policy import NotifyPrefs
     assert toast_for(plan, "morning", True, NotifyPrefs(scope="all")) is not None
     assert toast_for(plan, "morning", True, NotifyPrefs(scope="all", sources=("eztalk",))) is None
+
+
+def test_noon_toast_adds_next_workday_line_morning_does_not():
+    plan = {"items": [{"no": 1, "kind": "event", "title": "가상 회의", "reason": "오늘 14:00"}], "suggested": [],
+            "upcoming": [{"kind": "event", "title": "가상 연수"}, {"kind": "event", "title": "가상 행사"}],
+            "upcoming_label": "다음 근무일 11/16(월)"}
+    assert "다음 근무일 일정 2건" in toast_for(plan, "noon", True)[1]
+    assert "다음 근무일 일정 2건" in toast_for(plan, "noon", False)[1]
+    assert "일정 2건" not in toast_for(plan, "morning", True)[1]
+    assert "1건을 정리" in toast_for(plan, "morning", False)[1]          # 미리 보기 일정은 할 일 수에 안 셈

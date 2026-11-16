@@ -262,15 +262,16 @@ class CalendarAPI:
     def today_plan(self) -> dict:
         """'오늘' 탭: 오늘 마지막 정리(완료·미룬 것은 뺌). 정리가 아직 없으면 지금 규칙으로 만든 미리보기."""
         from .. import today_plan as tp
-        return tp.live_view(self._storage, self._now())
+        return tp.live_view(self._storage, self._now(), load_holidays())
 
     @_locked
     def today_plan_run(self) -> dict:
         """[다시 정리] — 지금 자료로 다시 정리해서 저장 (알림은 보내지 않음)"""
         from .. import today_plan as tp
         now = self._now()
-        tp.run_plan(self._storage, now, "manual")
-        return tp.live_view(self._storage, now)
+        holidays = load_holidays()
+        tp.run_plan(self._storage, now, "manual", holidays)
+        return tp.live_view(self._storage, now, holidays)
 
     @staticmethod
     def _todo_kind(kind) -> str:
