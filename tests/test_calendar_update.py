@@ -298,3 +298,55 @@ def test_update_install_keeps_watch_mode(tmp_path, monkeypatch):
 
 def test_update_install_keeps_calendar_only_mode(tmp_path, monkeypatch):
     assert _install_mode(tmp_path, monkeypatch, watching=False) == [False]
+
+
+# ---- 새 버전 Windows 알림: 버전마다 한 번 (0.10.1) ----
+
+def _notify_settings(monkeypatch, quiet=False):
+    monkeypatch.setattr(config, "get_settings", lambda reload=False: SimpleNamespace(
+        update_repo="owner/repo", update_check=True, notify_enabled=True, notify_scope="school",
+        notify_high_only=False, notify_sound=False, notify_quiet=quiet,
+        notify_quiet_start="00:00" if quiet else "22:00", notify_quiet_end="23:59" if quiet else "08:00",
+        notify_preview=False, notify_sources=["eztalk", "mail"]))
+
+
+def _toast_api(tmp_path, monkeypatch, frozen=True):
+    import app.notifier as notifier
+    sent = []
+    monkeypatch.setattr(paths, "FROZEN", frozen)
+    monkeypatch.setattr(notifier, "notify", lambda title, body, sound=False, wait=False: sent.append((title, body)))
+    api = _api(tmp_path)
+    info = SimpleNamespace(version="9.9.9", notes="", html_url="")
+    api._updater = lambda: _updater(lambda *a: info)
+    return api, sent
+
+
+def test_new_version_toast_once_per_version(tmp_path, monkeypatch):
+    _notify_settings(monkeypatch)
+    api, sent = _toast_api(tmp_path, monkeypatch)
+    api.update_check()
+    api._update_cache = None
+    api.update_check()
+    assert len(sent) == 1 and sent[0][0] == "프로그램 업데이트" and "v9.9.9" in sent[0][1]
+    assert api.get_prefs()["update_notified"] == "9.9.9"
+
+
+def test_no_toast_in_dev_mode_or_manual_check(tmp_path, monkeypatch):
+    _notify_settings(monkeypatch)
+    api, sent = _toast_api(tmp_path, monkeypatch, frozen=False)
+    api.update_check()
+    api2, sent2 = _toast_api(tmp_path / "b", monkeypatch)
+    api2.update_check(force=True)                      # [업데이트 확인] 을 직접 누른 것 → 알림 대신 화면 창
+    assert sent == [] and sent2 == []
+
+
+def test_quiet_hours_postpone_toast(tmp_path, monkeypatch):
+    _notify_settings(monkeypatch, quiet=True)
+    api, sent = _toast_api(tmp_path, monkeypatch)
+    api.update_check()
+    assert sent == [] and api.get_prefs()["update_notified"] == ""    # 나중 확인 때 다시 시도
+
+
+def test_update_prefs_keys_are_saved(tmp_path):
+    api = _api(tmp_path)
+    assert api.set_prefs({"update_dismissed": "9.9.9"})["update_dismissed"] == "9.9.9"

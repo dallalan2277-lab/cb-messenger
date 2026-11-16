@@ -176,6 +176,10 @@
   .item .acts .btn { padding: 3px 8px; font-size: 11px; }
   .plan-head { font-size: 13px; color: var(--text); line-height: 1.45; }
   .plan-meta { font-size: 11px; color: var(--faint); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .upd-banner { display: flex; align-items: center; gap: 8px; padding: 6px 10px; margin: 0 0 6px; border-radius: 9px;
+    background: var(--panel); border: 1px solid var(--accent, #4c8dff); font-size: 12px; }
+  .upd-banner[hidden] { display: none; }
+  .upd-banner span { flex: 1; }
   .plan-up .prow { opacity: .72; }
   .plan-up .pno { background: transparent; border: 1px solid var(--faint); color: var(--dim); }
   .plan-up h3 { font-weight: 500; }
@@ -394,6 +398,11 @@
 </head>
 <body>
 <div class="frame" id="frame">
+  <div class="upd-banner" id="updBanner" hidden>
+    <span id="updBannerText">새 버전이 있어요</span>
+    <button class="btn okc" id="updBannerGo" type="button">지금 설치</button>
+    <button class="btn ghost" id="updBannerLater" type="button">나중에</button>
+  </div>
   <div class="top" id="dragbar">
     <button class="btn icon" id="prev" title="이전 달">‹</button>
     <div class="title" id="title"></div>
@@ -824,6 +833,10 @@ function applyUpdateStatus(result) {
   $("updateBtn").innerHTML = r.available
     ? `⬆ 새 버전 설치하기<span class="md">${esc(versionText(r.current))} → ${esc(versionText(r.latest))}</span>`
     : `업데이트 확인<span class="md">현재 ${esc(versionText(r.current))}</span>`;
+  // 새 버전마다 한 번: 달력 위 안내 띠 ([나중에] 누른 버전은 다시 안 띄움, ⚙ 메뉴·노란 점은 그대로)
+  const show = !!r.available && (prefs.update_dismissed || "") !== r.latest;
+  $("updBanner").hidden = !show;
+  if (show) $("updBannerText").textContent = `새 버전 ${versionText(r.latest)} 이 있어요. (지금 ${versionText(r.current)})`;
 }
 async function checkForUpdateSilently() {
   if (!api || typeof api.update_check !== "function") {
@@ -1947,6 +1960,11 @@ function bindUI() {
   $("theme").onclick = () => setPref({ theme: prefs.theme === "light" ? "dark" : "light" });
   if (typeof api.update_check === "function") $("updateBtn").onclick = checkOrOpenUpdate;
   else $("updateBtn").style.display = "none";
+  $("updBannerGo").onclick = () => { $("updBanner").hidden = true; if (updateInfo) openUpdateDialog(updateInfo); else checkOrOpenUpdate(); };
+  $("updBannerLater").onclick = async () => {
+    $("updBanner").hidden = true;
+    if (updateInfo && updateInfo.latest) await setPref({ update_dismissed: updateInfo.latest });
+  };
   $("importBtn").onclick = () => { $("menu").classList.remove("on"); startImport(); };
   $("importUndoBtn").onclick = () => { $("menu").classList.remove("on"); confirmUndoImport(prefs.last_import); };
   $("impUndoNow").onclick = () => { $("impUndoBar").classList.remove("on"); confirmUndoImport(lastImportDone); };

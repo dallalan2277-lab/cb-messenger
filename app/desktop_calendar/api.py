@@ -75,6 +75,8 @@ DEFAULT_PREFS = {
     "calendar_lines": 6,       # expanded 일 때 칸마다 보일 줄 수: 4 | 6 | 8
     "calendar_row_px": 0,      # custom 일 때 한 주(줄)의 높이(px, 40~600). 0 = 아직 안 정함
     "last_import": None,     # 마지막으로 파일에서 가져온 묶음 {batch, name, count, at} — 되돌리기용
+    "update_notified": "",   # Windows 알림을 이미 띄운 새 버전 (버전마다 한 번만)
+    "update_dismissed": "",  # 달력 위 '새 버전' 안내 띠에서 [나중에] 누른 버전 (그 버전은 다시 안 띄움)
 }
 
 
@@ -411,7 +413,30 @@ class CalendarAPI:
 
         self._update_info = info
         self._update_cache = (time.time(), dict(result), info)
+        if result["available"] and not force:
+            self._update_toast_once(settings, result["latest"])
         return result
+
+    def _update_toast_once(self, settings, latest: str) -> bool:
+        """새 버전마다 Windows 알림 한 번 (설치판에서만). 알림 꺼짐·방해금지면 지금은 안 보내고 다음 확인 때 다시 봄."""
+        try:
+            from .. import paths
+            if not paths.FROZEN or self.get_prefs().get("update_notified") == latest:
+                return False
+            from datetime import datetime
+            from ..notify_policy import SEOUL, NotifyPrefs, in_quiet
+            prefs = NotifyPrefs.from_settings(settings)
+            if not prefs.enabled or in_quiet(prefs, datetime.now(SEOUL)):
+                return False
+            from ..notifier import notify
+            notify("프로그램 업데이트",
+                   f"새 버전 v{str(latest).lstrip('v')} 이 있어요. 캘린더 ⚙ 메뉴의 '새 버전 설치하기'로 설치할 수 있어요.",
+                   sound=prefs.sound)
+            self.set_prefs({"update_notified": latest})
+            return True
+        except Exception:  # noqa: BLE001  (알림 실패가 업데이트 확인을 막지 않게)
+            log.warning("업데이트 알림을 띄우지 못했습니다.", exc_info=True)
+            return False
 
     def update_install(self) -> dict:
         """최신 설치 파일을 받고 설치를 시작한 뒤 캘린더를 안전하게 종료한다."""
