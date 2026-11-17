@@ -148,6 +148,7 @@ def parse_view(texts):
             skip = set(range(to_i, to_end))
         if notice is not None:
             start = notice + 1
+        skip |= _attachment_rows(texts, start)
         pool = [t for i, t in enumerate(texts) if i >= start and i not in skip and not (
                     t.startswith("※") or _is_label(t) or t == sender_raw or t == ev["time"]
                     or t == title or TIME_ONLY_RE.match(t) or re.sub(r"^[-–—·\s]+", "", t) in profile)]
@@ -160,13 +161,61 @@ def parse_view(texts):
                 break
         if not body and pool:
             body = max(pool, key=len)
-        ev["body"] = body
+        ev["body"] = _untruncate(body, texts, title)
         # 본문과 본문의 줄별 조각 속 '보안 점검 안내' 등은 보안 쪽지 표시가 아니므로 제외
         # (Monday 원본은 본문 덩어리만 빼서, 조각 줄에 '보안'이 있으면 보안 쪽지로 잘못 판단했음)
         nb = norm(body)
         ev["why"] = secure_why([t for t in texts if not (nb and norm(t) and norm(t) in nb)])
         ev["secure"] = bool(ev["why"])
     return _finish(ev)
+
+
+ATTACH_SIZE_RE = re.compile(r"\(\s*[\d.,]+\s*(?:B|KB|MB|GB)\s*\)", re.I)
+ATTACH_UNTIL_RE = re.compile(r"^~\s*\d{2,4}\s*[./년]")
+ATTACH_FILE_RE = re.compile(r"\.[A-Za-z0-9]{2,5}$")
+ATTACH_BUTTONS = {"첨부파일", "전체 다운로드", "전체다운로드", "저장", "열기"}
+
+
+def _attachment_rows(texts, start):
+    """'첨부파일' 칸(파일 이름·크기·'~ 받기 기한'·버튼 이름) 의 줄 번호들 — 본문이 아님.
+    (파일 줄 다음에 파일 이름만 한 번 더 나와서, 본문 고르는 규칙이 이 줄을 본문으로 착각했었음)"""
+    head = next((i for i in range(start, len(texts)) if texts[i] == "첨부파일"), None)
+    if head is None:
+        return set()
+    rows = {head}
+    for i in range(head + 1, len(texts)):
+        t = texts[i]
+        if (t in ATTACH_BUTTONS or ATTACH_SIZE_RE.search(t) or ATTACH_UNTIL_RE.match(t)
+                or (ATTACH_FILE_RE.search(t) and len(t) <= 150)):
+            rows.add(i)
+        else:
+            break
+    return rows
+
+
+def _untruncate(body, texts, title=""):
+    """본문 덩어리가 중간에서 잘리거나(긴 쪽지) 글머리표 목록이 빠진 채 읽히면, 뒤따르는 줄 조각들을 이어 붙여 본문 전체를 만듦.
+    조각들을 이은 글이 덩어리와 같은 글로 시작하고 더 길 때만 바꿈 (빠진 게 없으면 덩어리를 그대로 씀)."""
+    if not body or body not in texts:
+        return body
+    norm = lambda x: re.sub(r"\s+", "", x)  # noqa: E731
+    nb = norm(body).rstrip("…").rstrip(".")
+    frags = []
+    for t in texts[texts.index(body) + 1:]:
+        if t.startswith("※") or _is_label(t):  # 본문 뒤 안내문·머리글은 본문 조각이 아님
+            break
+        frags.append(t)
+    joined = norm("".join(frags))
+    if len(nb) < 10:
+        return body
+    nt = norm(title)
+    if not joined.startswith(nb) and nt and nb.startswith(nt) and not joined.startswith(nt):
+        joined, frags = nt + joined, [title] + frags  # 제목 조각이 덩어리 맨 앞에만 있고 조각 목록에선 빠진 경우
+    # 덩어리가 잘렸거나(조각이 덩어리로 시작) 글머리표 목록(•일시·장소)이 빠졌을 때(덩어리 끝부분이 조각 안에 있음)
+    covers = joined.startswith(nb) or nb[-15:] in joined
+    if len(joined) <= len(nb) + 5 or not joined.startswith(nb[:20]) or not covers:
+        return body
+    return " ".join(frags).strip()
 
 
 def _finish(ev):
