@@ -5,25 +5,23 @@
 - Codex 결과는 그대로 쓰지 말고 직접 검토한 뒤 통합한다.
 - 큰 변경 후에는 /codex:review로 교차 리뷰를 받는다.
 
-## Codex 위임 시 모델·사고 수준 (2026-11-09 개정: 성능 우선)
-사용자 방침(2026-11-10): 평소에는 6.1 Terra를 적극적으로, 어려운 문제는 6.1 Sol. 사고 수준은 max(2026-11-14 개정: ultra는 실측에서 생각 토큰이 거의 안 쓰여 제대로 작동하지 않는다고 판단).
-- **gpt-6.1-terra — 상시 작업·검증 (기본값, 적극 사용)**: 사양이 분명한 구현, 코드 리뷰, 테스트 작성·실행, 회귀 버그 탐지,
-  증상이 분명한 버그 수정. 망설여지면 Terra로 먼저 맡긴다.
-  codex:codex-rescue에 `--model gpt-6.1-terra`를 붙인다. 평소 리뷰도 rescue에 "읽기 전용 리뷰"로 맡긴다.
-  Terra 결과는 엣지 케이스(음수·빈 값, 날짜 경계, 경로 인코딩, 한글 경로 등)를 따로 확인한다.
-- **gpt-6.1-sol — 어려운 문제만 재검증**: Terra로 해결되지 않는 오류, 복잡한 원인 분석, 중요 변경 검토
-  (인증·토큰, 보안·개인정보, 데이터 마이그레이션, 여러 파일에 걸친 구조 변경 등).
-  rescue에 `--model gpt-6.1-sol`을 붙인다. `/codex:review`·`/codex:adversarial-review`는 모델을 고를 수 없고
-  config 기본값으로 돈다. 2026-11-15부터 config 기본 모델은 **모든 PC에서 Terra**(sync.ps1이 맞춤)이므로
-  이 명령들은 Terra 검토다. 중요 변경을 Sol로 검토할 때는 rescue에 `--model gpt-6.1-sol`을 붙여 "읽기 전용 리뷰"로 맡긴다.
-- Terra 결과가 두 번 이상 실패하거나 원인이 불분명하면 6.1 Sol로 올린다.
-- gpt-5.6-sol / gpt-5.6-terra — 사용자가 지정할 때만.
-- **gpt-6-luna — 사용 금지.** 사용자가 이름을 콕 집어 요청할 때만 쓴다. "보조 리뷰", "가벼운 작업", "병렬로 여러 개" 같은 이유로 고르지 않는다.
-- 사고 수준(effort): **`--effort`를 붙이지 않는다.** `~/.codex/config.toml`의 기본값이 `max`라서, 비워 두면 max로 돈다.
-  codex 플러그인(codex-companion)은 `--effort`로 xhigh까지만 받으므로, `--effort xhigh`·`high` 등을 붙이면 오히려 max보다 낮아진다.
-  `max`/`ultra`를 `--effort`로 넘기면 플러그인이 오류를 낸다 → 넘기지 말 것.
-  플러그인 없이 한 번만 다른 노력도로 돌릴 때는 `codex exec -c model_reasoning_effort=<값>` (2026-11-14 비교: T010 검토 ultra 88초·생각 549토큰·4건, max 408초·13,850토큰·6건).
-- gpt-6.1-*를 못 쓰는 계정(예: 학교 PC)에서는 6.1 Sol 대신 `gpt-6-astra`, 6.1 Terra 대신 `gpt-5.6-terra` (config 기본 모델은 `gpt-5.6-terra`, 사고 수준은 config 기본값 max).
+## Codex 위임 시 모델·사고 수준 (2026-11-18 개정: 6.2 출시)
+사용자 방침(2026-11-18): **항상 6.2 Sol + 사고 수준 max가 기본.** 어려운 문제 재검증만 6.2 Astra + xhigh.
+- **gpt-6.2-sol (max) — 기본값, 모든 위임 작업**: 구현, 코드 리뷰, 테스트 작성·실행, 회귀 버그 탐지, 버그 수정, 중요 변경 검토
+  (인증·토큰, 보안·개인정보, 데이터 마이그레이션, 여러 파일 구조 변경 포함).
+  codex:codex-rescue에 `--model gpt-6.2-sol`을 붙이고 **`--effort`는 붙이지 않는다** (`~/.codex/config.toml` 기본값 max로 돈다).
+  평소 리뷰도 rescue에 "읽기 전용 리뷰"로 맡긴다. `/codex:review`·`/codex:adversarial-review`는 모델을 고를 수 없고
+  config 기본값으로 도는데, config 기본 모델이 **gpt-6.2-sol + max**(sync.ps1이 맞춤)이므로 이 명령들도 6.2 Sol max 검토다.
+  결과는 엣지 케이스(음수·빈 값, 날짜 경계, 경로 인코딩, 한글 경로 등)를 따로 확인한다.
+- **gpt-6.2-astra (xhigh) — 어려운 문제 재검증만**: 6.2 Sol로 두 번 이상 풀리지 않는 오류, 원인이 불분명한 문제,
+  Sol 결과를 한 번 더 확인해야 하는 중요 변경. rescue에 `--model gpt-6.2-astra --effort xhigh`를 붙인다
+  (Astra는 max가 아니라 xhigh. 플러그인은 `--effort`로 xhigh까지 받는다).
+- 사고 수준: `max`/`ultra`를 `--effort`로 넘기면 플러그인이 오류를 낸다 → 넘기지 말 것. ultra는 실측에서 생각을 거의 안 해서 쓰지 않는다(2026-11-14).
+  플러그인 없이 한 번만 다른 노력도로 돌릴 때는 `codex exec -c model_reasoning_effort=<값>`.
+- 6.2는 **최신 Codex CLI**가 필요하다 (0.167·0.169.1은 됨, 0.154에서는 "not supported when using Codex with a ChatGPT account" 오류, 2026-11-18 확인).
+  이 오류가 나면 먼저 `codex --version` 확인 → 옛 버전이면 사용자에게 묻고 `codex update` (Git Bash가 아니라 PowerShell에서).
+- 그 밖의 모델(gpt-6.1-*, gpt-6-astra, gpt-5.6-*)은 사용자가 지정할 때만. 6.2를 정말 못 쓰는 계정이면 사용자에게 알리고 어떤 모델로 할지 묻는다.
+- **gpt-6-luna — 사용 금지.** 사용자가 이름을 콕 집어 요청할 때만 쓴다.
 - 프로젝트 폴더의 CLAUDE.md에 다른 기준이 있으면 그쪽을 우선한다.
 참고: C:\Users\JWK\projects\test\codex-bench\RESULTS.md (2026-11-08, sol이 견고성·검증 점수 최고, luna는 가장 느리고 회귀 테스트 격리가 약했음)
 

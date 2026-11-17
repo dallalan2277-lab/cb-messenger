@@ -1,6 +1,6 @@
 # Sync per-PC settings from this repo into the current user's profile.
 #   1) ~/.claude/CLAUDE.md : block between markers <- pc-settings/claude-global.md
-#   2) ~/.codex/config.toml: top-level model (gpt-6.1-terra) + model_reasoning_effort = "max"
+#   2) ~/.codex/config.toml: top-level model (gpt-6.2-sol) + model_reasoning_effort = "max"
 #   3) ~/.codex/AGENTS.md  : block between markers <- pc-settings/codex-global.md
 # Runs at Claude Code session start (.claude/settings.json) and from 9_*.bat.
 # Writes only when something differs. Keeps a one-time .bak before the first change.
@@ -84,16 +84,25 @@ try {
             elseif ($lines[$i] -match '^\s*model_reasoning_effort\s*=') { $effortIdx = $i }
         }
 
-        # Model: gpt-6.1-terra, unless this account cannot use it (then gpt-5.6-terra).
-        # (2026-11-15: default is Terra on every PC. Sol is used only by naming it with --model.)
-        $wantModel = 'gpt-6.1-terra'
+        # Model: gpt-6.2-sol + max on every PC (2026-11-18 user decision).
+        # Hard problems use gpt-6.2-astra + xhigh, chosen per call with --model/--effort (not here).
+        # Fallback to gpt-5.6-terra only when Codex's model list has no gpt-6.2-sol at all.
+        $wantModel = 'gpt-6.2-sol'
         $cache = Join-Path $codexDir 'models_cache.json'
-        if ($curModel -eq 'gpt-5.6-terra' -or $curModel -eq 'gpt-6-astra') {
-            $wantModel = 'gpt-5.6-terra'
-        } elseif (Test-Path -LiteralPath $cache) {
+        if (Test-Path -LiteralPath $cache) {
             $c = [IO.File]::ReadAllText($cache, $utf8)
-            if (-not $c.Contains('"gpt-6.1-terra"') -and $c.Contains('"gpt-5.6-terra"')) { $wantModel = 'gpt-5.6-terra' }
+            if (-not $c.Contains('"gpt-6.2-sol"') -and $c.Contains('"gpt-5.6-terra"')) { $wantModel = 'gpt-5.6-terra' }
         }
+
+        # gpt-6.2 needs a recent Codex CLI (0.167+ worked) (0.154 is rejected by the server). Warn only; never auto-update.
+        try {
+            $verOut = (& codex --version 2>$null | Out-String)
+            if ($verOut -match '(\d+)\.(\d+)\.(\d+)') {
+                if ([int]$Matches[1] -eq 0 -and [int]$Matches[2] -lt 167) {
+                    $warnings.Add("Codex CLI is too old for gpt-6.2 ($($verOut.Trim())). Run 'codex update' in PowerShell.")
+                }
+            }
+        } catch {}
 
         $modelLine = "model = `"$wantModel`""
         $effortLine = 'model_reasoning_effort = "max"'

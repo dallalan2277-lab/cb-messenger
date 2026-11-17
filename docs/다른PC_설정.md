@@ -18,15 +18,16 @@ GitHub 로 직접 옮겨지지 않습니다. 그래서 **원본을 이 저장소
 
 | PC 의 파일 | 내용 | 원본 |
 |---|---|---|
-| `C:\Users\(이름)\.claude\CLAUDE.md` | Codex 위임 규칙 (6.1 Terra 상시 작업·검증, 6.1 Sol 어려운 문제, luna 금지, `--effort` 안 붙이기) | `pc-settings/claude-global.md` |
-| `C:\Users\(이름)\.codex\config.toml` | 맨 위 `model = "gpt-6.1-terra"`, `model_reasoning_effort = "max"` | `pc-settings/sync.ps1` |
+| `C:\Users\(이름)\.claude\CLAUDE.md` | Codex 위임 규칙 (기본은 6.2 Sol + max, 어려운 문제 재검증만 6.2 Astra + xhigh, luna 금지) | `pc-settings/claude-global.md` |
+| `C:\Users\(이름)\.codex\config.toml` | 맨 위 `model = "gpt-6.2-sol"`, `model_reasoning_effort = "max"` | `pc-settings/sync.ps1` |
 | `C:\Users\(이름)\.codex\AGENTS.md` | Codex 공통 규칙 (쉬운 한국어, 개인정보 금지, 사용량 아끼기: 보조 에이전트 안 쓰기·필요한 부분만 읽기·전체 테스트는 마지막에 한 번) | `pc-settings/codex-global.md` |
 
 - 각 GitHub 저장소 맨 위의 `AGENTS.md` 는 그 저장소 전용 규칙입니다. Codex(웹·클라우드 포함)가 저장소를 열면 자동으로 읽습니다.
 
 - CLAUDE.md 는 표시 줄(`cb-messenger-ai pc-settings BEGIN` ~ `END`) 사이만 바꿉니다. 그 밖에 직접 적은 내용은 그대로 둡니다.
 - config.toml 은 위 두 줄만 바꾸고 나머지 설정은 그대로 둡니다.
-- **학교 PC** 처럼 `gpt-6.1-*` 를 못 쓰는 계정이면 자동으로 `gpt-5.6-terra` 로 넣습니다 (Codex 의 모델 목록에 6.1 Terra 가 없을 때). 예전에 `gpt-6-astra` 로 맞춰 둔 PC 도 `gpt-5.6-terra` 로 바뀝니다.
+- Codex 의 모델 목록에 `gpt-6.2-sol` 이 아예 없는 계정이면 `gpt-5.6-terra` 로 넣습니다.
+- **6.2 는 최신 Codex 명령 프로그램이 필요합니다** (0.169.1 에서 확인). 옛 버전(예: 0.154)이면 "not supported when using Codex with a ChatGPT account" 오류가 납니다. 동기화 때 `Codex CLI is too old` 경고가 보이면 **PowerShell** 창에서 `codex update` 를 실행하세요 (Git Bash 에서 하면 압축 풀기가 실패합니다). "파일을 다른 프로세스가 사용 중" 오류가 나면 한 번 더 실행하면 됩니다.
 - 처음 바꿀 때 원래 파일을 `.bak` 으로 한 번 남겨 둡니다.
 - config.toml 에 사고 수준(max)이 없으면 Claude 가 Codex 를 부를 때 사고 수준이 가장 낮은 `low` 로 돕니다. 꼭 맞춰 두세요.
 

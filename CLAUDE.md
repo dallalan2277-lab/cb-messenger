@@ -82,12 +82,12 @@ app/paths.py                실행 위치·자료 위치. 개발: 저장소 폴�
 - 공휴일(`holidays_kr.json`)은 기억으로 넣지 말고 월력요항 등 출처를 확인해서 추가.
 
 ## Codex(GPT) 위임 기준 (이 프로젝트)
-공통 규칙(Claude 총괄, 모델 고르기 Terra/Sol, `--effort` 안 붙이기 등)은 `~/.claude/CLAUDE.md` 의 pc-settings 구역에 있음.
+공통 규칙(Claude 총괄, 기본 6.2 Sol + max·어려운 문제 재검증 6.2 Astra + xhigh 등)은 `~/.claude/CLAUDE.md` 의 pc-settings 구역에 있음.
 - 원본은 저장소 `pc-settings/claude-global.md`(Claude 용)·`codex-global.md`(Codex 용). `pc-settings/sync.ps1`(= `9_PC설정맞추기.bat`, Claude Code 시작 때 SessionStart hook 으로 자동 실행)이 `~/.claude/CLAUDE.md`·`~/.codex/AGENTS.md` 의 표시 구역과 `~/.codex/config.toml` 맨 위(모델·사고 수준)를 맞춤. 자세한 것은 `docs/다른PC_설정.md`.
 - 규칙을 바꿀 때는 원본을 고치고 sync 실행 후 커밋 (`~/.claude/CLAUDE.md` 를 직접 고치면 다음 동기화 때 덮어써짐). `[pc-settings]` 로 시작하는 줄이 보이면 바뀐 내용을 사용자에게 쉬운 말로 알릴 것.
 - 저장소 맨 위 `AGENTS.md` 는 Codex 용 짧은 안내. 이 문서의 규칙을 크게 바꾸면 그 요약도 맞출 것.
-- 이 프로젝트의 **중요 변경(→ 6.1 Sol 검토)**: 로그인·토큰(`llm/chatgpt_auth.py`·`chatgpt_plan_provider.py`), IMAP·디코딩(`collectors/naver_mail.py`·`mail_content.py`), `redact.py`, `secrets_store.py`, `analyzer.py` 의 근거 확인·글 속 지시 무시, `storage.py` 마이그레이션. 그 밖의 분명한 구현·테스트(`calendar.html`·`api.py`·`ics_export.py` 등)는 6.1 Terra.
-- 학교 PC 계정은 `gpt-6.1-*` 를 못 씀 → 6.1 Sol 대신 `gpt-6-astra`, 6.1 Terra 대신 `gpt-5.6-terra`.
+- 이 프로젝트의 **중요 변경(→ 6.2 Sol 검토, 필요하면 6.2 Astra xhigh 로 재검증)**: 로그인·토큰(`llm/chatgpt_auth.py`·`chatgpt_plan_provider.py`), IMAP·디코딩(`collectors/naver_mail.py`·`mail_content.py`), `redact.py`, `secrets_store.py`, `analyzer.py` 의 근거 확인·글 속 지시 무시, `storage.py` 마이그레이션. 그 밖의 분명한 구현·테스트(`calendar.html`·`api.py`·`ics_export.py` 등)도 6.2 Sol.
+- 6.2 는 최신 Codex CLI 필요 (0.169.1 확인, 옛 0.154 에서는 "not supported" 오류 → PowerShell 에서 `codex update`).
 - Codex 플러그인 팁: 긴 한국어 지시문은 파일로 쓰고 `task --prompt-file <파일>` 로 (직접 넘기면 따옴표 때문에 셸 오류). 작업 두 개를 같은 순간에 시작하면 브로커가 충돌 → 몇 초 띄워서. `review --model <모델>` 로 검토 모델 지정 가능.
 - **위임하지 않음 (Claude 가 직접 + 사용자 PC 확인)**: `eztalk_collector.py`·`eztalk_parse.py`(실제 메신저 창 구조는 사용자 PC 에서만 확인 가능), `desktop_calendar/widget.py`(Win32 창 동작), tkinter 화면 모양, 설계 규칙·분석 스키마 변경 결정.
 - **Codex 에 넘기지 않을 것**: 실제 쪽지·메일 원문, `.env`, `data/`(DB·쪽지기록), `messenger-check --raw` 출력, 토큰·비밀번호. 넘기면 OpenAI 서버로 전송됨 → 재현이 필요하면 가상 예시로 바꿔서.

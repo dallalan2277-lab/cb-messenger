@@ -14,6 +14,7 @@
 - **0.10.1** (2026-11-16): 새 버전이 있으면 달력 위 안내 띠([지금 설치]/[나중에], 버전마다 한 번) + Windows 알림 '프로그램 업데이트'(설치판에서만, 버전마다 한 번, 알림 꺼짐·방해금지면 다음 확인 때). prefs `update_notified`·`update_dismissed`. 화면 JS 문법 검사 테스트(`tests/test_html_js_syntax.py`, node 있을 때만). ※ 0.10.0 사용자에겐 이 안내가 없어 0.10.1 은 노란 점으로만 보임 — 다음 버전부터 안내.
 - **0.10.2** (2026-11-17, 정식 배포): 쪽지 보기 창에서 첨부파일 줄을 본문으로 고르던 문제 수정(첨부파일 칸 제외) + 본문 덩어리가 잘리거나 글머리표 목록(일시·장소)이 빠져 읽히면 줄 조각으로 다시 만듦 (`eztalk_parse._attachment_rows`·`_untruncate`, 테스트 4개). 시험판 beta.1 설치 확인 후 정식. 아르곤(브릿지 T002)은 규칙상 커밋 불가 → 커밋·배포는 Claude 가 함. ※ Claude Code 셸에서 release.bat 을 돌릴 땐 `NoDefaultCurrentDirectoryInExePath` 환경 변수를 지워야 build.bat 을 찾음.
 - **남은 것**: 실사용 문제 제보 받기. 후보: 아직 반영 안 한 Gemini 과제 제안 (1a) live_view 가 일정 최신 제목·시각 다시 읽기, (1b) dup_of 제안 무시 처리·토스트, (2) 상대 날짜 정규식, (3) 사례표 테스트.
+- **2026-11-18 Codex 위임 모델 변경** (프로그램의 쪽지·메일 분석 모델은 그대로): 기본 `gpt-6.2-sol` + max, 어려운 문제 재검증만 `gpt-6.2-astra` + `--effort xhigh`. `pc-settings/claude-global.md`·`sync.ps1`·`docs/다른PC_설정.md` 수정. 6.2 는 최신 Codex CLI 필요(0.154 안 됨, 0.169.1 확인) → 이 PC 는 0.154 → 0.169.1 로 `codex update` (PowerShell 에서; Git Bash 에서는 tar 오류). 다른 PC 도 `git pull` 후 동기화 때 'Codex CLI is too old' 경고가 나오면 업데이트.
 - 사용자 지시: **설치 파일 배포·GitHub 올리기는 사용자가 말할 때만.**
 - 관련 기록: 지난기록 `2-14`(능동 비서·중복 제안), `2-17`(오늘 할 일), `2-18`(AI 생략 키워드), `2-19`(Codex 검토 반영).
 
