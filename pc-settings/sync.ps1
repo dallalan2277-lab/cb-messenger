@@ -1,6 +1,6 @@
 # Sync per-PC settings from this repo into the current user's profile.
 #   1) ~/.claude/CLAUDE.md : block between markers <- pc-settings/claude-global.md
-#   2) ~/.codex/config.toml: top-level model + model_reasoning_effort = "ultra"
+#   2) ~/.codex/config.toml: top-level model (gpt-6.1-terra) + model_reasoning_effort = "max"
 #   3) ~/.codex/AGENTS.md  : block between markers <- pc-settings/codex-global.md
 # Runs at Claude Code session start (.claude/settings.json) and from 9_*.bat.
 # Writes only when something differs. Keeps a one-time .bak before the first change.
@@ -84,18 +84,19 @@ try {
             elseif ($lines[$i] -match '^\s*model_reasoning_effort\s*=') { $effortIdx = $i }
         }
 
-        # Model: gpt-6.1-sol, unless this account cannot use it (then gpt-6-astra).
-        $wantModel = 'gpt-6.1-sol'
+        # Model: gpt-6.1-terra, unless this account cannot use it (then gpt-5.6-terra).
+        # (2026-11-15: default is Terra on every PC. Sol is used only by naming it with --model.)
+        $wantModel = 'gpt-6.1-terra'
         $cache = Join-Path $codexDir 'models_cache.json'
-        if ($curModel -eq 'gpt-6-astra') {
-            $wantModel = 'gpt-6-astra'
+        if ($curModel -eq 'gpt-5.6-terra' -or $curModel -eq 'gpt-6-astra') {
+            $wantModel = 'gpt-5.6-terra'
         } elseif (Test-Path -LiteralPath $cache) {
             $c = [IO.File]::ReadAllText($cache, $utf8)
-            if (-not $c.Contains('"gpt-6.1-sol"') -and $c.Contains('"gpt-6-astra"')) { $wantModel = 'gpt-6-astra' }
+            if (-not $c.Contains('"gpt-6.1-terra"') -and $c.Contains('"gpt-5.6-terra"')) { $wantModel = 'gpt-5.6-terra' }
         }
 
         $modelLine = "model = `"$wantModel`""
-        $effortLine = 'model_reasoning_effort = "ultra"'
+        $effortLine = 'model_reasoning_effort = "max"'
         $before = ($lines -join "`n")
 
         if ($effortIdx -ge 0) { $lines[$effortIdx] = $effortLine } else { $lines.Insert(0, $effortLine); if ($modelIdx -ge 0) { $modelIdx++ } }
@@ -106,7 +107,7 @@ try {
             $out = ($lines -join $nl)
             if (-not $out.EndsWith($nl)) { $out += $nl }
             [IO.File]::WriteAllText($cfg, $out, $utf8)
-            $changes.Add("~/.codex/config.toml set to $wantModel + ultra")
+            $changes.Add("~/.codex/config.toml set to $wantModel + max")
         }
     }
 } catch {

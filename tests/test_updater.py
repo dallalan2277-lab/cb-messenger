@@ -193,6 +193,15 @@ def test_latest_ignores_drafts_and_prereleases(flag):
         assert updater.check_latest(REPO, "0.7.0", http=client) is None
 
 
+@pytest.mark.parametrize("current", ["0.9.0", "0.10.0-beta.1"])
+def test_latest_ignores_prerelease_tag_without_flag(current):
+    payload = _release(tag_name="v0.10.0-beta.2", assets=[])
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
+    ) as client:
+        assert updater.check_latest(REPO, current, http=client) is None
+
+
 def test_latest_404_message():
     with httpx.Client(
         transport=httpx.MockTransport(lambda request: httpx.Response(404))

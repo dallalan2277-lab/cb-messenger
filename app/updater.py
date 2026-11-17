@@ -146,6 +146,9 @@ def check_latest(
             if release.get("draft") or release.get("prerelease"):
                 return None
             tag = release.get("tag_name")
+            if _is_prerelease(tag):
+                # 'pre-release' 표시를 깜빡한 시험판 태그(v0.10.0-beta.1)도 정식 업데이트로 내보내지 않음
+                return None
             if not is_newer(tag, current):
                 return None
             assets = release.get("assets", [])

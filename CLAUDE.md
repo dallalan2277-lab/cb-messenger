@@ -1,12 +1,19 @@
 # CLAUDE.md — 충북메신저 AI 비서 (cb-messenger-ai)
 
-Claude Code 가 이 저장소에서 작업할 때 먼저 읽는 문서입니다. 더 자세한 진행 기록은 `HANDOFF.md`, 사용자용 안내는 `README.md`.
+Claude Code 가 이 저장소에서 작업할 때 자동으로 읽는 문서입니다. **오래 지켜야 할 규칙만** 둡니다 (매 세션 읽히므로 짧게).
 Claude Code 는 이 폴더(`cb-messenger-ai/`, 저장소 맨 위)에서 열 것.
 
+## 문서 역할 (세션을 새로 열어도 이어지게)
+- `CLAUDE.md`(이 문서): 규칙·구조·주요 결정. 진행 상황은 적지 않음.
+- `HANDOFF.md`: **지금 상태와 다음 할 일만.** 새 세션은 이것부터 읽고 시작. 작업을 마치면 맨 위 '▶ 다음에 이어서 할 일'을 고쳐 씀.
+- `docs/HANDOFF_지난기록.md`: 끝난 작업의 자세한 기록(원인·고친 방법). 평소엔 읽지 않고, 필요한 절(`2-N`)만 검색. 새 기록은 맨 끝에 `2-N` 절로 추가.
+- 한 세션에는 한 가지 작업만. 끝나면 HANDOFF 를 갱신하고 새 세션으로 (긴 세션은 사용량이 빨리 닳음).
+- Claude Code 의 컴퓨터별 자동 기억은 다른 PC 로 안 옮겨짐 → 이 프로젝트에 필요한 것은 위 문서에 적을 것.
+
 ## 여러 컴퓨터에서 작업 (GitHub)
-- 작업 시작 전 `git pull`, 끝나면 `git add .` → `git commit` → `git push`.
+- 작업 시작 전 `git pull`, 끝나면 커밋·push (커밋·push 는 사용자가 요청할 때).
 - 컴퓨터마다 따로 해야 하는 것 (GitHub 로 안 옮겨짐): Python 3.10+ 설치 (3.10.6 에서 확인됨, 3.11 전용 문법 쓰지 말 것), `1_설치하기.bat`(.venv), `.env` 값, ChatGPT 로그인, 네이버 메일 연결, `data/`(DB·쪽지 기록).
-- 진행 상황·결정은 이 문서와 `HANDOFF.md` 에 적어 둘 것 (Claude Code 의 컴퓨터별 기억은 다른 PC 로 안 옮겨짐).
+- 새 기능은 feature 브랜치 + GitHub pre-release(시험판)로 먼저. main 머지·정식 latest 배포는 사용자 승인 후. 설치 파일·배포는 사용자가 말할 때만.
 
 ## 사용자
 - 충청북도교육청 소속 교사. **비개발자**. 대화와 설명은 **한국어로, 쉬운 말로**. 전문 용어는 풀어서 설명.
@@ -17,27 +24,7 @@ Claude Code 는 이 폴더(`cb-messenger-ai/`, 저장소 맨 위)에서 열 것.
 ## 목표
 충북소통메신저 쪽지 + 네이버 메일을 실시간으로 받아 AI 가 중요도별로 요약·분석하고, 일정은 **바탕화면 캘린더**에 넣는 Windows 상주 프로그램.
 AI 는 **GPT 와 Claude 둘 다** 쓸 수 있어야 함 (구독 또는 API 키).
-
-## 현재 상태 (v0.9.0, Python 약 5,900줄, 테스트 53개 통과)
-| 기능 | 상태 |
-|---|---|
-| 소통메신저 쪽지 수집 (eztalk.exe 창 UI 자동화, Project Monday 방식) | 코드 완료 · **Windows 실사용 미확인** |
-| 네이버 메일 수집 (IMAP 읽기 전용, MailDesk 방식) | 가짜 IMAP 서버로 테스트 · **실제 계정 미확인** |
-| 쪽지·메일 공통 AI 분석 (중요도·분류·학교 업무 관련성·원문 근거 확인·일정 추출) | 완료 |
-| AI 연결: ChatGPT 구독 / Claude 구독(claude -p) / OpenAI·Anthropic API 키 / fake | 완료 · **구독 로그인 실계정 미확인** |
-| 용도별 모델(분석·브리핑·대체), 사고 수준, AI 생략 규칙, 토큰 사용량 기록 | 완료 |
-| 알림 규칙 (학교 업무만·긴급만·방해금지·미리보기 숨김·소리) | 완료 |
-| 원문·요약 보관 (이 PC / 구글 드라이브 동기화 폴더 따로, txt·md) | 완료 |
-| 바탕화면 캘린더 (월간·입력·AI 제안 확정/무시·받은 소식 탭·공휴일·크기 조절·두 모니터·트레이) | 화면은 브라우저로 확인 · **Windows 위젯 창 미확인** |
-| 설정 화면 (v0.8.0: 캘린더와 같은 모양의 pywebview 창 `settings.html` — AI 연결·모델·저장·메일·알림·학교 정보 탭) | 완료 |
-| Claude 로그인 버튼·상태 표시 (설정 화면 [AI 연결] 탭, 공식 `claude auth status/login` 만 실행) (v0.8.0) | 완료 |
-| 캘린더 ⚙ 메뉴에서 AI 모델 바로 고르기 (v0.7.0) | 완료 · 미리보기로 확인 |
-| AI '자세히' 정리(3~6줄: 무엇·언제·어디·대상·제출물·주의·문의) · 받은 소식 [다시 분석] · 일정 ↔ 원문 오가기 (v0.8.3) | 완료 · 미리보기와 실제 AI 로 확인 |
-| 메모 탭: 캡처·글 붙여 넣기 → 이 PC 글자 인식(Windows OCR)/캡처를 AI 에 → AI 정리(종류 자동·수정)·일정 제안·일정으로 넣기, 설정에서 끄기 (v0.9.0) | 완료 · 미리보기·실제 창·진짜 OCR/AI 로 확인, GPT 교차 검토 2회 반영 · **사용자 실사용 전** |
-| 다른 캘린더 파일에서 일정 가져오기 (.ics·엑셀·csv·txt, 미리보기·칸 맞추기·중복 건너뜀·되돌리기) (v0.8.1) | 완료 · 미리보기로 확인 |
-| 자동 업데이트 (GitHub Releases, SHA-256 확인, `packaging\release.bat` 로 배포) (v0.7.0) | 코드 완료 · **실제 업데이트 한 바퀴 미확인** |
-
-**가장 큰 빈칸: 사용자 PC(Windows)에서 아직 한 번도 실행해 보지 않았음.** 다음 작업은 대부분 실제 환경 확인과 수정.
+지금 상태·다음 할 일은 `HANDOFF.md`.
 
 ## 구조
 ```
@@ -95,18 +82,13 @@ app/paths.py                실행 위치·자료 위치. 개발: 저장소 폴�
 - 공휴일(`holidays_kr.json`)은 기억으로 넣지 말고 월력요항 등 출처를 확인해서 추가.
 
 ## Codex(GPT) 위임 기준 (이 프로젝트)
-공통 규칙(Claude 총괄, 범위 분명한 구현·테스트·버그 조사는 `codex:codex-rescue` 위임, 결과 직접 검토 후 통합, 큰 변경 후 `/codex:review`)은
-사용자 설정 `~/.claude/CLAUDE.md` 에 있음. 그 파일은 GitHub 로 안 옮겨지므로, 다른 PC 에서는 아래만으로도 판단할 수 있게 적어 둠.
-전역 규칙의 원본은 저장소의 `pc-settings/claude-global.md`. `pc-settings/sync.ps1`(= `9_PC설정맞추기.bat`)이 그것을 `~/.claude/CLAUDE.md` 의 표시 구역에 넣고, `~/.codex/config.toml` 맨 위를 `gpt-6.1-sol`(못 쓰는 계정은 `gpt-6-astra`) + `ultra` 로 맞추고, `pc-settings/codex-global.md` 를 `~/.codex/AGENTS.md`(Codex 전역 규칙) 표시 구역에 넣음. 자세한 것은 `docs/다른PC_설정.md`.
-- 저장소 맨 위 `AGENTS.md` 는 Codex 용 짧은 안내(이 문서를 읽으라는 것 + 꼭 지킬 것 요약). 이 문서의 규칙을 크게 바꾸면 `AGENTS.md` 요약도 맞출 것. Codex 공통 규칙을 바꿀 때는 `pc-settings/codex-global.md` 를 고치고 sync 실행 후 커밋.
-- `.claude/settings.json` 의 SessionStart hook 이 Claude Code 시작 때 sync 를 자동 실행. `[pc-settings]` 로 시작하는 줄이 보이면 바뀐 내용을 사용자에게 쉬운 말로 알리고, 앱 재시작이 필요하면 안내할 것.
-- 규칙을 바꿀 때는 `pc-settings/claude-global.md` 를 고치고 sync 를 실행한 뒤 커밋 (`~/.claude/CLAUDE.md` 를 직접 고치면 다음 동기화 때 덮어써짐).
-- 새 PC 에서 config 에 ultra 가 없으면 Codex 가 low 로 돎 → `9_PC설정맞추기.bat` 실행을 안내할 것.
-- **gpt-6.1-terra — 상시 작업·검증 (기본, 적극 사용, 2026-11-10~)**: 사양이 분명한 구현, 코드 리뷰, 테스트 작성·실행, 회귀 버그 탐지, 증상이 분명한 버그 수정 (캘린더 화면 `calendar.html`·`api.py`, `ics_export.py`, 테스트 추가 등). `--model gpt-6.1-terra`. 결과의 엣지 케이스(빈 값, 날짜 경계, 한글 경로·파일 이름) 따로 확인.
-- **gpt-6.1-sol — 어려운 문제만 재검증**: Terra 로 안 풀리는 오류(두 번 이상 실패), 복잡한 원인 분석, 중요 변경 검토. 이 프로젝트에서 중요 변경 = 로그인·토큰(`llm/chatgpt_auth.py`·`chatgpt_plan_provider.py`), IMAP·디코딩(`collectors/naver_mail.py`·`mail_content.py`), `redact.py`, `secrets_store.py`, `analyzer.py` 의 근거 확인·글 속 지시 무시, `storage.py` 마이그레이션. `--model gpt-6.1-sol`. `/codex:review` 는 모델을 못 골라 config 기본값(6.1 Sol)으로 돌므로 중요 변경 검토에 씀.
-- 5.6 계열·luna 는 쓰지 않음 (사용자가 직접 지정할 때만).
-- 사고 수준: `--effort` 를 붙이지 않음. Codex 설정(`~/.codex/config.toml`) 기본값이 `ultra` 이고, 플러그인은 `--effort` 로 xhigh 까지만 받아서 붙이면 오히려 낮아짐.
-- 학교 PC 계정은 Codex 에서 `gpt-6.1-*` 를 못 씀 (2026-11-09) → 그 PC 에서는 6.1 Sol 대신 `gpt-6-astra`, 6.1 Terra 대신 `gpt-5.6-terra` (둘 다 ultra 지원).
+공통 규칙(Claude 총괄, 모델 고르기 Terra/Sol, `--effort` 안 붙이기 등)은 `~/.claude/CLAUDE.md` 의 pc-settings 구역에 있음.
+- 원본은 저장소 `pc-settings/claude-global.md`(Claude 용)·`codex-global.md`(Codex 용). `pc-settings/sync.ps1`(= `9_PC설정맞추기.bat`, Claude Code 시작 때 SessionStart hook 으로 자동 실행)이 `~/.claude/CLAUDE.md`·`~/.codex/AGENTS.md` 의 표시 구역과 `~/.codex/config.toml` 맨 위(모델·사고 수준)를 맞춤. 자세한 것은 `docs/다른PC_설정.md`.
+- 규칙을 바꿀 때는 원본을 고치고 sync 실행 후 커밋 (`~/.claude/CLAUDE.md` 를 직접 고치면 다음 동기화 때 덮어써짐). `[pc-settings]` 로 시작하는 줄이 보이면 바뀐 내용을 사용자에게 쉬운 말로 알릴 것.
+- 저장소 맨 위 `AGENTS.md` 는 Codex 용 짧은 안내. 이 문서의 규칙을 크게 바꾸면 그 요약도 맞출 것.
+- 이 프로젝트의 **중요 변경(→ 6.1 Sol 검토)**: 로그인·토큰(`llm/chatgpt_auth.py`·`chatgpt_plan_provider.py`), IMAP·디코딩(`collectors/naver_mail.py`·`mail_content.py`), `redact.py`, `secrets_store.py`, `analyzer.py` 의 근거 확인·글 속 지시 무시, `storage.py` 마이그레이션. 그 밖의 분명한 구현·테스트(`calendar.html`·`api.py`·`ics_export.py` 등)는 6.1 Terra.
+- 학교 PC 계정은 `gpt-6.1-*` 를 못 씀 → 6.1 Sol 대신 `gpt-6-astra`, 6.1 Terra 대신 `gpt-5.6-terra`.
+- Codex 플러그인 팁: 긴 한국어 지시문은 파일로 쓰고 `task --prompt-file <파일>` 로 (직접 넘기면 따옴표 때문에 셸 오류). 작업 두 개를 같은 순간에 시작하면 브로커가 충돌 → 몇 초 띄워서. `review --model <모델>` 로 검토 모델 지정 가능.
 - **위임하지 않음 (Claude 가 직접 + 사용자 PC 확인)**: `eztalk_collector.py`·`eztalk_parse.py`(실제 메신저 창 구조는 사용자 PC 에서만 확인 가능), `desktop_calendar/widget.py`(Win32 창 동작), tkinter 화면 모양, 설계 규칙·분석 스키마 변경 결정.
 - **Codex 에 넘기지 않을 것**: 실제 쪽지·메일 원문, `.env`, `data/`(DB·쪽지기록), `messenger-check --raw` 출력, 토큰·비밀번호. 넘기면 OpenAI 서버로 전송됨 → 재현이 필요하면 가상 예시로 바꿔서.
 - 위임 지시에는 이 문서의 "지켜야 할 규칙"(읽기 전용 수집, 테스트는 네트워크·키 없이, Python 3.10 호환, Windows 전용 import 는 함수 안) 을 함께 적을 것.
@@ -125,21 +107,6 @@ python main.py gui                          :: 테스트 화면 (메시지 붙�
 python main.py ocr-check 그림.png            :: 이 PC 글자 인식으로 이미지 읽어 보기 (저장·AI 없음)
 ```
 화면만 고칠 때: `app/desktop_calendar/calendar.html` · `settings.html` 을 브라우저로 열면 예시 데이터(MockAPI)로 동작 (settings.html 은 `?theme=light`, `?claude=none`, `?claude=logout` 으로 상태를 바꿔 볼 수 있음).
-
-## 남은 작업 (우선순위 순)
-1. **사용자 PC 에서 실제 확인·수정** (가장 먼저)
-   - ~~설치 오류 여부~~ → 2026-11-08 확인: Python 3.10.6 에서 requirements 설치 OK, Windows 라이브러리 import OK, 테스트 52 통과·1 건너뜀(유닉스용 가짜 claude), `--provider fake test` 정상
-   - ChatGPT 구독 로그인: 첫 콜백의 `client_id`, ID 토큰 검증(OIDC discovery 주소 미확인, 대체 jwks 주소 사용 중), 토큰 갱신, `text.format json_schema` 허용 여부, `reasoning` 허용 여부
-   - 쪽지: `messenger-check --raw` 로 보낸 사람·본문 파싱, 알림 창→보기 창 합치기
-   - 메일: 로그인, 한글 제목·본문 디코딩, 첫 연결 시 오늘 메일만 오는지
-   - 캘린더 위젯: 투명 배경(`transparent=True`), 배율 125·150% 모니터에서 끌기·크기 조절 좌표, Win+D 뒤 다시 보이는지, 두 번째 모니터 이동, `api.win(action, *args)` 가변 인자 전달
-   - ~~tkinter 설정 화면 모양~~ → v0.8.0 에서 설정 화면을 캘린더와 같은 웹 화면으로 새로 만듦
-2. **망분리 확인**: 학교 업무 PC 에서 외부 AI·네이버 IMAP 접속 가능한지. 안 되면 구조 재검토 필요.
-3. **정보보안 확인**: 학교/교육청 담당자에게 외부 AI 전송 가능 여부 (README 에 안내해 둠).
-4. **설치 파일(.exe)**: v0.6.1 에서 만듦 (`packaging\build.bat`). 2026-11-08 이 PC 에서 PyInstaller 빌드·cbm.exe 명령·캘린더/설정 창 실행 확인. 남은 것: 다른 PC 에서 설치·제거, 실제 ChatGPT 로그인을 설치판으로, 코드 서명 없음(SmartScreen 경고 → '추가 정보 → 실행').
-5. **캘린더 동기화 확장**: 확정 일정 → Google Calendar API 또는 Microsoft Graph. 등록 전 사용자 확인, 중복 방지 칸 추가.
-6. 다듬기: 오늘 브리핑 자동 알림(정해진 시각), 할 일 목록, 주간 통계, Lively Wallpaper 로 진짜 배경 표시(HTTP 어댑터), Claude 경로의 사고 수준.
-7. Project Monday 원본에도 '보안' 오판 버그 수정을 알려 주기 (사용자 선택).
 
 ## 참고 자료
 - Sign in with ChatGPT (오픈소스): https://developers.openai.com/siwc/token-sharing-open-source/sign-in · models-and-inference · preview-limitations · profiles-and-sessions
