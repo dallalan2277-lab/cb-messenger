@@ -5,6 +5,8 @@
 - 작업 표시줄·Alt+Tab 에 나타나지 않음. 트레이 아이콘으로 보이기/숨기기/끝내기
 - 기본 크기: 고른 모니터 작업 영역의 2/3 (오른쪽). 끌어서 옮기거나 가장자리로 크기를 바꾸면 기억함
 - Win+D(바탕화면 보기)로 숨겨져도 다시 나타남
+- 트레이 아이콘을 누르면(또는 '되돌리기') 잠깐 맨 앞으로 꺼내 보여 주고, 다른 창을 누르면 다시 바탕화면 쪽으로
+- 위쪽 막대(창을 잡는 곳)는 늘 화면 안에 남게 함 — 화면 밖으로 나가 다시 잡을 수 없게 되는 일 막기
 - --watch 와 함께 켜면 소통메신저 감시도 같이 돌리고, 새 일정이 생기면 바로 다시 그림
 
 필요: pip install pywebview pystray pillow  (requirements.txt 에 포함, Windows 11 은 WebView2 기본 내장)
@@ -123,6 +125,13 @@ class Win32:
     def is_visible(self, hwnd) -> bool:
         return bool(self.user32.IsWindowVisible(hwnd))
 
+    def activate(self, hwnd) -> bool:
+        """맨 앞으로 올리고 입력을 받게 해 봄. Windows 가 막으면(다른 프로그램이 앞에 있을 때) 억지로 하지 않음
+        — 그때는 Host 가 잠깐(PEEK_SEC) 앞에 보여 두고, 사용자가 캘린더를 누르면 그대로 쓸 수 있음.
+        (다른 프로그램 입력에 끼어드는 AttachThreadInput 은 그 프로그램이 멈추면 같이 멈출 수 있어 쓰지 않음)"""
+        self.to_top_noactivate(hwnd)
+        return bool(self.user32.SetForegroundWindow(hwnd))
+
 
 def initial_geometry(area, fraction=0.66, anchor="right", margin=12):
     """작업 영역 (x, y, w, h) 안에서 기본 위치·크기"""
@@ -138,6 +147,53 @@ def initial_geometry(area, fraction=0.66, anchor="right", margin=12):
     return xx, y + margin, max(ww, 480), max(hh, 360)
 
 
+BAR_PX = 60          # 위쪽 막대(창을 잡는 곳) 높이: 화면 40px × 배율 150% 까지 넉넉히 (배율을 알면 bar_px)
+BAR_VISIBLE = 120    # 막대 가로로 최소 이만큼은 화면 안에
+MINIMIZED_XY = -30000  # 최소화된 창의 좌표는 (-32000, -32000) — 저장·보정하면 안 됨
+
+
+def bar_px(dpr=None) -> int:
+    """위쪽 막대 높이(화면 40px + 여유)를 실제 픽셀로"""
+    try:
+        return max(BAR_PX, int(round(44 * float(dpr))))
+    except (TypeError, ValueError):
+        return BAR_PX
+
+
+def bar_area_index(geom, areas, bar=BAR_PX) -> int:
+    """위쪽 막대가 가장 많이 걸친 모니터 (안 걸치면 막대 가운데에서 가장 가까운 모니터)"""
+    x, y, w, _ = geom
+    best, best_overlap = 0, 0
+    for i, (ax, ay, aw, ah) in enumerate(areas):
+        ov = max(0, min(x + w, ax + aw) - max(x, ax)) * max(0, min(y + bar, ay + ah) - max(y, ay))
+        if ov > best_overlap:
+            best, best_overlap = i, ov
+    if best_overlap:
+        return best
+    px, py = x + w // 2, y + bar // 2
+
+    def dist(i):
+        ax, ay, aw, ah = areas[i]
+        dx = max(ax - px, 0, px - (ax + aw - 1))
+        dy = max(ay - py, 0, py - (ay + ah - 1))
+        return dx * dx + dy * dy
+
+    return min(range(len(areas)), key=dist)
+
+
+def keep_bar_on_screen(geom, areas, bar=BAR_PX, visible=BAR_VISIBLE):
+    """창을 다시 잡을 수 있게 위쪽 막대를 모니터 작업 영역 안으로 (크기는 그대로).
+    위로는 작업 영역 맨 위보다 못 올라가고, 아래로는 막대가 보일 만큼만, 좌우로는 막대가 visible 만큼 남게."""
+    x, y, w, h = (int(round(v)) for v in geom)
+    if not areas:
+        return x, y, w, h
+    vis = min(visible, w)
+    ax, ay, aw, ah = areas[bar_area_index((x, y, w, h), areas, bar)]
+    ny = min(max(y, ay), ay + max(ah - bar, 0))
+    nx = min(max(x, ax - w + vis), ax + aw - vis)
+    return nx, ny, w, h
+
+
 def clamp_to_areas(geom, areas, min_visible=80):
     """저장된 위치가 지금 모니터 구성 밖이면(모니터 하나 뺐을 때 등) None"""
     x, y, w, h = geom
@@ -149,15 +205,30 @@ def clamp_to_areas(geom, areas, min_visible=80):
 
 # ───────────────────────── 창 조작 (화면 JS 가 api.win(...) 으로 부름) ─────────────────────────
 class Host:
+    """창 조작. 트레이 스레드·화면(js_api) 스레드·1초 점검 스레드가 함께 부르므로 창 위치·끌기 상태는 _lock 안에서만 바꿈"""
     MIN_W, MIN_H = 480, 360
+    STALE_DRAG_SEC = 10.0   # 끌기 신호가 이만큼 끊기면(놓은 신호를 놓친 경우) 자동 점검을 다시 시작
+    PEEK_SEC = 5.0          # 트레이로 꺼냈는데 입력을 못 받았을 때 앞에 보여 두는 시간
+    SHELL_CLASSES = ("Shell_TrayWnd", "Shell_SecondaryTrayWnd", "NotifyIconOverflowWindow",
+                     "TopLevelWindowForOverflowXamlIsland", "Xaml_WindowedPopupClass")
 
     def __init__(self, api: CalendarAPI):
         self.api = api
         self.w32 = Win32()
         self.hwnd = 0
         self.window = None
-        self._drag = None
-        self._dragging = False
+        self._init_state()
+
+    def _init_state(self):
+        self._lock = threading.RLock()
+        self._drag = None          # (시작 위치, 배율, 작업 영역) — 끌기 번호가 맞을 때만 씀
+        self._drag_id = 0
+        self._begin_seq = 0.0      # 화면이 보낸 마지막 시작 순번
+        self._move_n = -1          # 이번 끌기에서 마지막으로 적용한 이동 순번
+        self._dragging = False     # True 동안 1초 점검이 창을 건드리지 않음
+        self._drag_ts = 0.0
+        self._peek_until = 0.0
+        self._dpr = 1.5
         self.visible = True
 
     # -- 시작 시 배치
@@ -174,38 +245,108 @@ class Host:
         p = self.api.get_prefs()
         areas = self.w32.work_areas()
         geom = None
-        if p.get("w") and p.get("h"):
+        if p.get("w") and p.get("h") and p.get("x") is not None and p.get("y") is not None \
+                and int(p["x"]) > MINIMIZED_XY and int(p["y"]) > MINIMIZED_XY:
             geom = clamp_to_areas((p["x"], p["y"], p["w"], p["h"]), areas)
         if geom is None:
             mon = min(int(p.get("monitor", 0)), len(areas) - 1)
             geom = initial_geometry(areas[mon], p.get("fraction", 0.66), p.get("anchor", "right"))
-        self.w32.place(self.hwnd, *geom)
+        self.w32.place(self.hwnd, *keep_bar_on_screen(geom, areas, bar_px(self._dpr)))
         self.set_opacity(p.get("opacity", 0.92))
         self.w32.to_bottom(self.hwnd)
         threading.Thread(target=self._keep_on_desktop, daemon=True).start()
 
     def _keep_on_desktop(self):
-        """1초마다: 최소화되면 되살리고, 바탕화면을 보는 중이면 위로, 아니면 맨 아래로"""
+        """1초마다 _tick"""
         while True:
             time.sleep(1.0)
             try:
-                if not self.hwnd or not self.visible or self._dragging:
-                    continue
-                if self.w32.is_minimized(self.hwnd) or not self.w32.is_visible(self.hwnd):
-                    self.w32.restore_noactivate(self.hwnd)
-                fg, cls = self.w32.foreground_class()
-                if fg == self.hwnd:
-                    continue                      # 입력 중에는 건드리지 않음
-                if cls in DESKTOP_CLASSES:
-                    self.w32.to_top_noactivate(self.hwnd)   # Win+D / 바탕화면 클릭 → 보이게
-                else:
-                    self.w32.to_bottom(self.hwnd)
+                self._tick()
             except Exception as e:  # noqa: BLE001
                 log.debug("keep_on_desktop: %s", e)
 
+    def _tick(self):
+        """최소화되면 되살리고, 화면 밖이면 되돌리고, 바탕화면을 보는 중·트레이로 꺼낸 직후면 위로, 아니면 맨 아래로"""
+        with self._lock:
+            if not self.hwnd or not self.visible:
+                return
+            if self._dragging:
+                if time.monotonic() - self._drag_ts < self.STALE_DRAG_SEC:
+                    return
+                log.info("끌기 신호가 끊겨 자동 점검을 다시 시작합니다.")
+                self._dragging = False         # _drag 는 남겨 둠: 버튼을 누른 채 멈췄던 거면 다음 이동에서 이어짐
+            self._restore_if_hidden()
+            self._fix_offscreen()
+            fg, cls = self.w32.foreground_class()
+            if fg == self.hwnd:
+                self._peek_until = 0.0         # 캘린더를 쓰는 중 → 다른 창을 누를 때까지 그대로
+                return
+            peeking = time.monotonic() < self._peek_until
+            if peeking and cls not in self.SHELL_CLASSES:
+                # 트레이 팝업이 닫히고 처음 앞에 온 창을 기준으로 삼고, 그 뒤 다른 창으로 바뀌면(사용자가 누름) 끝냄
+                if self._peek_from is None:
+                    self._peek_from = fg
+                elif fg != self._peek_from:
+                    peeking = False
+            if cls in DESKTOP_CLASSES or peeking:
+                self.w32.to_top_noactivate(self.hwnd)   # Win+D / 바탕화면 클릭 / 트레이로 막 꺼냄 → 보이게
+            else:
+                self._peek_until = 0.0         # 다른 창을 눌렀거나 시간이 지남 → 다시 바탕화면 쪽으로
+                self.w32.to_bottom(self.hwnd)
+
+    def _restore_if_hidden(self):
+        if self.w32.is_minimized(self.hwnd) or not self.w32.is_visible(self.hwnd):
+            self.w32.restore_noactivate(self.hwnd)
+
+    def _normal_rect(self):
+        """최소화 중이면 None (그때 좌표 (-32000,-32000) 은 저장·보정하면 안 됨)"""
+        if self.w32.is_minimized(self.hwnd):
+            return None
+        r = tuple(self.w32.rect(self.hwnd))
+        return None if r[0] <= MINIMIZED_XY or r[1] <= MINIMIZED_XY else r
+
+    def _fix_offscreen(self):
+        """절전·해상도 변경·끌기 실수로 위쪽 막대가 화면 밖에 있으면 안으로 되돌림"""
+        cur = self._normal_rect()
+        if cur is None:
+            return
+        fixed = keep_bar_on_screen(cur, self.w32.work_areas(), bar_px(self._dpr))
+        if tuple(fixed) != cur:
+            log.info("캘린더 창이 화면 밖에 있어 되돌립니다: %s → %s", cur, fixed)
+            self.w32.place(self.hwnd, *fixed)
+            self._save()
+
+    def peek(self):
+        """잠깐 맨 앞으로 꺼냄 (트레이 클릭·되돌리기). 캘린더를 누르면 계속 쓰고, 다른 창을 누르면 다시 바탕화면 쪽으로"""
+        with self._lock:
+            if not self.hwnd:
+                return False
+            if not self.visible:
+                self.visible = True
+                if self.window:
+                    self.window.show()
+            self._restore_if_hidden()
+            fg, cls = self.w32.foreground_class()
+            self._peek_from = None if cls in self.SHELL_CLASSES else fg   # 트레이 팝업은 곧 닫히므로 기준 아님
+            self._peek_until = time.monotonic() + self.PEEK_SEC
+            try:
+                ok = self.w32.activate(self.hwnd)
+            except Exception as e:  # noqa: BLE001
+                log.debug("peek: %s", e)
+                ok = False
+            if ok:
+                self._peek_until = 0.0   # 입력을 받는 앞 창이 됨 → 다른 창을 누르면 바로 뒤로 (_tick)
+            return ok
+
+    _peek_from = None
+
     def _save(self):
-        x, y, w, h = self.w32.rect(self.hwnd)
+        r = self._normal_rect()
+        if r is None:
+            return False
+        x, y, w, h = r
         self.api.set_prefs({"x": x, "y": y, "w": w, "h": h})
+        return True
 
     # -- JS 에서 부르는 것들
     def set_opacity(self, alpha=0.92):
@@ -217,81 +358,144 @@ class Host:
             log.debug("set_opacity: %s", e)
             return False
 
-    def begin_drag(self, dpr=1.0):
+    def begin_drag(self, dpr=1.0, seq=None):
+        """끌기 시작. 끌기 번호를 돌려줌 — 화면은 이 번호를 drag_to·resize_drag·end_drag 에 넘김 (늦게 온 지난 요청 거르기).
+        seq: 화면이 붙이는 시작 순번(늘어나기만 함). 새 끌기보다 늦게 도착한 지난 시작은 무시"""
+        with self._lock:
+            if not self.hwnd:
+                return 0
+            if seq is not None:
+                try:
+                    seq = float(seq)
+                except (TypeError, ValueError):
+                    seq = None
+            if seq is not None:
+                if seq <= self._begin_seq:
+                    return 0
+                self._begin_seq = seq
+            rect = self._normal_rect()
+            if rect is None:
+                return 0
+            try:
+                self._dpr = float(dpr or 1.0)
+            except (TypeError, ValueError):
+                self._dpr = 1.0
+            self._drag_id += 1
+            self._dragging = True
+            self._drag_ts = time.monotonic()
+            self._drag = (rect, self._dpr)
+            self._move_n = -1
+            return self._drag_id
+
+    def _current_drag(self, token, n=None):
+        """맞는 끌기 번호면 (시작 위치, 배율, 지금 모니터 배치). 같은 끌기 안에서 늦게 온 옛 이동(n 이 작음)은 None"""
+        if not self._drag or (token is not None and token != self._drag_id):
+            return None
+        if n is not None:
+            if n <= self._move_n:
+                return None
+            self._move_n = n
         self._dragging = True
-        self._drag = (self.w32.rect(self.hwnd), float(dpr or 1.0))
-        return True
+        self._drag_ts = time.monotonic()
+        rect, s = self._drag
+        return rect, s, self.w32.work_areas()   # 끄는 중 모니터를 빼도 지금 배치 기준으로
 
-    def drag_to(self, dx, dy):
-        if not self._drag:
-            return False
-        (x, y, w, h), s = self._drag
-        self.w32.place(self.hwnd, x + dx * s, y + dy * s, w, h)
-        return True
+    def drag_to(self, dx, dy, token=None, n=None):
+        with self._lock:
+            d = self._current_drag(token, n)
+            if not d:
+                return False
+            (x, y, w, h), s, areas = d
+            self.w32.place(self.hwnd, *keep_bar_on_screen((x + dx * s, y + dy * s, w, h), areas, bar_px(s)))
+            return True
 
-    def resize_drag(self, direction, dx, dy):
-        if not self._drag:
-            return False
-        (x, y, w, h), s = self._drag
-        dx, dy = dx * s, dy * s
-        nx, ny, nw, nh = x, y, w, h
-        if "e" in direction:
-            nw = max(self.MIN_W, w + dx)
-        if "s" in direction:
-            nh = max(self.MIN_H, h + dy)
-        if "w" in direction:
-            nw = max(self.MIN_W, w - dx)
-            nx = x + (w - nw)
-        self.w32.place(self.hwnd, nx, ny, nw, nh)
-        return True
+    def resize_drag(self, direction, dx, dy, token=None, n=None):
+        with self._lock:
+            d = self._current_drag(token, n)
+            if not d:
+                return False
+            (x, y, w, h), s, areas = d
+            dx, dy = dx * s, dy * s
+            nx, ny, nw, nh = x, y, w, h
+            if "e" in direction:
+                nw = max(self.MIN_W, w + dx)
+            if "s" in direction:
+                nh = max(self.MIN_H, h + dy)
+            if "w" in direction:
+                nw = max(self.MIN_W, w - dx)
+                nx = x + (w - nw)
+            self.w32.place(self.hwnd, *keep_bar_on_screen((nx, ny, nw, nh), areas, bar_px(s)))
+            return True
 
-    def end_drag(self):
-        self._dragging = False
-        self._drag = None
-        self._save()
-        self.w32.to_bottom(self.hwnd)
-        return True
+    def end_drag(self, token=None):
+        with self._lock:
+            if not self._drag or (token is not None and token != self._drag_id):
+                return False          # 이미 끝난 끌기·지난 끌기의 늦은 신호 → 위치를 다시 저장하지 않음
+            self._dragging = False
+            self._drag = None
+            self._save()              # 맨 아래로 보내기는 1초 점검이 함 (캘린더를 쓰는 중이면 그대로 둠)
+            return True
+
+    def _reset_for_move(self):
+        """되돌리기·모니터 옮기기 전에: 남은 끌기를 무효로 하고, 숨겨졌거나 최소화돼 있으면 되살림"""
+        self._dragging, self._drag = False, None
+        self._drag_id += 1
+        if not self.visible:
+            self.visible = True
+            if self.window:
+                self.window.show()
+        self._restore_if_hidden()
 
     def snap(self, preset="right"):
-        frac, _, anchor = SNAP.get(preset, SNAP["right"])
-        areas = self.w32.work_areas()
-        mon = self._current_monitor(areas)
-        self.w32.place(self.hwnd, *initial_geometry(areas[mon], frac, anchor))
-        self.api.set_prefs({"monitor": mon, "anchor": anchor, "fraction": frac})
-        self._save()
-        return True
+        with self._lock:
+            if not self.hwnd:
+                return False
+            self._reset_for_move()
+            frac, _, anchor = SNAP.get(preset, SNAP["right"])
+            areas = self.w32.work_areas()
+            mon = self._current_monitor(areas)
+            self.w32.place(self.hwnd, *initial_geometry(areas[mon], frac, anchor))
+            self.api.set_prefs({"monitor": mon, "anchor": anchor, "fraction": frac})
+            self._save()
+            self.peek()
+            return True
 
     def next_monitor(self):
-        areas = self.w32.work_areas()
-        if len(areas) < 2:
-            return False
-        mon = (self._current_monitor(areas) + 1) % len(areas)
-        p = self.api.get_prefs()
-        self.w32.place(self.hwnd, *initial_geometry(areas[mon], p.get("fraction", 0.66), p.get("anchor", "right")))
-        self.api.set_prefs({"monitor": mon})
-        self._save()
-        return True
+        with self._lock:
+            areas = self.w32.work_areas()
+            if len(areas) < 2 or not self.hwnd:
+                return False
+            self._reset_for_move()
+            mon = (self._current_monitor(areas) + 1) % len(areas)
+            p = self.api.get_prefs()
+            self.w32.place(self.hwnd, *initial_geometry(areas[mon], p.get("fraction", 0.66), p.get("anchor", "right")))
+            self.api.set_prefs({"monitor": mon})
+            self._save()
+            self.peek()
+            return True
 
     def _current_monitor(self, areas):
-        x, y, w, h = self.w32.rect(self.hwnd)
-        cx, cy = x + w // 2, y + h // 2
-        for i, (ax, ay, aw, ah) in enumerate(areas):
-            if ax <= cx < ax + aw and ay <= cy < ay + ah:
-                return i
-        return 0
+        """위쪽 막대가 있는 모니터 (keep_bar_on_screen 과 같은 기준)"""
+        r = self._normal_rect()
+        if r is None:
+            return 0
+        return bar_area_index(r, areas, bar_px(self._dpr))
 
     def hide(self):
-        self.visible = False
-        if self.window:
-            self.window.hide()
-        return True
+        with self._lock:
+            self.visible = False
+            if self.window:
+                self.window.hide()
+            return True
 
     def show(self):
-        self.visible = True
-        if self.window:
-            self.window.show()
-            self.w32.to_bottom(self.hwnd)
-        return True
+        """트레이 '캘린더 보이기'(아이콘 클릭): 다른 창에 가려 있어도 잠깐 맨 앞으로 꺼내 보여 줌"""
+        with self._lock:
+            self.visible = True
+            if self.window:
+                self.window.show()
+            self.peek()
+            return True
 
     def quit(self):
         """프로그램 끝내기 (업데이트 설치 직전에 api 가 부름). 트레이 아이콘도 함께 정리."""
