@@ -2042,14 +2042,16 @@ function bindDragAndResize() {
     // 응답이 오래 안 오면(파이썬 쪽 멈춤) 기다리지 않고 넘어감 — 늦게 온 지난 요청은 파이썬이 끌기 번호로 거름
     const call = (...a) => Promise.race([Promise.resolve(api.win(...a)), new Promise((r) => setTimeout(() => r(null), 2000))]);
     const begun = Promise.resolve(prevDone)
-      .then(() => call("begin_drag", window.devicePixelRatio || 1))
+      // 시작 순번: 늘어나기만 하는 시각(새로 고쳐도 커짐) — 늦게 도착한 지난 시작을 파이썬이 무시
+      .then(() => call("begin_drag", window.devicePixelRatio || 1, performance.timeOrigin + performance.now()))
       .then((r) => (r && r.ok && r.result) || 0).catch(() => 0);   // 끌기 번호 (0 = 시작 못 함)
     const unsent = () => s.sent === null ? (s.lx !== 0 || s.ly !== 0) : (s.sent[0] !== s.lx || s.sent[1] !== s.ly);
     const send = async () => {
       const token = await begun; if (!token) return;
       const lx = s.lx, ly = s.ly; s.sent = [lx, ly];
-      if (kind === "move") await call("drag_to", lx, ly, token);
-      else await call("resize_drag", dir, lx, ly, token);
+      const n = (s.n = (s.n || 0) + 1);   // 이동 순번: 늦게 처리된 옛 이동이 새 위치를 덮지 않게
+      if (kind === "move") await call("drag_to", lx, ly, token, n);
+      else await call("resize_drag", dir, lx, ly, token, n);
     };
     const pump = async () => {          // 마지막 위치만, 앞 요청이 끝난 뒤에 보냄
       try {

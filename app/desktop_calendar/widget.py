@@ -223,6 +223,8 @@ class Host:
         self._lock = threading.RLock()
         self._drag = None          # (시작 위치, 배율, 작업 영역) — 끌기 번호가 맞을 때만 씀
         self._drag_id = 0
+        self._begin_seq = 0.0      # 화면이 보낸 마지막 시작 순번
+        self._move_n = -1          # 이번 끌기에서 마지막으로 적용한 이동 순번
         self._dragging = False     # True 동안 1초 점검이 창을 건드리지 않음
         self._drag_ts = 0.0
         self._peek_until = 0.0
@@ -243,7 +245,8 @@ class Host:
         p = self.api.get_prefs()
         areas = self.w32.work_areas()
         geom = None
-        if p.get("w") and p.get("h") and int(p.get("x", 0)) > MINIMIZED_XY:
+        if p.get("w") and p.get("h") and p.get("x") is not None and p.get("y") is not None \
+                and int(p["x"]) > MINIMIZED_XY and int(p["y"]) > MINIMIZED_XY:
             geom = clamp_to_areas((p["x"], p["y"], p["w"], p["h"]), areas)
         if geom is None:
             mon = min(int(p.get("monitor", 0)), len(areas) - 1)
@@ -278,7 +281,13 @@ class Host:
             if fg == self.hwnd:
                 self._peek_until = 0.0         # 캘린더를 쓰는 중 → 다른 창을 누를 때까지 그대로
                 return
-            peeking = time.monotonic() < self._peek_until and (cls in self.SHELL_CLASSES or fg == self._peek_from)
+            peeking = time.monotonic() < self._peek_until
+            if peeking and cls not in self.SHELL_CLASSES:
+                # 트레이 팝업이 닫히고 처음 앞에 온 창을 기준으로 삼고, 그 뒤 다른 창으로 바뀌면(사용자가 누름) 끝냄
+                if self._peek_from is None:
+                    self._peek_from = fg
+                elif fg != self._peek_from:
+                    peeking = False
             if cls in DESKTOP_CLASSES or peeking:
                 self.w32.to_top_noactivate(self.hwnd)   # Win+D / 바탕화면 클릭 / 트레이로 막 꺼냄 → 보이게
             else:
@@ -317,7 +326,8 @@ class Host:
                 if self.window:
                     self.window.show()
             self._restore_if_hidden()
-            self._peek_from = self.w32.foreground_class()[0]
+            fg, cls = self.w32.foreground_class()
+            self._peek_from = None if cls in self.SHELL_CLASSES else fg   # 트레이 팝업은 곧 닫히므로 기준 아님
             self._peek_until = time.monotonic() + self.PEEK_SEC
             try:
                 ok = self.w32.activate(self.hwnd)
@@ -328,7 +338,7 @@ class Host:
                 self._peek_until = 0.0   # 입력을 받는 앞 창이 됨 → 다른 창을 누르면 바로 뒤로 (_tick)
             return ok
 
-    _peek_from = 0
+    _peek_from = None
 
     def _save(self):
         r = self._normal_rect()
@@ -348,9 +358,21 @@ class Host:
             log.debug("set_opacity: %s", e)
             return False
 
-    def begin_drag(self, dpr=1.0):
-        """끌기 시작. 끌기 번호를 돌려줌 — 화면은 이 번호를 drag_to·resize_drag·end_drag 에 넘김 (늦게 온 지난 요청 거르기)"""
+    def begin_drag(self, dpr=1.0, seq=None):
+        """끌기 시작. 끌기 번호를 돌려줌 — 화면은 이 번호를 drag_to·resize_drag·end_drag 에 넘김 (늦게 온 지난 요청 거르기).
+        seq: 화면이 붙이는 시작 순번(늘어나기만 함). 새 끌기보다 늦게 도착한 지난 시작은 무시"""
         with self._lock:
+            if not self.hwnd:
+                return 0
+            if seq is not None:
+                try:
+                    seq = float(seq)
+                except (TypeError, ValueError):
+                    seq = None
+            if seq is not None:
+                if seq <= self._begin_seq:
+                    return 0
+                self._begin_seq = seq
             rect = self._normal_rect()
             if rect is None:
                 return 0
@@ -361,28 +383,35 @@ class Host:
             self._drag_id += 1
             self._dragging = True
             self._drag_ts = time.monotonic()
-            self._drag = (rect, self._dpr, self.w32.work_areas())
+            self._drag = (rect, self._dpr)
+            self._move_n = -1
             return self._drag_id
 
-    def _current_drag(self, token):
+    def _current_drag(self, token, n=None):
+        """맞는 끌기 번호면 (시작 위치, 배율, 지금 모니터 배치). 같은 끌기 안에서 늦게 온 옛 이동(n 이 작음)은 None"""
         if not self._drag or (token is not None and token != self._drag_id):
             return None
+        if n is not None:
+            if n <= self._move_n:
+                return None
+            self._move_n = n
         self._dragging = True
         self._drag_ts = time.monotonic()
-        return self._drag
+        rect, s = self._drag
+        return rect, s, self.w32.work_areas()   # 끄는 중 모니터를 빼도 지금 배치 기준으로
 
-    def drag_to(self, dx, dy, token=None):
+    def drag_to(self, dx, dy, token=None, n=None):
         with self._lock:
-            d = self._current_drag(token)
+            d = self._current_drag(token, n)
             if not d:
                 return False
             (x, y, w, h), s, areas = d
             self.w32.place(self.hwnd, *keep_bar_on_screen((x + dx * s, y + dy * s, w, h), areas, bar_px(s)))
             return True
 
-    def resize_drag(self, direction, dx, dy, token=None):
+    def resize_drag(self, direction, dx, dy, token=None, n=None):
         with self._lock:
-            d = self._current_drag(token)
+            d = self._current_drag(token, n)
             if not d:
                 return False
             (x, y, w, h), s, areas = d

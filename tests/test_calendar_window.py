@@ -217,7 +217,22 @@ def test_tray_peek_ends_when_user_clicks_another_app_before_first_check():
     h.show()
     h._tick()
     assert h.w32.z[-1] == "top"
-    h.w32.fg = (777, "Notepad")                         # 바로 다른 앱을 누름
+    h.w32.fg = (999, "Chrome_WidgetWin_1")              # 트레이 팝업이 닫히며 브라우저로 돌아감 (T004 아르곤)
+    h._tick()
+    assert h.w32.z[-1] == "top"                         # 1초 만에 다시 가려지지 않음
+    h.w32.fg = (777, "Notepad")                         # 사용자가 다른 앱을 누름
+    h._tick()
+    assert h.w32.z[-1] == "bottom"
+
+
+def test_tray_peek_from_browser_stays_until_timeout_then_bottom():
+    h = _host()
+    h.w32.activate_ok = False
+    h.show()                                            # 브라우저가 앞인 채로 (팝업 없이)
+    for _ in range(3):
+        h._tick()
+        assert h.w32.z[-1] == "top"
+    h._peek_until = 0.0
     h._tick()
     assert h.w32.z[-1] == "bottom"
 
@@ -280,3 +295,29 @@ def test_monitor_choice_follows_bar_not_center():
     assert bar_area_index((-1000, 100, 1200, 800), areas) == 1
     # 높이가 다른 화면: 막대가 큰 화면 아래쪽에 보이는 위치는 그대로
     assert keep_bar_on_screen((-1200, 1200, 1000, 600), areas) == (-1200, 1200, 1000, 600)
+
+
+def test_late_begin_from_old_drag_does_not_hijack_new_drag():
+    h = _host(rect=(600, 100, 1200, 800))
+    t_new = h.begin_drag(1.0, 2000.5)
+    assert h.begin_drag(1.0, 1000.0) == 0               # 지난 끌기의 '시작'이 늦게 도착 → 무시
+    assert h.drag_to(10, 0, t_new, 1) is True and h.end_drag(t_new) is True
+
+
+def test_old_move_processed_late_does_not_overwrite_newer_position():
+    h = _host(rect=(600, 100, 1200, 800))
+    t = h.begin_drag(1.0, 1.0)
+    assert h.drag_to(50, 0, t, 2) is True               # 새 이동이 먼저 처리됨
+    assert h.drag_to(10, 0, t, 1) is False              # 옛 이동이 늦게 처리됨 → 무시
+    assert h.w32.rect(0)[0] == 650
+    h.end_drag(t)
+    assert h.api.prefs["x"] == 650
+
+
+def test_drag_uses_current_monitor_layout():
+    h = _host(rect=(2500, 100, 1200, 800))
+    h.w32.areas = [(0, 0, 1920, 1040), (1920, 0, 1920, 1040)]
+    t = h.begin_drag(1.0)
+    h.w32.areas = [(0, 0, 1920, 1040)]                  # 끄는 중 오른쪽 모니터를 뺌
+    h.drag_to(100, 0, t, 1)
+    assert h.w32.rect(0)[0] + BAR_VISIBLE <= 1920
