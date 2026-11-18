@@ -2023,28 +2023,70 @@ function bindUI() {
 
 /* ===================== 창 이동 · 크기 조절 =====================
    상단 막대를 끌면 이동, 가장자리·모서리를 끌면 크기 조절 (놓으면 위치·크기를 기억) */
+/* 신호 순서를 지킴: 시작 → (이동을 한 번에 하나씩) → 끝. 놓기·취소·포인터 잃음·버튼 안 눌린 이동 중 무엇이 와도 한 번만 끝냄
+   (예전에는 '끝'이 '시작'보다 먼저 처리되거나 놓은 신호를 놓치면 창이 마우스를 따라가거나 화면 밖으로 밀렸음) */
+let dragSession = null;
 function bindDragAndResize() {
   const start = (ev, kind, dir) => {
     if (ev.button !== 0) return;
     if (kind === "move" && ev.target.closest("button, .badge")) return;
     ev.preventDefault();
-    const el = ev.currentTarget; el.setPointerCapture(ev.pointerId);
-    const sx = ev.screenX, sy = ev.screenY; let lx = 0, ly = 0, pending = false;
+    const el = ev.currentTarget;
+    try { el.setPointerCapture(ev.pointerId); } catch (_) { /* 이미 놓은 경우 */ }
+    const sx = ev.screenX, sy = ev.screenY;
+    const prev = dragSession;
+    if (prev) prev.finish();   // 앞 끌기가 덜 끝났으면 먼저 끝내고, 그 '끝'이 처리된 뒤에 새로 시작
+    const s = { lx: 0, ly: 0, sent: null, busy: null, ended: false, finish: null, done: null };
+    dragSession = s;
+    const prevDone = prev ? Promise.race([prev.done, new Promise((r) => setTimeout(r, 1500))]) : null;   // 앞 것이 멈춰도 새 끌기는 됨
+    // 응답이 오래 안 오면(파이썬 쪽 멈춤) 기다리지 않고 넘어감 — 늦게 온 지난 요청은 파이썬이 끌기 번호로 거름
+    const call = (...a) => Promise.race([Promise.resolve(api.win(...a)), new Promise((r) => setTimeout(() => r(null), 2000))]);
+    const begun = Promise.resolve(prevDone)
+      .then(() => call("begin_drag", window.devicePixelRatio || 1))
+      .then((r) => (r && r.ok && r.result) || 0).catch(() => 0);   // 끌기 번호 (0 = 시작 못 함)
+    const unsent = () => s.sent === null ? (s.lx !== 0 || s.ly !== 0) : (s.sent[0] !== s.lx || s.sent[1] !== s.ly);
+    const send = async () => {
+      const token = await begun; if (!token) return;
+      const lx = s.lx, ly = s.ly; s.sent = [lx, ly];
+      if (kind === "move") await call("drag_to", lx, ly, token);
+      else await call("resize_drag", dir, lx, ly, token);
+    };
+    const pump = async () => {          // 마지막 위치만, 앞 요청이 끝난 뒤에 보냄
+      try {
+        while ((await begun) && !s.ended && unsent()) {
+          await send();
+          // requestAnimationFrame 은 창이 가려지면 멈출 수 있어(끝 신호가 안 감) 일반 타이머로
+          await new Promise((r) => setTimeout(r, 16));
+        }
+      } catch (_) { /* 무시 */ }
+      s.busy = null;
+    };
     const onMove = (e) => {
-      lx = e.screenX - sx; ly = e.screenY - sy;
-      if (pending) return; pending = true;
-      requestAnimationFrame(async () => {
-        pending = false;
-        if (kind === "move") await api.win("drag_to", lx, ly);
-        else await api.win("resize_drag", dir, lx, ly);
-      });
+      if (s.ended || e.pointerId !== ev.pointerId) return;
+      if ((e.buttons & 1) === 0) { finish(); return; }   // 왼쪽 버튼을 놓았는데 놓은 신호가 안 온 경우
+      s.lx = e.screenX - sx; s.ly = e.screenY - sy;
+      if (!s.busy) s.busy = pump();
     };
-    const onUp = async () => {
-      el.removeEventListener("pointermove", onMove); el.removeEventListener("pointerup", onUp);
-      await api.win("end_drag");
+    const finish = (e) => {
+      if (e && e.pointerId !== undefined && e.pointerId !== ev.pointerId) return s.done;   // 다른 포인터의 신호는 무시
+      if (!s.done) s.done = finishNow();
+      return s.done;
     };
-    api.win("begin_drag", window.devicePixelRatio || 1);
-    el.addEventListener("pointermove", onMove); el.addEventListener("pointerup", onUp);
+    const finishNow = async () => {
+      if (s.ended) return;
+      s.ended = true;
+      el.removeEventListener("pointermove", onMove);
+      ["pointerup", "pointercancel", "lostpointercapture"].forEach((t) => el.removeEventListener(t, finish));
+      try { if (el.hasPointerCapture(ev.pointerId)) el.releasePointerCapture(ev.pointerId); } catch (_) { /* 무시 */ }
+      const token = await begun;
+      if (s.busy) await Promise.race([s.busy, new Promise((r) => setTimeout(r, 2500))]);
+      try { if (unsent()) await send(); } catch (_) { /* 무시 */ }   // 놓은 자리까지 반영
+      try { if (token) await call("end_drag", token); } catch (_) { /* 무시 */ }
+      if (dragSession === s) dragSession = null;
+    };
+    s.finish = finish;
+    el.addEventListener("pointermove", onMove);
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach((t) => el.addEventListener(t, finish));
   };
   $("dragbar").addEventListener("pointerdown", (ev) => start(ev, "move"));
   document.querySelectorAll(".grip").forEach((g) => g.addEventListener("pointerdown", (ev) => start(ev, "resize", g.dataset.dir)));
