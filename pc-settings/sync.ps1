@@ -3,6 +3,7 @@
 #   2) ~/.codex/config.toml: top-level model (gpt-6.2-sol) + model_reasoning_effort = "max"
 #   3) ~/.codex/AGENTS.md  : block between markers <- pc-settings/codex-global.md
 # Runs at Claude Code session start (.claude/settings.json) and from 9_*.bat.
+# Rule files are read from GitHub origin/main when possible (see section 0), so no pull is needed.
 # Writes only when something differs. Keeps a one-time .bak before the first change.
 # This file is ASCII only (Windows PowerShell 5.1 reads BOM-less files as ANSI).
 
@@ -12,6 +13,56 @@ $changes = New-Object System.Collections.Generic.List[string]
 $warnings = New-Object System.Collections.Generic.List[string]
 
 function Normalize([string]$s) { return ($s -replace "`r`n", "`n").Trim() }
+
+# ---------- 0) Get the newest rules from GitHub (2026-11-20) ----------
+# Fetch origin/main (never touches the working tree or the current branch) and read the
+# pc-settings sources from there, so every PC gets new rules without a manual pull.
+# Uses the local file instead when: offline / fetch fails or is slow, the local file has
+# uncommitted edits, or this checkout has commits origin/main does not have yet.
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$useRemote = $false
+
+function Invoke-Git([string[]]$gitArgs, [int]$timeoutMs) {
+    # Returns the exit code, or -1 on timeout / git missing.
+    $o = [IO.Path]::GetTempFileName(); $e = [IO.Path]::GetTempFileName()
+    try {
+        $quoted = @('-C', "`"$repoRoot`"") + $gitArgs
+        $p = Start-Process -FilePath 'git' -ArgumentList $quoted -NoNewWindow -PassThru `
+            -RedirectStandardOutput $o -RedirectStandardError $e
+        $null = $p.Handle  # PS 5.1 quirk: without this, ExitCode stays empty
+        if (-not $p.WaitForExit($timeoutMs)) { try { $p.Kill() } catch {}; return -1 }
+        $p.WaitForExit()  # make ExitCode available
+        return $p.ExitCode
+    } catch { return -1 }
+    finally { Remove-Item -LiteralPath $o, $e -ErrorAction SilentlyContinue }
+}
+
+$env:GIT_TERMINAL_PROMPT = '0'
+if ((Invoke-Git @('fetch', '-q', 'origin', 'main') 15000) -eq 0) {
+    # Use GitHub only when this checkout is not ahead of it (HEAD is already inside origin/main).
+    if ((Invoke-Git @('merge-base', '--is-ancestor', 'HEAD', 'origin/main') 5000) -eq 0) { $useRemote = $true }
+} else {
+    $warnings.Add('Could not get the newest rules from GitHub (offline?). Used the files on this PC.')
+}
+
+function Get-SourceText([string]$srcName) {
+    $local = Join-Path $PSScriptRoot $srcName
+    if ($useRemote) {
+        # Local uncommitted edits win (exit 1 = file differs from HEAD).
+        if ((Invoke-Git @('diff', '--quiet', 'HEAD', '--', "pc-settings/$srcName") 5000) -eq 0) {
+            $tmp = [IO.Path]::GetTempFileName()
+            try {
+                # cmd redirection keeps the UTF-8 bytes exactly (PowerShell pipes would re-encode).
+                & cmd.exe /d /c "git -C `"$repoRoot`" show origin/main:pc-settings/$srcName > `"$tmp`" 2>nul"
+                if ($LASTEXITCODE -eq 0 -and (Get-Item -LiteralPath $tmp).Length -gt 0) {
+                    return [IO.File]::ReadAllText($tmp, $utf8)
+                }
+            } catch {
+            } finally { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue }
+        }
+    }
+    return [IO.File]::ReadAllText($local, $utf8)
+}
 
 function Backup-Once([string]$path) {
     $bak = "$path.bak"
@@ -23,8 +74,7 @@ function Backup-Once([string]$path) {
 # ---------- shared: copy a repo file into a marked block of a profile file ----------
 function Sync-Block([string]$srcName, [string]$dir, [string]$fileName, [string]$label) {
     try {
-        $src = Join-Path $PSScriptRoot $srcName
-        $block = Normalize ([IO.File]::ReadAllText($src, $utf8))
+        $block = Normalize (Get-SourceText $srcName)
         $begin = "<!-- cb-messenger-ai pc-settings BEGIN: auto-synced from the repo file pc-settings/$srcName. Edit that file, not this block. -->"
         $end = '<!-- cb-messenger-ai pc-settings END -->'
         $managed = "$begin`n$block`n$end"
