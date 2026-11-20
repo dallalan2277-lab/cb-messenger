@@ -9,6 +9,14 @@
 
 $ErrorActionPreference = 'Stop'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
+
+# In a cb-messenger session both the global hook and the project hook start this script.
+# Run once: skip quietly if another run started in the last 60 seconds.
+$stamp = Join-Path $env:TEMP 'cb-messenger-pc-settings-sync.stamp'
+try {
+    if ((Test-Path -LiteralPath $stamp) -and ((Get-Date) - (Get-Item -LiteralPath $stamp).LastWriteTime).TotalSeconds -lt 60) { exit 0 }
+    [IO.File]::WriteAllText($stamp, (Get-Date).ToString('s'))
+} catch {}
 $changes = New-Object System.Collections.Generic.List[string]
 $warnings = New-Object System.Collections.Generic.List[string]
 
@@ -177,6 +185,54 @@ try {
 # Codex reads ~/.codex/AGENTS.md for every session (Desktop, CLI, and calls from Claude Code).
 if (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.codex')) {
     Sync-Block 'codex-global.md' (Join-Path $env:USERPROFILE '.codex') 'AGENTS.md' '~/.codex/AGENTS.md'
+}
+
+# ---------- 4) Global Claude hook: run this script at every Claude Code start (2026-11-20) ----------
+# The project hook only fires in cb-messenger sessions. Register this script (at its current path)
+# as a SessionStart hook in ~/.claude/settings.json so sessions in ANY folder get the newest rules.
+try {
+    $claudeDir = Join-Path $env:USERPROFILE '.claude'
+    $settingsPath = Join-Path $claudeDir 'settings.json'
+    $myPath = Join-Path $PSScriptRoot 'sync.ps1'
+    $cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$myPath`""
+
+    $raw = ''
+    if (Test-Path -LiteralPath $settingsPath) { $raw = [IO.File]::ReadAllText($settingsPath, $utf8) }
+    if ($raw.Trim() -eq '') { $s = New-Object psobject } else { $s = $raw | ConvertFrom-Json }
+
+    # Collect SessionStart entries, dropping any older registration of this script (e.g. repo moved).
+    $entries = New-Object System.Collections.Generic.List[object]
+    $already = $false
+    if ($s.PSObject.Properties['hooks'] -and $s.hooks.PSObject.Properties['SessionStart']) {
+        foreach ($en in @($s.hooks.SessionStart)) {
+            if ($null -eq $en) { continue }
+            $mine = $false
+            foreach ($h in @($en.hooks)) {
+                if ($h -and $h.command -and ($h.command -like '*pc-settings*sync.ps1*')) {
+                    $mine = $true
+                    if ($h.command -eq $cmd) { $already = $true }
+                }
+            }
+            if (-not $mine) { $entries.Add($en) }
+        }
+    }
+
+    if (-not $already) {
+        $hook = [pscustomobject]@{ type = 'command'; command = $cmd; timeout = 30 }
+        $entries.Add([pscustomobject]@{ matcher = 'startup'; hooks = @($hook) })
+        if (-not $s.PSObject.Properties['hooks']) { $s | Add-Member -NotePropertyName hooks -NotePropertyValue (New-Object psobject) }
+        if ($s.hooks.PSObject.Properties['SessionStart']) { $s.hooks.SessionStart = $entries.ToArray() }
+        else { $s.hooks | Add-Member -NotePropertyName SessionStart -NotePropertyValue $entries.ToArray() }
+
+        $json = $s | ConvertTo-Json -Depth 32
+        $null = $json | ConvertFrom-Json   # must still parse before we write
+        if (-not (Test-Path -LiteralPath $claudeDir)) { New-Item -ItemType Directory -Path $claudeDir | Out-Null }
+        Backup-Once $settingsPath
+        [IO.File]::WriteAllText($settingsPath, $json, $utf8)
+        $changes.Add('~/.claude/settings.json: rules sync now runs at every Claude Code start (any folder)')
+    }
+} catch {
+    $warnings.Add("Global hook setup skipped (settings.json left as is): $($_.Exception.Message)")
 }
 
 # ---------- report ----------
