@@ -4,73 +4,151 @@
 #   3) ~/.codex/AGENTS.md  : block between markers <- pc-settings/codex-global.md
 #   5) ~/.claude/skills/  : skill folders from this repo and a sibling ai-bridge checkout
 # Runs at Claude Code session start (.claude/settings.json) and from 9_*.bat.
-# Rule files are read from GitHub origin/main when possible (see section 0), so no pull is needed.
+# Uses origin/main for rules and updates itself from there (see section 0).
 # Writes only when something differs. Keeps a one-time .bak before the first change.
 # This file is ASCII only (Windows PowerShell 5.1 reads BOM-less files as ANSI).
+
+param(
+    [switch]$Local,
+    [string]$RepoRoot,
+    # Internal: the downloaded script uses the same revisions and skips the bootstrap.
+    [ValidatePattern('^[0-9a-f]{40}([0-9a-f]{24})?$')]
+    [string]$OriginMainRevision,
+    [ValidatePattern('^[0-9a-f]{40}([0-9a-f]{24})?$')]
+    [string]$BridgeMainRevision
+)
 
 $ErrorActionPreference = 'Stop'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
-# In a cb-messenger session both the global hook and the project hook start this script.
-# Run once: skip quietly if another run started in the last 60 seconds.
-$stamp = Join-Path $env:TEMP 'cb-messenger-pc-settings-sync.stamp'
-try {
-    if ((Test-Path -LiteralPath $stamp) -and ((Get-Date) - (Get-Item -LiteralPath $stamp).LastWriteTime).TotalSeconds -lt 60) { exit 0 }
-    [IO.File]::WriteAllText($stamp, (Get-Date).ToString('s'))
-} catch {}
+# The two startup hooks can overlap. Keep the lock only while a sync is running,
+# so an explicit second run can pick up new commits or switch back from -Local.
+$syncLock = $null
+if (-not $OriginMainRevision) {
+    $userSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $created = $false
+    $syncLock = [Threading.Mutex]::new($false, "Local\cb-messenger-pc-settings-sync-$userSid", [ref]$created)
+    if (-not $created) { $syncLock.Dispose(); exit 0 }
+}
 $changes = New-Object System.Collections.Generic.List[string]
 $warnings = New-Object System.Collections.Generic.List[string]
 
 function Normalize([string]$s) { return ($s -replace "`r`n", "`n").Trim() }
 
-# ---------- 0) Get the newest rules from GitHub (2026-11-20) ----------
-# Fetch origin/main (never touches the working tree or the current branch) and read the
-# pc-settings sources from there, so every PC gets new rules without a manual pull.
-# Uses the local file instead when: offline / fetch fails or is slow, the local file has
-# uncommitted edits, or this checkout has commits origin/main does not have yet.
-$repoRoot = Split-Path -Parent $PSScriptRoot
-$useRemote = $false
+# ---------- 0) Select the sources and run a newer script from origin/main ----------
+if ($repoRoot) { $repoRoot = (Resolve-Path -LiteralPath $repoRoot).ProviderPath }
+else { $repoRoot = Split-Path -Parent $PSScriptRoot }
+$repoSettingsDir = Join-Path $repoRoot 'pc-settings'
+$bridgeRoot = Join-Path (Split-Path -Parent $repoRoot) 'ai-bridge'
+$bridgeUsesGit = Test-Path -LiteralPath (Join-Path $bridgeRoot '.git')
 
-function Invoke-Git([string[]]$gitArgs, [int]$timeoutMs) {
-    # Returns the exit code, or -1 on timeout / git missing.
-    $o = [IO.Path]::GetTempFileName(); $e = [IO.Path]::GetTempFileName()
+function Start-Git([string]$gitRoot, [string[]]$gitArgs, [string]$outputPath) {
+    $p = [Diagnostics.Process]::new()
+    $p.StartInfo.FileName = 'git'
+    $p.StartInfo.WorkingDirectory = $gitRoot
+    # Only fixed options, tree paths and verified Git object IDs are passed here.
+    $p.StartInfo.Arguments = $gitArgs -join ' '
+    $p.StartInfo.UseShellExecute = $false
+    $p.StartInfo.CreateNoWindow = $true
+    $p.StartInfo.RedirectStandardOutput = $true
+    $p.StartInfo.RedirectStandardError = $true
+    $output = [IO.Stream]::Null
     try {
-        $quoted = @('-C', "`"$repoRoot`"") + $gitArgs
-        $p = Start-Process -FilePath 'git' -ArgumentList $quoted -NoNewWindow -PassThru `
-            -RedirectStandardOutput $o -RedirectStandardError $e
-        $null = $p.Handle  # PS 5.1 quirk: without this, ExitCode stays empty
-        if (-not $p.WaitForExit($timeoutMs)) { try { $p.Kill() } catch {}; return -1 }
-        $p.WaitForExit()  # make ExitCode available
-        return $p.ExitCode
-    } catch { return -1 }
-    finally { Remove-Item -LiteralPath $o, $e -ErrorAction SilentlyContinue }
+        if ($outputPath) { $output = [IO.File]::Create($outputPath) }
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        $null = $p.Start()
+        $stdout = $p.StandardOutput.BaseStream.CopyToAsync($output)
+        $null = $p.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        return @{ Process = $p; Timer = $timer; Output = $output; Stdout = $stdout }
+    } catch {
+        $output.Dispose()
+        $p.Dispose()
+    }
 }
 
-$env:GIT_TERMINAL_PROMPT = '0'
-if ((Invoke-Git @('fetch', '-q', 'origin', 'main') 15000) -eq 0) {
-    # Use GitHub only when this checkout is not ahead of it (HEAD is already inside origin/main).
-    if ((Invoke-Git @('merge-base', '--is-ancestor', 'HEAD', 'origin/main') 5000) -eq 0) { $useRemote = $true }
-} else {
-    $warnings.Add('Could not get the newest rules from GitHub (offline?). Used the files on this PC.')
+function Wait-Git([hashtable]$run, [int]$timeoutMs) {
+    # Returns the exit code, or -1 on timeout / git missing.
+    if (-not $run) { return -1 }
+    $p = $run.Process
+    try {
+        $remainingMs = [Math]::Max(0, $timeoutMs - $run.Timer.ElapsedMilliseconds)
+        if (-not $p.WaitForExit([int]$remainingMs)) {
+            try { $p.Kill() } catch {}
+            return -1
+        }
+        # A child process may keep a pipe open. Bound the drain by the same deadline.
+        $remainingMs = [Math]::Max(0, $timeoutMs - $run.Timer.ElapsedMilliseconds)
+        if (-not $run.Stdout.Wait([int]$remainingMs)) { return -1 }
+        return $p.ExitCode
+    } catch { return -1 }
+    finally {
+        $p.Dispose()
+        $run.Output.Dispose()
+    }
+}
+
+function Invoke-Git([string]$gitRoot, [string[]]$gitArgs, [string]$outputPath) {
+    return (Wait-Git (Start-Git $gitRoot $gitArgs $outputPath) 5000)
+}
+
+function Get-OriginMainRevision([string]$gitRoot) {
+    $tmp = [IO.Path]::GetTempFileName()
+    try {
+        if ((Invoke-Git $gitRoot @('show-ref', '--verify', '--hash', 'refs/remotes/origin/main') $tmp) -eq 0) {
+            return [IO.File]::ReadAllText($tmp, $utf8).Trim()
+        }
+    } finally { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue }
+}
+
+$remoteRevision = $null
+$bridgeRevision = $null
+if (-not $Local) {
+    $env:GIT_TERMINAL_PROMPT = '0'
+    $remoteRevision = $OriginMainRevision
+    $bridgeRevision = $BridgeMainRevision
+    if (-not $remoteRevision) {
+        # Start both fetches before waiting so slow remotes share the hook's time budget.
+        $fetchArgs = @('fetch', '-q', '--no-tags', '--refmap=', 'origin', '+refs/heads/main:refs/remotes/origin/main')
+        $repoFetch = Start-Git $repoRoot $fetchArgs
+        $bridgeFetch = if ($bridgeUsesGit) { Start-Git $bridgeRoot $fetchArgs }
+        $null = Wait-Git $repoFetch 15000
+        $bridgeFetchExit = Wait-Git $bridgeFetch 15000
+
+        # The main repo can use its cached ref offline. ai-bridge falls back to its local files.
+        $remoteRevision = Get-OriginMainRevision $repoRoot
+        if ($bridgeFetchExit -eq 0) { $bridgeRevision = Get-OriginMainRevision $bridgeRoot }
+
+        if ($remoteRevision) {
+            $remoteScript = Join-Path ([IO.Path]::GetTempPath()) "cb-messenger-sync-$([Guid]::NewGuid()).ps1"
+            try {
+                if ((Invoke-Git $repoRoot @('cat-file', 'blob', "${remoteRevision}:pc-settings/sync.ps1") $remoteScript) -eq 0) {
+                    # The checkout normally has CRLF while the Git blob has LF.
+                    $running = [IO.File]::ReadAllText($PSCommandPath, $utf8).Replace("`r`n", "`n")
+                    $downloaded = [IO.File]::ReadAllText($remoteScript, $utf8).Replace("`r`n", "`n")
+                    if (-not $running.Equals($downloaded, [StringComparison]::Ordinal)) {
+                        $scriptArgs = @('-RepoRoot', $repoRoot, '-OriginMainRevision', $remoteRevision)
+                        if ($bridgeRevision) { $scriptArgs += @('-BridgeMainRevision', $bridgeRevision) }
+                        try {
+                            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $remoteScript @scriptArgs
+                            exit $LASTEXITCODE
+                        } finally { if ($syncLock) { $syncLock.Dispose() } }
+                    }
+                }
+            } finally { Remove-Item -LiteralPath $remoteScript -ErrorAction SilentlyContinue }
+        }
+    }
 }
 
 function Get-SourceText([string]$srcName) {
-    $local = Join-Path $PSScriptRoot $srcName
-    if ($useRemote) {
-        # Local uncommitted edits win (exit 1 = file differs from HEAD).
-        if ((Invoke-Git @('diff', '--quiet', 'HEAD', '--', "pc-settings/$srcName") 5000) -eq 0) {
-            $tmp = [IO.Path]::GetTempFileName()
-            try {
-                # cmd redirection keeps the UTF-8 bytes exactly (PowerShell pipes would re-encode).
-                & cmd.exe /d /c "git -C `"$repoRoot`" show origin/main:pc-settings/$srcName > `"$tmp`" 2>nul"
-                if ($LASTEXITCODE -eq 0 -and (Get-Item -LiteralPath $tmp).Length -gt 0) {
-                    return [IO.File]::ReadAllText($tmp, $utf8)
-                }
-            } catch {
-            } finally { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue }
+    if (-not $remoteRevision) { return [IO.File]::ReadAllText((Join-Path $repoSettingsDir $srcName), $utf8) }
+
+    $tmp = [IO.Path]::GetTempFileName()
+    try {
+        if ((Invoke-Git $repoRoot @('cat-file', 'blob', "${remoteRevision}:pc-settings/$srcName") $tmp) -ne 0) {
+            throw "Could not read pc-settings/$srcName from origin/main."
         }
-    }
-    return [IO.File]::ReadAllText($local, $utf8)
+        return [IO.File]::ReadAllText($tmp, $utf8)
+    } finally { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue }
 }
 
 function Backup-Once([string]$path) {
@@ -107,7 +185,7 @@ function Sync-Block([string]$srcName, [string]$dir, [string]$fileName, [string]$
         }
         $new = (Normalize $new) + "`n"
 
-        if ((Normalize $new) -ne $old) {
+        if ((Normalize $new) -cne $old) {
             Backup-Once $target
             [IO.File]::WriteAllText($target, ($new -replace "`n", "`r`n"), $utf8)
             $changes.Add("$label updated from pc-settings/$srcName")
@@ -194,7 +272,7 @@ if (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.codex')) {
 try {
     $claudeDir = Join-Path $env:USERPROFILE '.claude'
     $settingsPath = Join-Path $claudeDir 'settings.json'
-    $myPath = Join-Path $PSScriptRoot 'sync.ps1'
+    $myPath = Join-Path $repoSettingsDir 'sync.ps1'
     $cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$myPath`""
 
     $raw = ''
@@ -258,7 +336,45 @@ function Copy-SkillFile([string]$source, [string]$target) {
     return $true
 }
 
-function Sync-Skill([string]$name, [string]$sourceRoot, [string]$sourceLabel, [hashtable]$remoteFiles) {
+function Add-LocalSkillFiles([string]$dir, [string]$prefix, [hashtable]$files) {
+    foreach ($item in (Get-ChildItem -LiteralPath $dir -Force)) {
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+        $relative = $prefix + $item.Name
+        if ($item.PSIsContainer) { Add-LocalSkillFiles $item.FullName "$relative/" $files }
+        else { $files[$relative] = $item.FullName }
+    }
+}
+
+function Get-RemoteSkills([string]$gitRoot, [string]$skillPath, [string]$revision, [string]$sourceLabel) {
+    $skills = @{}
+    if ((Invoke-Git $gitRoot @('ls-tree', '-r', '-z', $revision, '--', $skillPath) $skillGitOutput) -ne 0) {
+        $warnings.Add("Could not list Claude skills from $sourceLabel origin/main.")
+        return $skills
+    }
+
+    # NUL separators preserve spaces and Unicode. Only regular Git blobs are copied.
+    $pathPattern = [regex]::Escape($skillPath)
+    $entryPattern = "^100[0-7]{3} blob ([0-9a-f]+)`t$pathPattern/([^/]+)/(.+)$"
+    $invalidNameChars = [IO.Path]::GetInvalidFileNameChars()
+    foreach ($entry in [IO.File]::ReadAllText($skillGitOutput, $utf8).Split([char]0)) {
+        if ($entry -cnotmatch $entryPattern) { continue }
+        $objectId = $Matches[1]
+        $name = $Matches[2]
+        $relative = $Matches[3]
+        $invalidParts = @((@($name) + $relative.Split('/')) | Where-Object {
+            $_ -eq '' -or $_.IndexOfAny($invalidNameChars) -ge 0 -or $_.EndsWith('.') -or $_.EndsWith(' ')
+        })
+        if ($invalidParts.Count -gt 0) {
+            $warnings.Add("Skill file has an invalid Windows path. Skipped: $skillPath/$name/$relative")
+            continue
+        }
+        if (-not $skills.ContainsKey($name)) { $skills[$name] = @{} }
+        $skills[$name][$relative] = $objectId
+    }
+    return $skills
+}
+
+function Sync-Skill([string]$name, [string]$sourceRoot, [string]$sourceLabel, [hashtable]$files, [string]$gitRoot) {
     $label = "~/.claude/skills/$name"
     $targetDir = Join-Path $claudeSkillsDir $name
     $updated = $false
@@ -269,33 +385,13 @@ function Sync-Skill([string]$name, [string]$sourceRoot, [string]$sourceLabel, [h
             return
         }
 
-        $localDir = Join-Path $sourceRoot $name
-        $files = $remoteFiles.Clone()
-        if (Test-Path -LiteralPath $localDir -PathType Container) {
-            foreach ($file in (Get-ChildItem -LiteralPath $localDir -File -Recurse -Force)) {
-                $relative = $file.FullName.Substring($localDir.Length + 1).Replace('\', '/')
-                if (-not $files.ContainsKey($relative)) { $files[$relative] = $null }
-            }
+        if (-not $gitRoot) {
+            $localDir = Get-Item -LiteralPath (Join-Path $sourceRoot $name) -Force -ErrorAction SilentlyContinue
+            if (-not $localDir -or ($localDir.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return }
+            Add-LocalSkillFiles $localDir.FullName '' $files
         }
 
         :skillFiles foreach ($relative in ($files.Keys | Sort-Object)) {
-            $source = Join-Path $localDir $relative
-            $gitPath = $files[$relative]
-            if ($gitPath) {
-                $quotedPath = "`"$gitPath`""
-                # git diff ignores untracked files, so check the index if a local file exists.
-                if ((Invoke-Git @('--literal-pathspecs', 'diff', '--quiet', 'HEAD', '--', $quotedPath) 5000) -eq 0 -and
-                    (-not [IO.File]::Exists($source) -or
-                        (Invoke-Git @('--literal-pathspecs', 'ls-files', '--error-unmatch', '--', $quotedPath) 5000) -eq 0)) {
-                    $env:CBM_PC_SKILL_GIT_OBJECT = "origin/main:$gitPath"
-                    # cmd redirection preserves bytes, including for an empty blob or a binary file.
-                    & cmd.exe /d /v:off /c 'git -C "%CBM_PC_SKILL_REPO%" show "%CBM_PC_SKILL_GIT_OBJECT%" > "%CBM_PC_SKILL_OUTPUT%" 2>nul'
-                    if ($LASTEXITCODE -eq 0) { $source = $skillGitOutput }
-                    else { $warnings.Add("Could not read $gitPath from origin/main. Using the local file if present.") }
-                }
-            }
-            if (-not [IO.File]::Exists($source)) { continue }
-
             # A nested link can also redirect a write outside the skill.
             $target = $targetDir
             foreach ($part in $relative.Split('/')) {
@@ -306,6 +402,16 @@ function Sync-Skill([string]$name, [string]$sourceRoot, [string]$sourceLabel, [h
                     continue skillFiles
                 }
             }
+
+            $source = $files[$relative]
+            if ($gitRoot) {
+                if ((Invoke-Git $gitRoot @('cat-file', 'blob', $source) $skillGitOutput) -ne 0) {
+                    $warnings.Add("Could not read $label/$relative from $sourceLabel origin/main.")
+                    continue
+                }
+                $source = $skillGitOutput
+            }
+            if (-not [IO.File]::Exists($source)) { continue }
             if (Copy-SkillFile $source $target) { $updated = $true }
         }
     } catch {
@@ -318,52 +424,39 @@ function Sync-Skill([string]$name, [string]$sourceRoot, [string]$sourceLabel, [h
 $skillGitOutput = $null
 try {
     $claudeSkillsDir = Join-Path $env:USERPROFILE '.claude\skills'
-    $repoSkillsDir = Join-Path $repoRoot '.claude\skills'
-    $repoSkills = @{}
-    if (Test-Path -LiteralPath $repoSkillsDir -PathType Container) {
-        foreach ($dir in (Get-ChildItem -LiteralPath $repoSkillsDir -Directory -Force)) {
-            $repoSkills[$dir.Name] = @{}
-        }
+    $skillsDirItem = Get-Item -LiteralPath $claudeSkillsDir -Force -ErrorAction SilentlyContinue
+    if ($skillsDirItem -and ($skillsDirItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw '~/.claude/skills is a symlink or junction. Skipped.'
     }
 
-    if ($useRemote) {
-        $skillGitOutput = [IO.Path]::GetTempFileName()
-        $env:CBM_PC_SKILL_REPO = $repoRoot
-        $env:CBM_PC_SKILL_OUTPUT = $skillGitOutput
-        & cmd.exe /d /v:off /c 'git -C "%CBM_PC_SKILL_REPO%" ls-tree -r -z --name-only origin/main -- .claude/skills > "%CBM_PC_SKILL_OUTPUT%" 2>nul'
-        if ($LASTEXITCODE -eq 0) {
-            # NUL separators preserve spaces and Unicode in Git paths.
-            $invalidNameChars = [IO.Path]::GetInvalidFileNameChars()
-            foreach ($gitPath in [IO.File]::ReadAllText($skillGitOutput, $utf8).Split([char]0)) {
-                if ($gitPath -notmatch '^\.claude/skills/([^/]+)/(.+)$') { continue }
-                $name = $Matches[1]
-                $relative = $Matches[2]
-                $invalidParts = @((@($name) + $relative.Split('/')) | Where-Object {
-                    $_ -eq '' -or $_.IndexOfAny($invalidNameChars) -ge 0 -or $_.EndsWith('.') -or $_.EndsWith(' ')
-                })
-                if ($invalidParts.Count -gt 0) {
-                    $warnings.Add("Skill file has an invalid Windows path. Skipped: $gitPath")
-                    continue
-                }
-                if (-not $repoSkills.ContainsKey($name)) { $repoSkills[$name] = @{} }
-                $repoSkills[$name][$relative] = $gitPath
-            }
+    if ($remoteRevision -or $bridgeRevision) { $skillGitOutput = [IO.Path]::GetTempFileName() }
+    $sources = @(
+        @{ Root = $repoRoot; Path = '.claude/skills'; Label = 'cb-messenger'; Revision = $remoteRevision }
+        @{ Root = $bridgeRoot; Path = 'tools/claude/skills'; Label = 'ai-bridge'; Revision = $bridgeRevision }
+    )
+    $usedNames = @{}
+    foreach ($source in $sources) {
+        $sourceDir = Join-Path $source.Root $source.Path
+        $gitRoot = $null
+        if ($source.Revision) {
+            $gitRoot = $source.Root
+            $skills = Get-RemoteSkills $gitRoot $source.Path $source.Revision $source.Label
         } else {
-            $warnings.Add('Could not list Claude skills from origin/main. Used the files on this PC.')
+            $skills = @{}
+            $item = Get-Item -LiteralPath $sourceDir -Force -ErrorAction SilentlyContinue
+            if ($item -and $item.PSIsContainer -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                foreach ($dir in (Get-ChildItem -LiteralPath $sourceDir -Directory -Force)) {
+                    if (-not ($dir.Attributes -band [IO.FileAttributes]::ReparsePoint)) { $skills[$dir.Name] = @{} }
+                }
+            }
         }
-    }
 
-    foreach ($name in ($repoSkills.Keys | Sort-Object)) {
-        Sync-Skill $name $repoSkillsDir 'cb-messenger' $repoSkills[$name]
-    }
-
-    $bridgeSkillsDir = Join-Path (Split-Path -Parent $repoRoot) 'ai-bridge\tools\claude\skills'
-    if (Test-Path -LiteralPath $bridgeSkillsDir -PathType Container) {
-        foreach ($dir in (Get-ChildItem -LiteralPath $bridgeSkillsDir -Directory -Force)) {
-            if ($repoSkills.ContainsKey($dir.Name)) {
-                $warnings.Add("Claude skill '$($dir.Name)' is in both repositories. Using cb-messenger.")
+        foreach ($name in ($skills.Keys | Sort-Object)) {
+            if ($usedNames.ContainsKey($name)) {
+                $warnings.Add("Claude skill '$name' is in both repositories. Using cb-messenger.")
             } else {
-                Sync-Skill $dir.Name $bridgeSkillsDir 'ai-bridge' @{}
+                $usedNames[$name] = $true
+                Sync-Skill $name $sourceDir $source.Label $skills[$name] $gitRoot
             }
         }
     }
@@ -374,8 +467,15 @@ try {
 }
 
 # ---------- report ----------
-# Silent when nothing changed, so session start stays quiet.
+# Report local fallbacks only when settings were applied, so offline starts stay quiet.
+if ($changes.Count -gt 0 -and -not $Local) {
+    if (-not $remoteRevision) { $warnings.Add('No origin/main ref for cb-messenger. Used the files on this PC.') }
+    if ($bridgeUsesGit -and -not $bridgeRevision) {
+        $warnings.Add('Could not get origin/main for ai-bridge. Used the files on this PC.')
+    }
+}
 foreach ($c in $changes) { Write-Output "[pc-settings] $c" }
 foreach ($w in $warnings) { Write-Output "[pc-settings] WARNING: $w" }
 if ($changes.Count -gt 0) { Write-Output '[pc-settings] Restart Claude Code / Codex for the new settings to take effect.' }
+if ($syncLock) { $syncLock.Dispose() }
 exit 0

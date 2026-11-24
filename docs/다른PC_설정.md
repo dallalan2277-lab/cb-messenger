@@ -8,7 +8,10 @@ GitHub 로 직접 옮겨지지 않습니다. 그래서 **원본을 이 저장소
 **자동**: 이 폴더(`cb-messenger-ai`)를 Claude Code 로 열면 시작할 때 저절로 맞춰집니다 (`.claude/settings.json` 의 시작 hook).
 바뀐 것이 있으면 Claude 가 알려 줍니다. 처음 여는 PC 에서는 이 폴더의 설정을 믿을지(신뢰) 묻는 창이 뜰 수 있습니다 → 허용.
 
-**손으로**: `git pull` 로 받은 뒤 **`9_PC설정맞추기.bat` 더블클릭.** (자동이 안 됐거나, Codex 를 나중에 설치했을 때)
+**손으로**: **`9_PC설정맞추기.bat` 더블클릭.** (자동이 안 됐거나, Codex 를 나중에 설치했을 때)
+이 기능이 들어간 `sync.ps1` 을 PC 에 한 번 받아 두면, 이후에는 GitHub `main` 최신 규칙과 스크립트를 자동으로 가져옵니다.
+연결이 안 되면 충북메신저 저장소에서 마지막으로 받아 둔 `origin/main` 을 씁니다. 받아 둔 내용도 없으면 이 PC 의 파일을 씁니다.
+옆 폴더에 `ai-bridge`가 있으면 그 스킬도 GitHub `main`에서 가져옵니다. 가져오지 못하면 그 폴더의 파일을 씁니다.
 
 - 아무 줄도 안 나오면 이미 맞춰져 있는 상태입니다.
 - 바뀐 것이 있으면 Claude 앱과 Codex 를 껐다 켜 주세요.
@@ -33,8 +36,9 @@ GitHub 로 직접 옮겨지지 않습니다. 그래서 **원본을 이 저장소
 
 ## 규칙을 바꾸고 싶을 때
 
-Claude 에게 "Codex 규칙 바꿔줘" 라고 하면 `pc-settings/claude-global.md` 를 고치고 이 PC 에 반영한 뒤 커밋·push 합니다.
-다른 PC 에서는 `git pull` 후 `9_PC설정맞추기.bat` 을 다시 실행하면 같아집니다.
+Claude 공통 규칙은 `pc-settings/claude-global.md`, Codex 공통 규칙은 `pc-settings/codex-global.md`에서 고칩니다.
+GitHub에 올리기 전에 시험하려면 저장소 폴더의 PowerShell에서 `powershell -NoProfile -ExecutionPolicy Bypass -File .\pc-settings\sync.ps1 -Local`을 실행하세요.
+변경 사항이 GitHub `main` 에 들어가면 다른 PC 에서 `9_PC설정맞추기.bat` 을 다시 실행해 반영할 수 있습니다.
 (`~/.claude/CLAUDE.md` 를 직접 고치면 다음 동기화 때 원본 내용으로 덮어써집니다.)
 
 ## Codex 플러그인
