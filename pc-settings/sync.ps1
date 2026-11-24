@@ -2,6 +2,7 @@
 #   1) ~/.claude/CLAUDE.md : block between markers <- pc-settings/claude-global.md
 #   2) ~/.codex/config.toml: top-level model (gpt-6.2-sol) + model_reasoning_effort = "max"
 #   3) ~/.codex/AGENTS.md  : block between markers <- pc-settings/codex-global.md
+#   5) ~/.claude/skills/  : skill folders from this repo and a sibling ai-bridge checkout
 # Runs at Claude Code session start (.claude/settings.json) and from 9_*.bat.
 # Rule files are read from GitHub origin/main when possible (see section 0), so no pull is needed.
 # Writes only when something differs. Keeps a one-time .bak before the first change.
@@ -233,6 +234,143 @@ try {
     }
 } catch {
     $warnings.Add("Global hook setup skipped (settings.json left as is): $($_.Exception.Message)")
+}
+
+# ---------- 5) Claude personal skills ----------
+function Copy-SkillFile([string]$source, [string]$target) {
+    $exists = [IO.File]::Exists($target)
+    if ([IO.Path]::GetExtension($target) -in @('.md', '.txt', '.py', '.ps1', '.js', '.json', '.yml', '.yaml', '.toml')) {
+        $new = [IO.File]::ReadAllText($source, $utf8).Replace("`r`n", "`n")
+        if ($exists) {
+            $old = [IO.File]::ReadAllText($target, $utf8).Replace("`r`n", "`n")
+            if ($new.Equals($old, [StringComparison]::Ordinal)) { return $false }
+        }
+        $bytes = $utf8.GetBytes($new.Replace("`n", "`r`n"))
+    } else {
+        $bytes = [IO.File]::ReadAllBytes($source)
+        if ($exists -and [Collections.StructuralComparisons]::StructuralEqualityComparer.Equals(
+            $bytes, [IO.File]::ReadAllBytes($target))) { return $false }
+    }
+
+    $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $target))
+    Backup-Once $target
+    [IO.File]::WriteAllBytes($target, $bytes)
+    return $true
+}
+
+function Sync-Skill([string]$name, [string]$sourceRoot, [string]$sourceLabel, [hashtable]$remoteFiles) {
+    $label = "~/.claude/skills/$name"
+    $targetDir = Join-Path $claudeSkillsDir $name
+    $updated = $false
+    try {
+        $item = Get-Item -LiteralPath $targetDir -Force -ErrorAction SilentlyContinue
+        if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            $warnings.Add("$label is a symlink or junction. Skipped.")
+            return
+        }
+
+        $localDir = Join-Path $sourceRoot $name
+        $files = $remoteFiles.Clone()
+        if (Test-Path -LiteralPath $localDir -PathType Container) {
+            foreach ($file in (Get-ChildItem -LiteralPath $localDir -File -Recurse -Force)) {
+                $relative = $file.FullName.Substring($localDir.Length + 1).Replace('\', '/')
+                if (-not $files.ContainsKey($relative)) { $files[$relative] = $null }
+            }
+        }
+
+        :skillFiles foreach ($relative in ($files.Keys | Sort-Object)) {
+            $source = Join-Path $localDir $relative
+            $gitPath = $files[$relative]
+            if ($gitPath) {
+                $quotedPath = "`"$gitPath`""
+                # git diff ignores untracked files, so check the index if a local file exists.
+                if ((Invoke-Git @('--literal-pathspecs', 'diff', '--quiet', 'HEAD', '--', $quotedPath) 5000) -eq 0 -and
+                    (-not [IO.File]::Exists($source) -or
+                        (Invoke-Git @('--literal-pathspecs', 'ls-files', '--error-unmatch', '--', $quotedPath) 5000) -eq 0)) {
+                    $env:CBM_PC_SKILL_GIT_OBJECT = "origin/main:$gitPath"
+                    # cmd redirection preserves bytes, including for an empty blob or a binary file.
+                    & cmd.exe /d /v:off /c 'git -C "%CBM_PC_SKILL_REPO%" show "%CBM_PC_SKILL_GIT_OBJECT%" > "%CBM_PC_SKILL_OUTPUT%" 2>nul'
+                    if ($LASTEXITCODE -eq 0) { $source = $skillGitOutput }
+                    else { $warnings.Add("Could not read $gitPath from origin/main. Using the local file if present.") }
+                }
+            }
+            if (-not [IO.File]::Exists($source)) { continue }
+
+            # A nested link can also redirect a write outside the skill.
+            $target = $targetDir
+            foreach ($part in $relative.Split('/')) {
+                $target = Join-Path $target $part
+                $item = Get-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+                if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                    $warnings.Add("$label/$relative uses a symlink or junction. Skipped.")
+                    continue skillFiles
+                }
+            }
+            if (Copy-SkillFile $source $target) { $updated = $true }
+        }
+    } catch {
+        $warnings.Add("$label sync failed: $($_.Exception.Message)")
+    } finally {
+        if ($updated) { $changes.Add("$label updated from $sourceLabel") }
+    }
+}
+
+$skillGitOutput = $null
+try {
+    $claudeSkillsDir = Join-Path $env:USERPROFILE '.claude\skills'
+    $repoSkillsDir = Join-Path $repoRoot '.claude\skills'
+    $repoSkills = @{}
+    if (Test-Path -LiteralPath $repoSkillsDir -PathType Container) {
+        foreach ($dir in (Get-ChildItem -LiteralPath $repoSkillsDir -Directory -Force)) {
+            $repoSkills[$dir.Name] = @{}
+        }
+    }
+
+    if ($useRemote) {
+        $skillGitOutput = [IO.Path]::GetTempFileName()
+        $env:CBM_PC_SKILL_REPO = $repoRoot
+        $env:CBM_PC_SKILL_OUTPUT = $skillGitOutput
+        & cmd.exe /d /v:off /c 'git -C "%CBM_PC_SKILL_REPO%" ls-tree -r -z --name-only origin/main -- .claude/skills > "%CBM_PC_SKILL_OUTPUT%" 2>nul'
+        if ($LASTEXITCODE -eq 0) {
+            # NUL separators preserve spaces and Unicode in Git paths.
+            $invalidNameChars = [IO.Path]::GetInvalidFileNameChars()
+            foreach ($gitPath in [IO.File]::ReadAllText($skillGitOutput, $utf8).Split([char]0)) {
+                if ($gitPath -notmatch '^\.claude/skills/([^/]+)/(.+)$') { continue }
+                $name = $Matches[1]
+                $relative = $Matches[2]
+                $invalidParts = @((@($name) + $relative.Split('/')) | Where-Object {
+                    $_ -eq '' -or $_.IndexOfAny($invalidNameChars) -ge 0 -or $_.EndsWith('.') -or $_.EndsWith(' ')
+                })
+                if ($invalidParts.Count -gt 0) {
+                    $warnings.Add("Skill file has an invalid Windows path. Skipped: $gitPath")
+                    continue
+                }
+                if (-not $repoSkills.ContainsKey($name)) { $repoSkills[$name] = @{} }
+                $repoSkills[$name][$relative] = $gitPath
+            }
+        } else {
+            $warnings.Add('Could not list Claude skills from origin/main. Used the files on this PC.')
+        }
+    }
+
+    foreach ($name in ($repoSkills.Keys | Sort-Object)) {
+        Sync-Skill $name $repoSkillsDir 'cb-messenger' $repoSkills[$name]
+    }
+
+    $bridgeSkillsDir = Join-Path (Split-Path -Parent $repoRoot) 'ai-bridge\tools\claude\skills'
+    if (Test-Path -LiteralPath $bridgeSkillsDir -PathType Container) {
+        foreach ($dir in (Get-ChildItem -LiteralPath $bridgeSkillsDir -Directory -Force)) {
+            if ($repoSkills.ContainsKey($dir.Name)) {
+                $warnings.Add("Claude skill '$($dir.Name)' is in both repositories. Using cb-messenger.")
+            } else {
+                Sync-Skill $dir.Name $bridgeSkillsDir 'ai-bridge' @{}
+            }
+        }
+    }
+} catch {
+    $warnings.Add("Claude skills sync failed: $($_.Exception.Message)")
+} finally {
+    if ($skillGitOutput) { Remove-Item -LiteralPath $skillGitOutput -ErrorAction SilentlyContinue }
 }
 
 # ---------- report ----------
