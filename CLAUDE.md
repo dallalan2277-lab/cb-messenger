@@ -81,16 +81,14 @@ app/paths.py                실행 위치·자료 위치. 개발: 저장소 폴�
 - `.bat` 파일은 CRLF + UTF-8 + `chcp 65001`. zip 으로 묶을 때 한글 파일 이름은 UTF-8 플래그로.
 - 공휴일(`holidays_kr.json`)은 기억으로 넣지 말고 월력요항 등 출처를 확인해서 추가.
 
-## Codex(GPT) 위임 기준 (이 프로젝트)
-공통 규칙(Claude 총괄, 기본 6.2 Sol + max·어려운 문제 재검증 6.2 Astra + xhigh 등)은 `~/.claude/CLAUDE.md` 의 pc-settings 구역에 있음.
+## 위임 기준 (이 프로젝트)
+공통 규칙(Claude 총괄, 구현 제미나이 하이드로젠·리뷰 네온·의견 교환 카본 등. **GPT·Codex는 2026-11-27부터 쓰지 않음**)은 `~/.claude/CLAUDE.md` 의 pc-settings 구역에 있음.
 - 원본은 저장소 `pc-settings/claude-global.md`(Claude 용)·`codex-global.md`(Codex 용). `pc-settings/sync.ps1`(= `9_PC설정맞추기.bat`, Claude Code 시작 때 SessionStart hook 으로 자동 실행)이 `~/.claude/CLAUDE.md`·`~/.codex/AGENTS.md` 의 표시 구역과 `~/.codex/config.toml` 맨 위(모델·사고 수준)를 맞춤. 자세한 것은 `docs/다른PC_설정.md`.
 - 규칙을 바꿀 때는 원본을 고치고 sync 실행 후 커밋 (`~/.claude/CLAUDE.md` 를 직접 고치면 다음 동기화 때 덮어써짐). `[pc-settings]` 로 시작하는 줄이 보이면 바뀐 내용을 사용자에게 쉬운 말로 알릴 것.
-- 저장소 맨 위 `AGENTS.md` 는 Codex 용 짧은 안내. 이 문서의 규칙을 크게 바꾸면 그 요약도 맞출 것.
-- 이 프로젝트의 **중요 변경(→ 6.2 Sol 검토, 필요하면 6.2 Astra xhigh 로 재검증)**: 로그인·토큰(`llm/chatgpt_auth.py`·`chatgpt_plan_provider.py`), IMAP·디코딩(`collectors/naver_mail.py`·`mail_content.py`), `redact.py`, `secrets_store.py`, `analyzer.py` 의 근거 확인·글 속 지시 무시, `storage.py` 마이그레이션. 그 밖의 분명한 구현·테스트(`calendar.html`·`api.py`·`ics_export.py` 등)도 6.2 Sol.
-- 6.2 는 최신 Codex CLI 필요 (0.169.1 확인, 옛 0.154 에서는 "not supported" 오류 → PowerShell 에서 `codex update`).
-- Codex 플러그인 팁: 긴 한국어 지시문은 파일로 쓰고 `task --prompt-file <파일>` 로 (직접 넘기면 따옴표 때문에 셸 오류). 작업 두 개를 같은 순간에 시작하면 브로커가 충돌 → 몇 초 띄워서. `review --model <모델>` 로 검토 모델 지정 가능.
+- 저장소 맨 위 `AGENTS.md` 는 Codex 용 짧은 안내(Codex를 안 쓰는 동안은 보관용).
+- 이 프로젝트의 **중요 변경(→ 제미나이 네온 검토, 설계 판단이 걸리면 카본에게 2차 의견)**: 로그인·토큰(`llm/chatgpt_auth.py`·`chatgpt_plan_provider.py`), IMAP·디코딩(`collectors/naver_mail.py`·`mail_content.py`), `redact.py`, `secrets_store.py`, `analyzer.py` 의 근거 확인·글 속 지시 무시, `storage.py` 마이그레이션. 그 밖의 분명한 구현·테스트(`calendar.html`·`api.py`·`ics_export.py` 등)는 하이드로젠.
 - **위임하지 않음 (Claude 가 직접 + 사용자 PC 확인)**: `eztalk_collector.py`·`eztalk_parse.py`(실제 메신저 창 구조는 사용자 PC 에서만 확인 가능), `desktop_calendar/widget.py`(Win32 창 동작), tkinter 화면 모양, 설계 규칙·분석 스키마 변경 결정.
-- **Codex 에 넘기지 않을 것**: 실제 쪽지·메일 원문, `.env`, `data/`(DB·쪽지기록), `messenger-check --raw` 출력, 토큰·비밀번호. 넘기면 OpenAI 서버로 전송됨 → 재현이 필요하면 가상 예시로 바꿔서.
+- **외부 AI(제미나이 등)에 넘기지 않을 것**: 실제 쪽지·메일 원문, `.env`, `data/`(DB·쪽지기록), `messenger-check --raw` 출력, 토큰·비밀번호. 넘기면 그 회사 서버(Google 등)로 전송됨 → 재현이 필요하면 가상 예시로 바꿔서.
 - 위임 지시에는 이 문서의 "지켜야 할 규칙"(읽기 전용 수집, 테스트는 네트워크·키 없이, Python 3.10 호환, Windows 전용 import 는 함수 안) 을 함께 적을 것.
 
 ## 자주 쓰는 명령

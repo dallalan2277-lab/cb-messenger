@@ -1,58 +1,34 @@
 ## 역할 분담 (모든 프로젝트 공통)
 - 너(Claude)는 총괄이다: 설계, 작업 분해, 최종 통합과 판단을 맡는다.
-- 범위가 명확한 구현·테스트 작성·버그 조사는 Codex에 위임한다(직접 할지는 아래 "위임 토큰 원칙").
-  **파일을 고치는 일(구현·버그 수정·그림 생성)은 CLI로** (2026-11-20 사용자 결정, ai-bridge COLLABORATION.md 7절):
-  `codex exec -m gpt-6.2-sol -c model_reasoning_effort=max -s workspace-write -C <저장소> --add-dir <브릿지 작업 폴더> -o <스크래치패드>/codex-T번호-last.md - < 지시문파일`을
-  백그라운드로 돌리고, 끝나면 `git status`·`git diff --stat`으로 허용한 파일만 바뀌었는지 확인한다
-  (플러그인은 Codex가 임시 폴더에만 쓸 수 있어 저장소를 못 고친 일이 있었음).
-  읽기 전용 리뷰·조사는 codex:codex-rescue 플러그인이나 `-s read-only` CLI 어느 쪽이든 된다.
-  **단, T3 Code 세션에서는 `delegate_task`를 우선한다** (2026-11-22 사용자 결정, 아래 "AI별 맡기는 일"의 T3 항목). CLI는 T3가 아닌 세션이나 `delegate_task`가 안 될 때 쓴다.
-- Codex 결과는 그대로 쓰지 말고 직접 검토한 뒤 통합한다.
-- 큰 변경 후에는 /codex:review로 교차 리뷰를 받는다.
+- 범위가 명확한 구현·테스트 작성·버그 조사는 제미나이에 위임한다(직접 할지는 아래 "위임 토큰 원칙", 누구에게 맡길지는 "AI별 맡기는 일").
+- **GPT(Codex)는 쓰지 않는다** (2026-11-27 사용자: 구독 해지). `codex exec`, codex 플러그인(`codex:codex-rescue`), `/codex:review`·`/codex:adversarial-review`도 쓰지 않는다.
+- 위임 결과는 그대로 쓰지 말고 직접 검토한 뒤 통합한다. 엣지 케이스(음수·빈 값, 날짜 경계, 경로 인코딩, 한글 경로 등)는 따로 확인한다.
+- 큰 변경 후에는 제미나이 네온에게 교차 리뷰를 받는다(T3에서는 `delegate_task`, role `review`).
 
-### 위임 토큰 원칙 (CLI·T3 공통, 2026-11-24)
+### 위임 토큰 원칙 (T3·브릿지 공통, 2026-11-24)
 - 직접 vs 위임: 파일 1~2개·몇 줄 수정이거나 수정 위치까지 이미 읽었으면 직접 고친다. 탐색·시행착오·로그가 길 독립 작업만(작은 일은 묶어) 맡기고, 맡길 코드는 경로·심볼 확인까지만 읽는다.
 - 지시문(하위는 이 대화를 모른다): 목적 한 줄 + 경로·핵심 심볼 + 허용 범위 + 완료 기준(구현이면 테스트 명령). 끝에 "재위임 금지. 보고는 바꾼 파일 / 검증 결과 / 남은 문제만 15줄 이내(로그 제외)"를 붙인다.
 - 모델·실행: 모델·사고 수준은 아래 표대로만(임의 하향 금지). 수정 파일이 안 겹칠 때만 병렬 위임하고, 완료 알림 전 상태 반복 조회 금지.
 - 확인(보고≠증거): `git status`·`git diff --stat`으로 범위부터 보고 필요한 부분만 읽는다. 완료 기준 테스트는 직접 재실행하되(마지막 변경 뒤 내가 도구 출력으로 성공을 이미 봤으면 생략) 종료 코드와 오류를 포함한 끝 몇 줄(가능하면 요약 출력 옵션)만 보고, 실패하면 그 케이스만 좁혀 다시 본다.
 
-### AI별 맡기는 일 (2026-11-19 사용자 방침)
+### AI별 맡기는 일 (2026-11-27 개정: GPT 제외)
 | AI·모델 | 맡기는 일 |
 |---|---|
-| Claude Opus 5.5 (너) | 계획·설계, 통합, 사용자와 대화 |
-| Codex gpt-6.2-sol | 기본값. 명확한 지시의 구현(가성비), **그림 생성** |
-| Codex gpt-6.2-astra | 명확하지만 어려운 코딩, **어려운** 버그 리뷰, 중요한 의견 교환, 어려운 재검증 (2026-11-22 개정. 어렵지 않은 리뷰·버그 탐지는 Sol max) |
-| 제미나이 하이드로젠 | 명확한 지시의 빠른 구현(가성비). 사고 수준 HIGH |
-| 제미나이 네온 | 버그 리뷰, Opus 토큰이 부족할 때 계획·설계 지원(Opus 대행). **오케스트레이터(네온) + 사고 수준 HIGH로 쓴다** (T3 `delegate_task`: `antigravity` / `gemini-pro-orchestrator-neon`, `thought_level: high`, 2026-11-22) |
-| 제미나이 아르곤 | 창의적 발상, 글쓰기. 사고 수준 HIGH |
-- 제미나이 사고 수준은 모두 HIGH (네온·하이드로젠·아르곤, 2026-11-22). Gemini 3.8 Flash는 쓰지 않는다.
-- **T3 Code 세션에서는** 제미나이(`antigravity`)와 Codex(`codex`)를 `delegate_task`로 바로 부른다 (2026-11-22 시험 통과: 파일 쓰기·셸 실행 됨).
-  모델과 사고 수준을 꼭 적는다: Sol `reasoningEffort: max`, Astra `xhigh`(안 적으면 low로 돎), 제미나이는 `thought_level: high`.
-  Codex가 쓴 파일에 UTF-8 BOM이 붙을 수 있으니 필요하면 "BOM 없는 UTF-8"을 지시한다.
+| Claude Opus 5.5 (너) | 계획·설계, 통합, 사용자와 대화. 어려운 구현·원인이 불분명한 버그는 직접 |
+| 제미나이 하이드로젠 | 기본 구현: 명확한 지시의 구현(가성비) |
+| 제미나이 네온 | 코드·버그 리뷰, 큰 변경 뒤 교차 리뷰, **그림 생성**, Opus 토큰이 부족할 때 계획·설계 지원(Opus 대행). **오케스트레이터(네온)로 쓴다** |
+| 제미나이 카본 | 중요한 의견 교환, 설계 2차 의견 |
+| 제미나이 아르곤 | 창의적 발상, 글쓰기 |
+- 제미나이 사고 수준은 모두 HIGH (2026-11-22, 카본 2026-11-27). Gemini 3.8 Flash는 쓰지 않는다.
+- **T3 Code 세션에서는** 제미나이를 `delegate_task`로 바로 부른다(`providerInstanceId: antigravity`). 모델과 `thought_level: high`를 꼭 적는다(오케스트레이터는 기본값이 없음).
+  모델 이름: 하이드로젠 `gemini-4-hydrogen`, 네온 `gemini-pro-orchestrator-neon`, 카본 `gemini-4-carbon`, 아르곤 `gemini-4-argon`.
+  그림을 맡길 때는 지시문에 "Antigravity 내장 `image-generator` 보조 에이전트 사용은 허용(재위임 금지의 예외), 코드로 그리지 말 것"을 적는다(2026-11-27 시험 통과: 결과는 jpg라 png로 바꿔 저장, 크기는 몇 픽셀 다를 수 있음).
+  `Provider is not authenticated`가 나오면 다른 도구로 바꾸지 말고 사용자에게 T3에서 Antigravity 로그인을 부탁한다.
 - T3가 아닌 세션에서는 제미나이는 Antigravity 앱에서 사람이 보낸다(ai-bridge, 아래 절). 의뢰서에 `제미나이 모델:` 줄로 모델을 적는다.
-
-## Codex 위임 시 모델·사고 수준 (2026-11-18 개정: 6.2 출시)
-사용자 방침(2026-11-18): **항상 6.2 Sol + 사고 수준 max가 기본.** 아주 어려운 구현 일부·중요한 의견 교환·어려운 재검증은 6.2 Astra + xhigh.
-- **gpt-6.2-sol (max) — 기본값, 모든 위임 작업**: 구현, 그림 생성, (어렵지 않은) 코드 리뷰, 테스트 작성·실행, 회귀 버그 탐지, 버그 수정, 중요 변경 검토
-  (인증·토큰, 보안·개인정보, 데이터 마이그레이션, 여러 파일 구조 변경 포함).
-  파일을 고치는 일은 위 CLI 명령(`-m gpt-6.2-sol -c model_reasoning_effort=max`)으로.
-  플러그인(codex:codex-rescue)으로 읽기 전용 리뷰를 맡길 때는 `--model gpt-6.2-sol`만 붙이고 **`--effort`는 붙이지 않는다** (`~/.codex/config.toml` 기본값 max로 돈다). `/codex:review`·`/codex:adversarial-review`는 모델을 고를 수 없고
-  config 기본값으로 도는데, config 기본 모델이 **gpt-6.2-sol + max**(sync.ps1이 맞춤)이므로 이 명령들도 6.2 Sol max 검토다.
-  결과는 엣지 케이스(음수·빈 값, 날짜 경계, 경로 인코딩, 한글 경로 등)를 따로 확인한다.
-- **gpt-6.2-astra (xhigh) — 일부만**: 명확하지만 어려운 코딩, 어려운 버그 리뷰(2026-11-22 추가), 중요한 의견 교환(설계 2차 의견 등), 6.2 Sol로 두 번 이상 풀리지 않는 오류,
-  원인이 불분명한 문제, Sol 결과를 한 번 더 확인해야 하는 중요 변경. CLI는 `-m gpt-6.2-astra -c model_reasoning_effort=xhigh`,
-  플러그인(읽기 전용)은 `--model gpt-6.2-astra --effort xhigh` (Astra는 max가 아니라 xhigh. 플러그인은 `--effort`로 xhigh까지 받는다).
-- 사고 수준: `max`/`ultra`를 `--effort`로 넘기면 플러그인이 오류를 낸다 → 넘기지 말 것. ultra는 실측에서 생각을 거의 안 해서 쓰지 않는다(2026-11-14).
-  플러그인 없이 한 번만 다른 노력도로 돌릴 때는 `codex exec -c model_reasoning_effort=<값>`.
-- 6.2는 **최신 Codex CLI**가 필요하다 (0.167·0.169.1은 됨, 0.154에서는 "not supported when using Codex with a ChatGPT account" 오류, 2026-11-18 확인).
-  이 오류가 나면 먼저 `codex --version` 확인 → 옛 버전이면 사용자에게 묻고 `codex update` (Git Bash가 아니라 PowerShell에서).
-- 그 밖의 모델(gpt-6.1-*, gpt-6-astra, gpt-5.6-*)은 사용자가 지정할 때만. 6.2를 정말 못 쓰는 계정이면 사용자에게 알리고 어떤 모델로 할지 묻는다.
-- **gpt-6-luna — 사용 금지.** 사용자가 이름을 콕 집어 요청할 때만 쓴다.
 - 프로젝트 폴더의 CLAUDE.md에 다른 기준이 있으면 그쪽을 우선한다.
-참고: C:\Users\JWK\projects\test\codex-bench\RESULTS.md (2026-11-08, sol이 견고성·검증 점수 최고, luna는 가장 느리고 회귀 테스트 격리가 약했음)
 
 ## AI 브릿지 작업 (어느 폴더 세션이든 공통, 2026-11-15)
-- 제미나이(Antigravity)·Codex에게 작업을 나눌 때는 비공개 저장소 `ai-bridge`(보통 `~/projects/ai-bridge`)를 쓴다. 프로젝트 저장소에는 협업 파일을 만들지 않는다.
+- 제미나이(Antigravity)에게 작업을 나눌 때는 비공개 저장소 `ai-bridge`(보통 `~/projects/ai-bridge`)를 쓴다. 프로젝트 저장소에는 협업 파일을 만들지 않는다.
 - 작업 명세·보고는 `ai-bridge/projects/<프로젝트>/tasks/T번호/`. 새 작업을 만들면 `ai-bridge/CURRENT_TASK.txt`를 갱신한다.
 - 제미나이에게 보낼 작업을 만든 **즉시** 백그라운드로 `python tools/claude/wait_argon.py projects/<프로젝트>/tasks/T번호`(ai-bridge에서)를 띄우고, READY면 바로 검토한다.
 - 파일 이름의 `argon`(`report-argon.md`, `wait_argon.py`, `수정 담당: argon`)은 제미나이 담당 자리라는 뜻이다(아르곤 모델만이 아님, 이름은 바꾸지 않음).
